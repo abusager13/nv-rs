@@ -147,11 +147,36 @@ $routeArgs = @{
             "The gun's in the safe. The combination's 05-23-34.",
             'result script: SammySafeREF.setownership / SammySafeREF.unlock / set nVPrimmVanceGun.VanceGunCase to 3 / set nVPrimmVanceGun.SammyPauline to 2')
     }
+    primm = @{
+        Args    = @('VikkiAndVance', '--talk') +
+            (Run-Line @('player.ModAV Health 5000', 'player.SetAV Science 30')) +
+            @('--say', 'I have some questions about Primm.',
+              '--say', 'What happened to Primm?',
+              '--say', 'Goodbye.') +
+            (Run-At 5 'player.MoveTo PrimmDeputyRef') +
+            (Run-At 12 'PrimmDeputyRef.StartConversation player') +
+            @('--say', 'You must be Deputy Beagle.',
+              '--say', "I'll set you free now.",
+              '--say', "I didn't cut you loose so you could run away. Stick with me!") +
+            (Run-At 140 'player.MoveTo PrimmDeputyExitMarker') +
+            (Run-At 190 'player.MoveTo PrimmDeputyRef') +
+            (Run-At 195 'PrimmDeputyRef.StartConversation player') +
+            @('--say', 'sheriff now', '--say', 'law and order back') +
+            (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
+            (Run-At 340 'PrimmJohnsonNashRef.StartConversation player') +
+            @('--say', 'What about Primm Slim? Could he be sheriff?',
+              '--say', 'I need to get going') +
+            (Run-At 430 'player.MoveTo PrimmSlimREF') +
+            (Run-At 430 'PrimmSlimREF.StartConversation player') +
+            @('--say', 'Reprogram Primm Slim', '--say', 'Goodbye.', '--wait', '600')
+        Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
+            'XP +300', 'XP +30')
+    }
 }
 
 $chosen = @($Routes.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 foreach ($r in $chosen) {
-    if (-not $routeArgs.ContainsKey($r)) { throw "Unknown route '$r' (doc, vcg02, vms16, vance)." }
+    if (-not $routeArgs.ContainsKey($r)) { throw "Unknown route '$r' (doc, vcg02, vms16, vance, primm)." }
 }
 
 $results = @()
