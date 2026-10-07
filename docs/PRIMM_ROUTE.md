@@ -78,8 +78,8 @@ the current branch; private logs and screenshots are under
 
 The end-to-end route ran on the post-#26 branch with no quest stage or quest
 variable set by console. Its final log is
-`/tmp/nv-rs-issue13-research/primm-acceptance-final3.log`; the screenshot is
-`/tmp/nv-rs-issue13-research/primm-acceptance-final3.png`. The Linux viewer
+`/tmp/nv-rs-primm-acceptance-pwsh-final2/primm.log`; the screenshot is
+`/tmp/nv-rs-primm-acceptance-pwsh-final2/primm.png`. The Linux viewer
 run confirms:
 
 - Nash's INFO `0015A78D` starts stage 20. Beagle's release and follow INFOs
@@ -107,7 +107,9 @@ the player's look/activate interaction; that input method has not been
 compared with the original game.
 
 The acceptance script's final wait is 600 seconds so the last voice line and
-quest stage script finish before the screenshot. The route was run directly
-on Linux; `pwsh` is unavailable here, so the PowerShell wrapper itself could
-not be executed on this host. This verifies the route behavior and expected
-log output, but does not claim a side-by-side comparison with the original.
+quest stage script finish before the screenshot. The cross-platform wrapper
+was run on Linux with PowerShell 7.6.6 using `-Routes primm`; it reported
+`primm: PASS` after 605 seconds. Nash's second response is followed by the
+live topic “I need to get going,” which closes the conversation before the
+Slim interaction. This run verifies the wrapper and route behavior, but does
+not claim a side-by-side comparison with the original game.

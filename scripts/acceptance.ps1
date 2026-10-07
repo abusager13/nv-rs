@@ -60,7 +60,8 @@ if (-not $Data) {
     if (Test-Path $default) { $Data = $default } else { throw 'Give -Data (the game''s Data folder) or set NV_DATA.' }
 }
 if (-not $Out) {
-    $Out = Join-Path $env:USERPROFILE ("nv-re\acceptance\" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $profilePath = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+    $Out = Join-Path $profilePath (Join-Path 'nv-re' (Join-Path 'acceptance' (Get-Date -Format 'yyyyMMdd-HHmmss')))
 }
 New-Item -ItemType Directory -Force $Out | Out-Null
 
@@ -71,7 +72,8 @@ if ($Build) {
         if ($LASTEXITCODE -ne 0) { throw 'viewer release build failed' }
     } finally { Pop-Location }
 }
-$viewer = Join-Path $root 'viewer\target\release\nv-viewer.exe'
+$viewerName = if ($env:OS -eq 'Windows_NT') { 'nv-viewer.exe' } else { 'nv-viewer' }
+$viewer = Join-Path $root (Join-Path 'viewer' (Join-Path 'target' (Join-Path 'release' $viewerName)))
 if (-not (Test-Path $viewer)) { throw "No release viewer at $viewer (run with -Build)." }
 
 function Run-Line([string[]]$lines) {
@@ -138,7 +140,7 @@ $routeArgs = @{
             (Run-At 340 'player.MoveTo 000E2882') +
             (Run-At 340 '000E2882.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
-              '--say', 'Goodbye.') +
+              '--say', 'I need to get going') +
             (Run-At 430 'player.MoveTo 000E288C') +
             (Run-At 430 '000E288C.StartConversation player') +
             @('--say', 'Reprogram Primm Slim',
