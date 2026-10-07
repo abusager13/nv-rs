@@ -1395,6 +1395,13 @@ pub mod quest_ids {
     pub const LINK_DOOR2: u32 = 0xA57;
     pub const FAR_MARKER: u32 = 0xA58;
     pub const FAR_TRAVEL: u32 = 0xA59;
+    /// A pair of interiors connected through an intermediate place.
+    pub const CELL3: u32 = 0xB23;
+    pub const CELL4: u32 = 0xB24;
+    pub const LINK_DOOR3: u32 = 0xB25;
+    pub const LINK_DOOR4: u32 = 0xB26;
+    pub const LINK_DOOR5: u32 = 0xB27;
+    pub const LINK_DOOR6: u32 = 0xB28;
     /// A follow package: the player, within 200.
     pub const FOLLOW_PLAYER: u32 = 0xA5A;
     /// A strongbox (`StrongboxRef`, the chest's base) locked at level 50
@@ -2632,6 +2639,12 @@ End
         LINK_DOOR2,
         [400.0, 0.0, 0.0],
     ));
+    refs.extend(link_door(
+        LINK_DOOR3,
+        [20.0, 150.0, 0.0],
+        LINK_DOOR4,
+        [10.0, 0.0, 0.0],
+    ));
     let mut xloc = vec![50u8, 0, 0, 0];
     xloc.extend(KEY.to_le_bytes());
     xloc.extend([0; 12]);
@@ -2746,6 +2759,31 @@ End
         CELL2.to_le_bytes(),
         6,
         &group(CELL2.to_le_bytes(), 9, &refs2),
+    ));
+    let mut cell3_data = edid("TestCell3");
+    cell3_data.extend(sub(b"DATA", &[1]));
+    let cell3 = record(b"CELL", CELL3, &cell3_data);
+    let mut refs3 = link_door(LINK_DOOR4, [10.0, 0.0, 0.0], LINK_DOOR3, [20.0, 150.0, 0.0]);
+    refs3.extend(link_door(
+        LINK_DOOR6,
+        [100.0, 0.0, 0.0],
+        LINK_DOOR5,
+        [200.0, 0.0, 0.0],
+    ));
+    contents.extend(cell3);
+    contents.extend(group(
+        CELL3.to_le_bytes(),
+        6,
+        &group(CELL3.to_le_bytes(), 9, &refs3),
+    ));
+    let refs4 = link_door(LINK_DOOR5, [200.0, 0.0, 0.0], LINK_DOOR6, [100.0, 0.0, 0.0]);
+    let mut cell4_data = edid("TestCell4");
+    cell4_data.extend(sub(b"DATA", &[1]));
+    contents.extend(record(b"CELL", CELL4, &cell4_data));
+    contents.extend(group(
+        CELL4.to_le_bytes(),
+        6,
+        &group(CELL4.to_le_bytes(), 9, &refs4),
     ));
     let cells = group(*b"CELL", 0, &group([0; 4], 2, &group([0; 4], 3, &contents)));
 

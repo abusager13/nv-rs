@@ -405,6 +405,7 @@ fn main() {
             at: args.menu_clicks.clone(),
             release: false,
         })
+        .insert_resource(game_menus::DismissOk(args.dismiss_ok))
         .insert_resource(game_menus::FixedKeys(args.menu_keys.clone()))
         .insert_resource(game_menus::AnswerBoxes::new(
             args.answer_boxes,

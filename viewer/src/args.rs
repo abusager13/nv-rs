@@ -145,6 +145,8 @@ OPTIONS:
     --menu-click S[,S...]   for testing: click the menus' left button at
                             these seconds after starting (with
                             --menu-pointer)
+    --dismiss-ok            for acceptance: click a modal message's only
+                            button when it is labelled OK
     --menu-keys S:K[,S:K...]
                             for testing: type key K (a character, or
                             left, right, up, down, enter) into the top menu at
@@ -290,6 +292,8 @@ pub struct Args {
     pub movies: bool,
     /// `--menu-click`: when to click (seconds after starting).
     pub menu_clicks: Vec<f64>,
+    /// `--dismiss-ok`: dismiss modal message boxes with one OK button.
+    pub dismiss_ok: bool,
     /// `--menu-keys`: keys typed into the menus (seconds after starting,
     /// the key).
     pub menu_keys: Vec<(f64, String)>,
@@ -373,6 +377,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
     let mut screen_size = None;
     let mut movies = None;
     let mut menu_clicks = Vec::new();
+    let mut dismiss_ok = false;
     let mut menu_keys = Vec::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -531,6 +536,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
                     })?);
                 }
             }
+            "--dismiss-ok" => dismiss_ok = true,
             "--cloud-time" => {
                 let v = value("--cloud-time")?;
                 cloud_time = Some(
@@ -611,6 +617,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
             screen_size,
             movies,
             menu_clicks,
+            dismiss_ok,
             menu_keys,
             answer_boxes,
             box_answers,

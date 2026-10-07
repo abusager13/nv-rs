@@ -982,6 +982,25 @@ fn people_go_through_load_doors_toward_their_package() {
         (home.door, home.to),
         (FormId(LINK_DOOR2), [150.0, 120.0, 0.0])
     );
+
+    // A different interior reached through a shared intermediate place:
+    // Bison-like `TestCell` → `TestCell3` → `TestCell4`. The first lookup
+    // should choose the exit to the shared exterior, and the next lookup
+    // after that transition should choose the target interior's entrance.
+    state.spaces.insert(doc, (FormId(CELL), FormId(CELL)));
+    state.positions.insert(doc, ([0.0, 0.0, 0.0], 0.0));
+    let first = ai::door_toward(&order, &state, doc, FormId(CELL4)).unwrap();
+    assert_eq!(
+        (first.door, first.to_space),
+        (FormId(LINK_DOOR3), FormId(CELL3))
+    );
+    state.spaces.insert(doc, (FormId(CELL3), FormId(CELL3)));
+    state.positions.insert(doc, ([10.0, 0.0, 0.0], 0.0));
+    let second = ai::door_toward(&order, &state, doc, FormId(CELL4)).unwrap();
+    assert_eq!(
+        (second.door, second.to_space),
+        (FormId(LINK_DOOR6), FormId(CELL4))
+    );
 }
 
 #[test]

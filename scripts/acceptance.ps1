@@ -5,8 +5,8 @@ pass/fail for each. Every pull request that touches the game must pass
 them (CONTRIBUTING.md).
 
 .DESCRIPTION
-Routes (commands and success lines documented in docs/GOODSPRINGS_ROUTE.md
-and docs/PATHING.md):
+Routes (commands and success lines documented in docs/GOODSPRINGS_ROUTE.md,
+docs/PATHING.md and docs/PRIMM_ROUTE.md):
   doc    Doc Mitchell walks the west rooms to his chair spot and talks
          (GSDocMitchellHouse, VCG01 stage 110).
   vcg02  Back in the Saddle: Sunny's walks, wells, reward (the quest's own
@@ -14,6 +14,8 @@ and docs/PATHING.md):
          player's following are console lines).
   vms16  Ghost Town Gunfight with Trudy's help: the gangers come in and
          die, stage 100.
+  primm  My Kind of Town: rescue Beagle and install Primm Slim as sheriff
+         through the quest's own dialogue scripts.
 A route passes when every one of its success lines appears in the
 viewer's output and no panic does.
 Every route runs with the viewer's --answer-boxes test aid, which answers
@@ -40,7 +42,7 @@ powershell -File scripts\acceptance.ps1 -Background
 param(
     # The game's Data folder (or set NV_DATA).
     [string]$Data = $env:NV_DATA,
-    # Which routes to run, comma-separated (doc, vcg02, vms16).
+    # Which routes to run, comma-separated (doc, vcg02, vms16, primm).
     [string]$Routes = 'doc,vcg02,vms16',
     # Where logs and screenshots go (default: %USERPROFILE%\nv-re\acceptance\<time>).
     [string]$Out,
@@ -112,11 +114,43 @@ $routeArgs = @{
             @('--wait', '330', '--walk', '--weapon', 'WeapNV9mmPistol')
         Success = @('XP +50')
     }
+    primm = @{
+        Args    = @('VikkiAndVance', '--talk', '--dismiss-ok') +
+            (Run-Line @('player.ModAV Health 5000', 'player.SetAV Science 30')) +
+            @('--say', 'I have some questions about Primm.',
+              '--say', 'What happened to Primm?',
+              '--say', 'Goodbye.') +
+            (Run-At 5 'player.MoveTo PrimmDeputyRef') +
+            (Run-At 12 'PrimmDeputyRef.StartConversation player') +
+            @('--say', 'You must be Deputy Beagle.',
+              '--say', "I'll set you free now.",
+              # The follow INFO is a final line; it closes the conversation.
+              '--say', "I didn't cut you loose so you could run away. Stick with me!") +
+            (Run-At 140 'player.MoveTo PrimmDeputyExitMarker') +
+            (Run-At 190 'player.MoveTo PrimmDeputyRef') +
+            (Run-At 195 'PrimmDeputyRef.StartConversation player') +
+            # Keep the match independent of punctuation/curly apostrophe
+            # differences in the installed dialogue text.
+            @('--say', 'sheriff now',
+              '--say', 'law and order back') +
+            # Runtime records identify Nash as placed reference 000E2882;
+            # JohnsonNash is not a resolvable reference name in this load order.
+            (Run-At 340 'player.MoveTo 000E2882') +
+            (Run-At 340 '000E2882.StartConversation player') +
+            @('--say', 'What about Primm Slim? Could he be sheriff?',
+              '--say', 'Goodbye.') +
+            (Run-At 430 'player.MoveTo 000E288C') +
+            (Run-At 430 '000E288C.StartConversation player') +
+            @('--say', 'Reprogram Primm Slim',
+              '--say', 'Goodbye.', '--wait', '600')
+        Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
+            'XP +300', 'XP +30')
+    }
 }
 
 $chosen = @($Routes.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 foreach ($r in $chosen) {
-    if (-not $routeArgs.ContainsKey($r)) { throw "Unknown route '$r' (doc, vcg02, vms16)." }
+    if (-not $routeArgs.ContainsKey($r)) { throw "Unknown route '$r' (doc, vcg02, vms16, primm)." }
 }
 
 $results = @()

@@ -887,12 +887,11 @@ pub struct DoorWay {
     pub heading: f32,
 }
 
-/// The load door nearest `actor` that leads straight into `space` (an
-/// interior cell or a worldspace): one in the cell they're in whose far
-/// side (`XTEL`) is there, else, when `space` is an interior, one of its
-/// doors' far sides that stands where they are (the door outside a
-/// building). One door only: places two doors away aren't reached. How the
-/// game's people find their way between places isn't traced.
+/// The first load door toward `space` (an interior cell or a worldspace):
+/// a direct door, a target interior's entrance when the actor is outside,
+/// or the current interior's exit when both interiors share an exterior.
+/// The last case follows the door edges in the game's navmesh-info search
+/// (`006b8490`); longer chains remain unsupported here.
 pub fn door_toward(
     order: &LoadOrder,
     state: &GameState,
@@ -959,6 +958,49 @@ pub fn door_toward(
                 to: back.position,
                 heading: back.rotation[2],
             });
+        }
+    }
+    // A travel to another interior can require leaving through the current
+    // interior's exterior door, then entering the target through its own
+    // exterior door. The game's navmesh-info search includes these door
+    // edges (`006b8490`); this viewer lookup follows the two-door case used
+    // by the Primm deputy's Bison Steve → Vikki and Vance route.
+    if ways.is_empty()
+        && order
+            .get(space)
+            .is_some_and(|r| r.entry.header.kind == esm::sig::CELL)
+    {
+        let target_exteriors: std::collections::HashSet<FormId> = order
+            .references_in_cell(space)
+            .into_iter()
+            .filter_map(|target_door| {
+                let teleport = crate::placement::teleport_of(&target_door)?;
+                space_of(teleport.door).map(|(outside_space, _)| outside_space)
+            })
+            .collect();
+        if !target_exteriors.is_empty() {
+            for rr in order.references_in_cell(here_cell) {
+                let Some(teleport) = crate::placement::teleport_of(&rr) else {
+                    continue;
+                };
+                let Some((to_space, to_cell)) = space_of(teleport.door) else {
+                    continue;
+                };
+                if !target_exteriors.contains(&to_space) {
+                    continue;
+                }
+                let Some(w) = crate::scripting::whereabouts(order, rr.form_id) else {
+                    continue;
+                };
+                ways.push(DoorWay {
+                    door: rr.form_id,
+                    at: w.position,
+                    to_space,
+                    to_cell,
+                    to: teleport.position,
+                    heading: teleport.rotation[2],
+                });
+            }
         }
     }
     let d = |p: [f32; 3]| (0..3).map(|i| (p[i] - here[i]).powi(2)).sum::<f32>();
