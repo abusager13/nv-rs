@@ -82,8 +82,7 @@ voice/screenshot wait is 600 seconds. `pwsh` is unavailable on this host, so
 the PowerShell wrapper was not run here. See [PRIMM_ROUTE.md](PRIMM_ROUTE.md)
 for evidence and the full list of console-supplied actions.
 
-**Next action:** run the required workspace checks, then open the one-quest PR
-for #13.
+**Next action:** get review on [PR #29](https://github.com/slaterain/nv-rs/pull/29).
 
 Overnight batches, 2026-10-06 (local session; integration branch
 `claude/overnight-integration`, not merged into `main`; each batch also has
