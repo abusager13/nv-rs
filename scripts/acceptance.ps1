@@ -129,7 +129,9 @@ $routeArgs = @{
             # Add it explicitly so the following real quest INFOs can run.
             (Run-At 155 'player.AddTopic 000E32E7') +
             (Run-At 160 'player.MoveTo PaulineWinsREF') +
-            (Run-At 160 'PaulineWinsREF.StartConversation player') +
+            # Let the cross-cell move spawn Wins Residence and its talkers
+            # before asking Pauline to start the conversation.
+            (Run-At 165 'PaulineWinsREF.StartConversation player') +
             @('--say', "I know the two of you stole Vance's gun down in Primm.",
               '--say', "What's your plan?",
               '--say', "That's the greatest plan I've ever heard in my entire life.",
