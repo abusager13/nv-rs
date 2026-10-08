@@ -68,6 +68,6 @@ the original game. Logs and screenshots remain private under
   PowerShell wrapper could not be run here because `pwsh` is not installed;
   the exact viewer arguments in its route were run directly.
   `git diff --check` passes.
-- Still open: compare the route with the original game and get review on PR
-  #29. Next: publish this route as a separate PR to `main`, then keep issue
-  #13 open until both routes are merged.
+- Still open: compare the route with the original game; PR #29 remains open
+  with changes requested, and this route is in draft PR #50. Next: human and
+  maintainer review on #50, then keep issue #13 open until both routes merge.
