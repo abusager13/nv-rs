@@ -887,124 +887,34 @@ pub struct DoorWay {
     pub heading: f32,
 }
 
-/// The first load door toward `space` (an interior cell or a worldspace):
-/// a direct door, a target interior's entrance when the actor is outside,
-/// or the current interior's exit when both interiors share an exterior.
-/// The last case follows the door edges in the game's navmesh-info search
-/// (`006b8490`); longer chains remain unsupported here.
+/// The first load door on the game's navmesh-info route toward `space` and
+/// `target` (`006b8c50`, `006b8490`).
 pub fn door_toward(
     order: &LoadOrder,
     state: &GameState,
     actor: FormId,
     space: FormId,
+    target: [f32; 3],
+    infos: &mut navinfo::NavInfos,
 ) -> Option<DoorWay> {
-    let (here_space, here_cell, here, _) = state.place(order, actor)?;
+    let (here_space, _, here, _) = state.place(order, actor)?;
+    let door = infos.first_door_toward(order, state, here_space, here, space, target)?;
     let space_of = |r: FormId| {
         let w = crate::scripting::whereabouts(order, r)?;
         Some((w.world.unwrap_or(w.cell), w.cell))
     };
-    let mut ways: Vec<DoorWay> = Vec::new();
-    // A door here whose far side is there.
-    for rr in order.references_in_cell(here_cell) {
-        let Some(t) = crate::placement::teleport_of(&rr) else {
-            continue;
-        };
-        let Some((to_space, to_cell)) = space_of(t.door) else {
-            continue;
-        };
-        if to_space != space {
-            continue;
-        }
-        let Some(w) = crate::scripting::whereabouts(order, rr.form_id) else {
-            continue;
-        };
-        ways.push(DoorWay {
-            door: rr.form_id,
-            at: w.position,
-            to_space,
-            to_cell,
-            to: t.position,
-            heading: t.rotation[2],
-        });
-    }
-    // Into an interior: its doors' far sides that stand here.
-    if ways.is_empty()
-        && order
-            .get(space)
-            .is_some_and(|r| r.entry.header.kind == esm::sig::CELL)
-    {
-        for rr in order.references_in_cell(space) {
-            let Some(t) = crate::placement::teleport_of(&rr) else {
-                continue;
-            };
-            let outside = t.door;
-            if space_of(outside).map(|s| s.0) != Some(here_space) {
-                continue;
-            }
-            let Some(w) = crate::scripting::whereabouts(order, outside) else {
-                continue;
-            };
-            let Some(back) = order
-                .get(outside)
-                .and_then(|o| crate::placement::teleport_of(&o))
-            else {
-                continue;
-            };
-            ways.push(DoorWay {
-                door: outside,
-                at: w.position,
-                to_space: space,
-                to_cell: space,
-                to: back.position,
-                heading: back.rotation[2],
-            });
-        }
-    }
-    // A travel to another interior can require leaving through the current
-    // interior's exterior door, then entering the target through its own
-    // exterior door. The game's navmesh-info search includes these door
-    // edges (`006b8490`); this viewer lookup follows the two-door case used
-    // by the Primm deputy's Bison Steve → Vikki and Vance route.
-    if ways.is_empty()
-        && order
-            .get(space)
-            .is_some_and(|r| r.entry.header.kind == esm::sig::CELL)
-    {
-        let target_exteriors: std::collections::HashSet<FormId> = order
-            .references_in_cell(space)
-            .into_iter()
-            .filter_map(|target_door| {
-                let teleport = crate::placement::teleport_of(&target_door)?;
-                space_of(teleport.door).map(|(outside_space, _)| outside_space)
-            })
-            .collect();
-        if !target_exteriors.is_empty() {
-            for rr in order.references_in_cell(here_cell) {
-                let Some(teleport) = crate::placement::teleport_of(&rr) else {
-                    continue;
-                };
-                let Some((to_space, to_cell)) = space_of(teleport.door) else {
-                    continue;
-                };
-                if !target_exteriors.contains(&to_space) {
-                    continue;
-                }
-                let Some(w) = crate::scripting::whereabouts(order, rr.form_id) else {
-                    continue;
-                };
-                ways.push(DoorWay {
-                    door: rr.form_id,
-                    at: w.position,
-                    to_space,
-                    to_cell,
-                    to: teleport.position,
-                    heading: teleport.rotation[2],
-                });
-            }
-        }
-    }
-    let d = |p: [f32; 3]| (0..3).map(|i| (p[i] - here[i]).powi(2)).sum::<f32>();
-    ways.into_iter().min_by(|a, b| d(a.at).total_cmp(&d(b.at)))
+    let rr = order.get(door)?;
+    let teleport = crate::placement::teleport_of(&rr)?;
+    let (to_space, to_cell) = space_of(teleport.door)?;
+    let at = crate::scripting::whereabouts(order, door)?.position;
+    Some(DoorWay {
+        door,
+        at,
+        to_space,
+        to_cell,
+        to: teleport.position,
+        heading: teleport.rotation[2],
+    })
 }
 
 /// The navmeshes people out of sight walk on, loaded once each: an
@@ -1202,13 +1112,21 @@ pub fn move_offstage(
             state.positions.insert(who, (w.at, w.heading));
             return Offstage::Moved;
         }
-        let Some((target_space, _)) = target_place(order, state, who, &package) else {
+        let Some((target_space, target_position)) = target_place(order, state, who, &package)
+        else {
             break;
         };
         if target_space == space {
             break;
         }
-        let Some(way) = door_toward(order, state, who, target_space) else {
+        let Some(way) = door_toward(
+            order,
+            state,
+            who,
+            target_space,
+            target_position,
+            &mut navs.infos,
+        ) else {
             break;
         };
         let Some(ahead) = navs.ahead(order, space, who, here, way.at) else {

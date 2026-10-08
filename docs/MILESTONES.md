@@ -68,21 +68,7 @@ B1 PR 5 (`claude/b1-p5-islands`): Havok's simulation islands translated (`physic
 B1 PR 6 (`claude/b1-p6-contacts`): Havok's contact manager translated (`physics::manifold`: points per agent kept within 0.1 Havok units, properties `00cfd800`, pairing `00d92df0`, removal `00cfd200`; one "contact point added" event per new point `00cfcf80` → `00d01850`, so resting bodies stop re-sounding). Evidence: [PHYSICS.md](PHYSICS.md) "Contact points". **Next action:** B1 PR 7 (contact solver).
 B1 PR 7 (`claude/b1-p7-solver`): Havok's contact solver translated (`physics::solver`: accumulators `00d29830`, new-point callbacks `00d92900`, contact and friction Jacobians `00d72190`, `hkSolveConstraints` `00d8d030` with 4 substeps and the integrated-velocity sums, export `00def570`, apply `00d29bf0`); this solver's XPBD contacts deleted. Contact resting velocity FLT_MAX turns off Havok's immediate bounce. Evidence: [PHYSICS.md](PHYSICS.md) "The contact solver". **Next action:** B1 PR 8 (ragdoll constraints).
 
-## Assigned route issue #13
-
-The issue branch is based on `main` at `23a76c9`, which contains PR #26
-(`65d19af`). The
-end-to-end Linux viewer run completed Beagle's rescue, his 5,663-unit
-`PrimmDeputyLeaveBison` route into Vikki and Vance, and the Primm Slim sheriff
-branch. INFO `000EC078` set sheriff state and stage 130; the quest completed
-both remaining objectives and awarded 300 XP, in addition to the INFO's 30
-XP. No quest stage or quest variable was forced. The acceptance route uses
-console `StartConversation` and movement commands as player input; the final
-voice/screenshot wait is 600 seconds. `pwsh` is unavailable on this host, so
-the PowerShell wrapper was not run here. See [PRIMM_ROUTE.md](PRIMM_ROUTE.md)
-for evidence and the full list of console-supplied actions.
-
-**Next action:** get review on [PR #29](https://github.com/slaterain/nv-rs/pull/29).
+Issue #13 (Primm route, PR #29): Linux acceptance completed the Nash/Beagle/Slim quest flow and emitted the expected sheriff and XP results. Route remains PARTIAL because console commands force movement and conversation starts; Windows acceptance and original-game comparison are pending. Shared NPC obstacle replanning remains WIP. **Next:** run Windows acceptance and request the maintainer's decision on keeping the route opt-in; see [PRIMM_ROUTE.md](PRIMM_ROUTE.md).
 
 Overnight batches, 2026-10-06 (local session; integration branch
 `claude/overnight-integration`, not merged into `main`; each batch also has

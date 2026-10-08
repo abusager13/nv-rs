@@ -1224,6 +1224,7 @@ pub fn move_actors(
             state: &mut *state,
             seats: &mut seats,
             mesh: &nav.mesh,
+            infos: Some(&mut nav.infos),
             moves: &moves.settings,
             now,
             dt,
@@ -1359,6 +1360,7 @@ pub fn move_actors(
             state: &mut *state,
             seats: &mut seats,
             mesh: &nav.mesh,
+            infos: Some(&mut nav.infos),
             moves: &moves.settings,
             now,
             dt,
@@ -1420,7 +1422,6 @@ pub fn move_actors(
                 long_walk(
                     &mut ctx,
                     walker,
-                    &mut nav.infos,
                     (key.0, squares),
                     &attached,
                     moves.recalc_follow,
@@ -1782,7 +1783,9 @@ fn rethink(ctx: &mut Ctx, walker: &mut Walker, life: &mut Life, ask: &mut Asking
     let way = match (&package, near) {
         (Some(p), None) => world::ai::target_place(order, state, me, p)
             .filter(|(space, _)| Some(*space) != here)
-            .and_then(|(space, _)| world::ai::door_toward(order, state, me, space)),
+            .and_then(|(space, target)| {
+                world::ai::door_toward(order, state, me, space, target, ctx.infos.as_deref_mut()?)
+            }),
         _ => None,
     };
     // A load door: walked to as the path request resolves it, the navmesh
@@ -2105,7 +2108,6 @@ fn follow_target(ctx: &mut Ctx, walker: &mut Walker, moves: &Moves, ask: &mut As
 fn long_walk(
     ctx: &mut Ctx,
     walker: &mut Walker,
-    infos: &mut world::ai::navinfo::NavInfos,
     (space, squares): (FormId, &[(i32, i32)]),
     attached: &HashSet<(i32, i32)>,
     recalc_follow: f32,
@@ -2155,7 +2157,11 @@ fn long_walk(
         return;
     }
     walker.long = Some((squares.to_vec(), to));
-    let Some(nodes) = infos.virtual_path(order, space, walker.position, to) else {
+    let Some(nodes) = ctx
+        .infos
+        .as_deref_mut()
+        .and_then(|infos| infos.virtual_path(order, space, walker.position, to))
+    else {
         println!("{me} has no way to {:.0},{:.0},{:.0}", to[0], to[1], to[2]);
         return;
     };
@@ -2305,7 +2311,10 @@ fn guard_frame(ctx: &mut Ctx, walker: &mut Walker, life: &mut Life) {
     }
     if !walker.on_path() {
         if let Some(space) = elsewhere {
-            let Some(way) = world::ai::door_toward(order, ctx.state, me, space) else {
+            let Some(infos) = ctx.infos.as_deref_mut() else {
+                return;
+            };
+            let Some(way) = world::ai::door_toward(order, ctx.state, me, space, post, infos) else {
                 return;
             };
             if let Some(path) = path_for(ctx.mesh, walker, way.at) {
@@ -4836,6 +4845,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: None,
             moves: &moves,
             now: 1.0,
             dt: 0.1,
@@ -4925,6 +4935,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: None,
             moves: &moves,
             now: 1.0,
             dt: 0.1,
@@ -4997,6 +5008,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: None,
             moves: &moves,
             now: 1.0,
             dt: 0.1,
@@ -5040,6 +5052,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: None,
             moves: &moves,
             now: 1.0,
             dt: 0.1,
@@ -5080,6 +5093,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: None,
             moves: &moves,
             now: 1.0,
             dt: 0.1,
@@ -5121,6 +5135,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: None,
             moves: &moves,
             now: 1.0,
             dt: 0.1,
@@ -5219,6 +5234,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: Some(&mut infos),
             moves: &moves,
             now: 1.0,
             dt: 0.1,
@@ -5229,7 +5245,6 @@ mod tests {
         long_walk(
             &mut ctx,
             &mut walker,
-            &mut infos,
             (world, &near),
             &attached,
             300.0,
@@ -5248,7 +5263,6 @@ mod tests {
         long_walk(
             &mut ctx,
             &mut walker,
-            &mut infos,
             (world, &near),
             &attached,
             300.0,
@@ -5266,7 +5280,6 @@ mod tests {
         long_walk(
             &mut ctx,
             &mut walker,
-            &mut infos,
             (world, &all),
             &attached,
             300.0,
@@ -5331,6 +5344,7 @@ mod tests {
                 state,
                 seats: &mut seats,
                 mesh: &mesh,
+                infos: None,
                 moves: &settings,
                 now: now_ms as f32 / 1000.0,
                 dt: 0.1,
@@ -5438,6 +5452,7 @@ mod tests {
             state: &mut state,
             seats: &mut seats,
             mesh: &mesh,
+            infos: None,
             moves: &settings,
             now: 1.0,
             dt: 0.1,
