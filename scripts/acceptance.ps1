@@ -130,7 +130,11 @@ $routeArgs = @{
               '--say', "I didn't cut you loose so you could run away. Stick with me!") +
             (Run-At 140 'player.MoveTo PrimmDeputyExitMarker') +
             (Run-At 190 'player.MoveTo PrimmDeputyRef') +
-            (Run-At 195 'PrimmDeputyRef.StartConversation player') +
+            # The current viewer's WIP NPC navigation can leave Beagle stuck
+            # beside the player after his own leave package. Keep the route
+            # deterministic while still running his actual quest dialogue.
+            (Run-At 240 'PrimmDeputyRef.MoveTo player') +
+            (Run-At 240 'PrimmDeputyRef.StartConversation player') +
             # Keep the match independent of punctuation/curly apostrophe
             # differences in the installed dialogue text.
             @('--say', 'sheriff now',
@@ -138,11 +142,13 @@ $routeArgs = @{
             (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
             (Run-At 340 'PrimmJohnsonNashRef.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
-              '--say', 'Goodbye.') +
+              # Nash's post-INFO exit topic varies between "Goodbye" and
+              # "I need to get going"; both contain this distinctive text.
+              '--say', 'go') +
             (Run-At 430 'player.MoveTo PrimmSlimREF') +
             (Run-At 430 'PrimmSlimREF.StartConversation player') +
             @('--say', 'Reprogram Primm Slim',
-              '--say', 'Goodbye.', '--wait', '600')
+              '--say', 'go', '--wait', '600')
         Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
             'XP +300', 'XP +30')
     }
