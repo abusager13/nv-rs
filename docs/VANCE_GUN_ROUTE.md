@@ -44,12 +44,16 @@ it. No quest stage or quest variable is forced. The setup sets Science
 to 50 and Speech to 55, and uses console `MoveTo` and `StartConversation`
 lines to move the player and start each conversation.
 
-**Status:** the complete acceptance route passed on the Linux viewer. The
-final INFO unlocked Sammy's safe, set `VanceGunCase` to 3 and `SammyPauline` to
-2, and awarded the expected 50 and 55 XP. The successful Speech check was
-explicitly set to 55; Pauline's exit choice was selected by its visible `go`
-text. It has not been compared side by side with the original game. Logs and
-screenshots remain private under `target/task13-validation/vance/`.
+**Status:** the complete acceptance route passed on the Linux viewer built
+from current `main` (`56a3d102c79cd6a5bc34160febfeb8af87bd763b`). The
+cross-cell move into Wins Residence needs five game seconds before
+`PaulineWinsREF.StartConversation`; without that gap the new scene has not yet
+spawned its talkers. The final INFO unlocked Sammy's safe, set `VanceGunCase`
+to 3 and `SammyPauline` to 2, and awarded the expected 50 and 55 XP. The
+successful Speech check was explicitly set to 55; Pauline's exit choice was
+selected by its visible `go` text. It has not been compared side by side with
+the original game. Logs and screenshots remain private under
+`target/task13-validation/vance/`.
 
 ## Current handoff (2026-10-08)
 
@@ -57,12 +61,13 @@ screenshots remain private under `target/task13-validation/vance/`.
   `56a3d102c79cd6a5bc34160febfeb8af87bd763b` (after PR #26).
 - Changed files: `scripts/acceptance.ps1`, `docs/MILESTONES.md`, and this
   route/handoff. No process remains active.
-- Verified: Linux viewer run exited 0, reached both XP awards and the safe
-  unlock result script, and had no panic. The PowerShell wrapper could not be
-  run here because `pwsh` is not installed; the viewer arguments in its route
-  were run directly. The final acceptance criteria also match both `AddTopic`
-  inputs and the safe-unlock/quest-variable result-script line in that log.
+- Verified on the current-main Linux viewer: the run exited 0, reached all
+  eight acceptance markers, unlocked the safe, and had no panic. Pauline was
+  loaded before her conversation started. One unrelated background warning
+  remains for persistent Freeside actor HadrianREF (`0011F9C1`). The
+  PowerShell wrapper could not be run here because `pwsh` is not installed;
+  the exact viewer arguments in its route were run directly.
   `git diff --check` passes.
-- Still open: rerun acceptance on the rebased current-main viewer and compare
-  with the original game; get review on PR #29. Next: publish this route as a
-  separate PR to `main`, then keep issue #13 open until both routes are merged.
+- Still open: compare the route with the original game and get review on PR
+  #29. Next: publish this route as a separate PR to `main`, then keep issue
+  #13 open until both routes are merged.
