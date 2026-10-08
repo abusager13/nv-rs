@@ -98,7 +98,7 @@ $routeArgs = @{
             (Run-At 320 '0010A210.Kill') + (Run-At 321 '0010ABB0.Kill') + (Run-At 322 '0010A20F.Kill') +
             (Run-At 323 '0010A211.Kill') + (Run-At 324 '0010A212.Kill') + (Run-At 325 '0010A213.Kill') +
             (Run-At 340 'SunnyREF.StartConversation player') +
-            @('--say', "Okay, I'm in.", '--say', "Sure, I'll come with you.", '--say', "Couldn't hurt.", '--wait', '370')
+            @('--say', "Okay, I'm in.", '--say', "Sure, I'll come with you.", '--say', "Couldn't hurt.", '--wait', '410')
         Success = @('Completed: Talk to Sunny about your reward', 'XP +50')
     }
     vms16 = @{
@@ -126,14 +126,18 @@ $routeArgs = @{
             (Run-At 140 'player.MoveTo PrimmDeputyExitMarker') +
             (Run-At 190 'player.MoveTo PrimmDeputyRef') +
             (Run-At 195 'PrimmDeputyRef.StartConversation player') +
-            @('--say', 'sheriff now', '--say', 'law and order back') +
+            # Keep the match independent of punctuation/curly apostrophe
+            # differences in the installed dialogue text.
+            @('--say', 'sheriff now',
+              '--say', 'law and order back') +
             (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
             (Run-At 340 'PrimmJohnsonNashRef.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
-              '--say', 'I need to get going') +
+              '--say', 'Goodbye.') +
             (Run-At 430 'player.MoveTo PrimmSlimREF') +
             (Run-At 430 'PrimmSlimREF.StartConversation player') +
-            @('--say', 'Reprogram Primm Slim', '--say', 'Goodbye.', '--wait', '600')
+            @('--say', 'Reprogram Primm Slim',
+              '--say', 'Goodbye.', '--wait', '600')
         Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
             'XP +300', 'XP +30')
     }

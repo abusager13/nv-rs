@@ -1,115 +1,65 @@
 # Primm deputy and sheriff route
 
-Issue #13 asks for My Kind of Town to run in the viewer through the deputy
-rescue and one sheriff outcome, with an acceptance route. The latest live
-post-#26 viewer run completed that route; see the acceptance evidence below.
+Issue #13 adds an acceptance route for *My Kind of Town* through Deputy
+Beagle's rescue and the Primm Slim sheriff outcome. The route drives quest
+stages through the quest's own dialogue and scripts; it does not set a quest
+stage or variable directly. It remains **PARTIAL** by the project's play
+standard: the acceptance script uses console `player.MoveTo` commands and
+`StartConversation` in place of walking and activating with keys or a pad.
+Neither the complete route nor its individual interactions have been compared
+side by side with the original game.
 
-## Evidence
+## Quest evidence
 
-The reference executable is the user's FalloutNV.exe 1.4.0.525 (SHA-256
-`61de3c742bbb6c586cd4441fa3b3533bd493e86ee06debd9d83ff4d817c6fafd`). Ghidra
-12.1.4's project and exports are private under
-`/tmp/nv-rs-issue13-research`; none are part of the repository. The native
-`SetRestrained` command is `005d0920`, which calls `008ace50`. That routine
-changes the actor's restrained life state and clears it when passed false; it
-does not reveal a route gate. `EvaluatePackage` (`evp`) is native command
-`005c95a0`; its handler resolves the reference, checks runtime guards, and has
-a guarded branch to `008a6ce0`. In the viewer, the command queues an immediate
-package check (`crates/world/src/scripting.rs`, `EvaluatePackage`; consumed by
-`viewer/src/ai.rs`). This confirms the release script requests reevaluation,
-but does not prove the selected package reaches its end.
+These records were read from `FalloutNV.esm` with `nvinspect`:
 
-The initial live runs below used base `33dee45`, before PR #26's NPC AI,
-combat, dialogue, package, and pathing work. They preserve useful dialogue and
-quest-record evidence, but are not acceptance evidence for current `main`
-(`23a76c9`). The focused post-#26 retest is documented below.
+- Nash's INFO `0015A78D` sets `nVPrimmDeputyConv.DeputyHostage` and starts
+  stage 20.
+- Beagle's release INFO `000BACD5` runs stages 20 and 25, stops combat, and
+  calls `SetRestrained 0`. His `PrimmDeputyLeaveBison` package (`000DA117`)
+  targets marker `000CD9B1`; its end/change actions update `BeagleCaptured`
+  and `BeagleFollow` and clear his captive state.
+- Nash's INFO `00162C19` offers the optional Slim objective.
+- Primm Slim's Science INFO `000EC078` sets `BeagleCaptured` to 4 and
+  `PrimmSlimSheriffState` to 1, disables the dead sheriff references, sets
+  stage 130, and awards 30 XP. The stage script completes the remaining
+  objectives and awards 300 XP.
 
-Game-data records were read from the user's installed Data folder with
-`nvinspect`:
+The cross-place path used by Beagle is the game's navmesh-info search. Its
+edge expansion (`FalloutNV.exe 006b8490`) includes the `NVCI` third-list door
+edges and adds 409600 to a locked-door edge; the surrounding search is
+`006b8c50` and `006b9180`. The implementation now resolves those door edges
+from paired `XTEL` records in `crates/world/src/ai/navinfo.rs`, and
+`door_toward` takes the first door on the resulting route. Generated test data
+covers a multi-door chain and a locked door changing the chosen route.
 
-- Nash's Primm INFO `0015A78D` sets
-  `nVPrimmDeputyConv.DeputyHostage` to 1 and starts stage 20.
-- Beagle's release INFO `000BACD5` sets stages 20 and 25, stops combat, and
-  calls `SetRestrained 0`.
-- Primm Slim's successful Science dialogue INFO `000EC078` sets
-  `BeagleCaptured` to 4 and `PrimmSlimSheriffState` to 1, disables the dead
-  sheriff references, sets stage 130, and awards 30 XP. The quest stage's own
-  script awards 300 XP and completes all objectives.
+## Acceptance route
 
-On 2026-10-07, a live viewer run from `VikkiAndVance` used Nash's dialogue,
-moved the player to `PrimmDeputyRef`, and selected Beagle's actual “I'll set
-you free now” response. The log records the stage-20/25 scripts, completed
-rescue objective, and the follow-up objective. The run used
-`player.ModAV Health 5000` to survive nearby Powder Gangers. Private log:
-`/tmp/nv-rs-issue13-research/rescue-durable.log`.
+Run the opt-in route with:
 
-That run also records the boundary after release: Beagle's second script sets
-`BeagleCaptured` to 1 and starts `PrimmDeputyRef.evp`; his next dialogue says
-he is still extricating himself, then that he is busy until he reaches safety.
-The player's stationary position during that exchange is expected. The log
-does not establish that Beagle reaches safety or agrees to be sheriff, so the
-unfinished link is his post-release travel and follow-up dialogue.
+```powershell
+powershell -File scripts\acceptance.ps1 -Routes primm -Data "<Fallout New Vegas\Data>"
+```
 
-The installed-data package `PrimmDeputyLeaveBison` (`000DA117`, type 6) has
-end/change actions that set `BeagleCaptured` and `BeagleFollow` to 2, clear his
-waiting state, remove him from the player and captive factions, and set his
-assistance value. The package targets marker `000CD9B1`. The live post-#26
-run below confirms the package reaches its end action after traveling to the
-casino.
+It uses `player.ModAV Health 5000` and `player.SetAV Science 30` as test
+setup; moves the player to Beagle, Nash (`PrimmJohnsonNashRef`, `000E2882`),
+Slim (`PrimmSlimREF`, `000E288C`) and the exit marker; starts conversations
+with `StartConversation`; and picks offered topics with `--say`. No quest
+stage or quest variable is forced. The route's expected results are the Slim
+sheriff message and `XP +300` / `XP +30`.
 
-The Slim ending was also exercised through its real dialogue and quest scripts,
-but with `BeagleCaptured = 3` and stage 26 supplied as test setup, plus Science
-30. INFO `000EC078` ran, stage 130 completed the quest objectives, and the
-route awarded its 30-XP response reward and 300-XP stage reward. This confirms
-the ending branch only; the setup skips the in-game steps and is not counted
-as end-to-end evidence. Private log:
-`/tmp/nv-rs-issue13-research/slim-resolution.log`.
+The route is opt-in because it takes several minutes; the default acceptance
+set remains `doc,vcg02,vms16`. The latest Linux acceptance run reached Nash
+after freeing Beagle. Nash's top-level menu offered “What about Primm Slim?
+Could he be sheriff?”, and selecting it ran INFO `00162C19` and displayed the
+optional objective. The route then selected “Goodbye.”, moved to Slim, and
+selected the Science 30 response. INFO `000EC078` succeeded, the sheriff
+message appeared, and the viewer reported `XP +300` and `XP +30`. Selecting
+the direct Nash topic avoids opening the unrelated general-topic list.
 
-## Current implementation and acceptance evidence
-
-Current `main` already has `--run-at` timed test commands and ordered `--say`
-topic selection for reproducible route runs. The corrected post-#26 Nash
-sequence now selects “I have some questions about Primm,” then “What happened
-to Primm?” and starts stage 20. The same live run reaches stage 25 through
-Beagle's actual release and follow dialogue and completes the rescue objective.
-`--dismiss-ok` closes modal messages with one OK button. These are verified on
-the current branch; private logs and screenshots are under
-`/tmp/nv-rs-issue13-research`.
-
-The end-to-end route ran on the post-#26 branch with no quest stage or quest
-variable set by console. Its final log is
-`/tmp/nv-rs-primm-acceptance-pwsh-final2/primm.log`; the screenshot is
-`/tmp/nv-rs-primm-acceptance-pwsh-final2/primm.png`. The Linux viewer
-run confirms:
-
-- Nash's INFO `0015A78D` starts stage 20. Beagle's release and follow INFOs
-  run stages 20/25, complete the rescue objective, and display the new-sheriff
-  objective.
-- Beagle's `PrimmDeputyLeaveBison` package walks 5,663 units, enters
-  `VikkiAndVance`, and runs its end action. The actor then uses his casino
-  sandbox package.
-- Nash's INFO `00162C19` displays the optional Slim objective. Slim offers
-  the Science 30 response, and INFO `000EC078` succeeds. Its result script
-  sets `BeagleCaptured` to 4 and `PrimmSlimSheriffState` to 1, disables the
-  dead sheriff references, sets stage 130, and awards 30 XP. The stage
-  completes both remaining objectives and awards 300 XP.
-- The viewer reports “You reprogrammed Primm Slim to act as Sheriff of
-  Primm,” both objective completions, `XP +300`, and `XP +30`. The XP opens
-  the level-up menu as expected.
-
-The acceptance route supplies only test setup and player interaction:
-`player.ModAV Health 5000` and `player.SetAV Science 30`; `player.MoveTo`
-Beagle, `PrimmDeputyExitMarker`, Beagle again, Nash (`000E2882`), and Slim
-(`000E288C`); initial `--talk` and `StartConversation` on Beagle, Nash and
-Slim; and `--say` to choose dialogue responses. No quest stage or quest
-variable is forced. The route uses console `StartConversation` in place of
-the player's look/activate interaction; that input method has not been
-compared with the original game.
-
-The acceptance script's final wait is 600 seconds so the last voice line and
-quest stage script finish before the screenshot. The cross-platform wrapper
-was run on Linux with PowerShell 7.6.6 using `-Routes primm`; it reported
-`primm: PASS` after 605 seconds. Nash's second response is followed by the
-live topic “I need to get going,” which closes the conversation before the
-Slim interaction. This run verifies the wrapper and route behavior, but does
-not claim a side-by-side comparison with the original game.
+The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
+marker, plus starting each conversation, are still forced by console commands.
+The route was exercised in the Linux viewer, but has not been compared
+side-by-side with the original game and the requested Windows acceptance check
+is still pending. NPC obstacle replanning remains unfinished shared AI behavior;
+this run does not establish a Linux-only navigation defect.
