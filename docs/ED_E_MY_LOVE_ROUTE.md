@@ -103,23 +103,28 @@ dialogue package whose second location is kind 1 (`crates/testdata/src/ai.rs`)
 with a regression in `crates/world/tests/ai.rs` (matching cell → `Talk`,
 different cell → not at the location).
 
+### The quest's Pip-Boy `MenuMode` block
+
+The viewer previously never called `Runner::menu_mode` while its manually
+drawn Pip-Boy was open, so the quest's Menumode block that changes
+`iEDEOut` 3 → 4 could not run. The Pip-Boy now passes its top menu class to
+the runner each open frame. `MenuMode 0` matches any open menu, `MenuMode 1`
+matches Pip-Boy classes 1002, 1003, 1023, 1035 and 1061, and other numbers
+match that exact class (`0059c380`; block dispatch `005c4240`, FalloutNV.exe
+1.4.0.525). The script condition, package condition and quest block dispatch
+share that predicate. A generated quest fixture checks `MenuMode 0`, `1` and
+an exact class (`crates/testdata/src/lib.rs`, `crates/world/tests/scripting.rs`);
+the condition tests cover Pip-Boy and non-Pip-Boy classes
+(`crates/world/tests/more_functions.rs`).
+
 ## Blockers left (not fixed here)
 
-1. **The manual Pip-Boy `MenuMode` dispatch.** The quest's Menumode block is
-   what sets `iEDEOut` 3 → 4, and nothing in the viewer's manual Pip-Boy path
-   calls `Runner::menu_mode`, so on a played route (no console) that step never
-   runs and the return/objective-60/completion chain never starts. The route
-   above forces `set vDialogueEDE.iEDEOut to 4` instead. The traced shape of the
-   fix: forward the shown Pip-Boy menu's class to `Runner::menu_mode` while it
-   is up, and mirror the engine's `MenuMode n` predicate (`0059c380`, through
-   its handler `005c4240`) — no argument or `0` any menu, `1` a Pip-Boy menu
-   (1002, 1003, 1023, 1035, 1061), else that menu id.
-2. **The natural second keyword.** No non-console trigger for log two has been
+1. **The natural second keyword.** No non-console trigger for log two has been
    played; every run forced the second `SetStage vDialogueEDE 10`.
-3. **The map-marker travel semantics.** `GetMapMarkerVisible` should answer 0
+2. **The map-marker travel semantics.** `GetMapMarkerVisible` should answer 0
    hidden, 1 visible, 2 also travel-able (`005daac0` → `005a51e0`); the radio
    branch's `== 2` test depends on it.
-4. **Stage 10's entry gate.** The `iCounter == 5` condition and the
+3. **Stage 10's entry gate.** The `iCounter == 5` condition and the
    `GetScriptVariable(001732D1, 0x10)` condition (its form and script
    unresolved) were not measured at dispatch; which entry runs is not explained
    by the record alone.
@@ -129,4 +134,5 @@ different cell → not at the location).
 Nothing in this route has been watched in the original game. The completion
 segment above is the viewer's own package, script and reward, with the four
 console lines named; the played route up to objective 60 (prerequisite steps
-2–4) still needs the MenuMode dispatch before it can run without a console.
+2–4) has not been replayed since adding Pip-Boy `MenuMode` dispatch, and the
+acceptance segment still forces the quest into its completion state.

@@ -30,6 +30,23 @@ fn a_new_game_runs_start_game_quests_with_globals_at_their_values() {
 }
 
 #[test]
+fn quest_menu_mode_blocks_match_any_menu_the_pipboy_and_the_exact_class() {
+    let (_data, order) = order("scripting-menu-mode");
+    let scripts = ScriptCache::default();
+    let mut state = GameState::new(&order);
+    assert_eq!(state.globals.get(&FormId(GLOBAL)), Some(&5.0));
+
+    // MenuMode 0 means any open menu; 1 means a Pip-Boy screen; other
+    // numbers name one exact class (`0059c380`, FalloutNV.exe 1.4.0.525).
+    Runner::new(&order, &scripts, &mut state).menu_mode(1002);
+    assert_eq!(state.globals.get(&FormId(GLOBAL)), Some(&16.0));
+    Runner::new(&order, &scripts, &mut state).menu_mode(1036);
+    assert_eq!(state.globals.get(&FormId(GLOBAL)), Some(&117.0));
+    Runner::new(&order, &scripts, &mut state).menu_mode(1035);
+    assert_eq!(state.globals.get(&FormId(GLOBAL)), Some(&128.0));
+}
+
+#[test]
 fn a_greeting_and_the_quest_script_carry_the_quest_through() {
     let (_data, order) = order("scripting-quest");
     let scripts = ScriptCache::default();
