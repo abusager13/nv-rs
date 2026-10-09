@@ -1,7 +1,7 @@
 # Phase 1: the frame skeleton (proposal)
 
 Drafted 2026-10-09 at the end of Phase 0 ([ENGINE_PORT_PLAN.md](ENGINE_PORT_PLAN.md),
-[LEDGER.md](LEDGER.md)); PR 1 (the frame map) and PR 2 (`world::frame`) done 2026-10-09, the rest is
+[LEDGER.md](LEDGER.md)); PR 1 (the frame map), PR 2 (`world::frame`) and PR 3 (the viewer's order) done 2026-10-09, the rest is
 not implemented yet. Names are from the Xbox 360 prototype (Xbox PDB,
 ADR-0002), PC addresses from `research/engine-map/engine_map.tsv` and
 `research/engine-map/frame.tsv`.
@@ -314,6 +314,163 @@ system in the set of the step it belongs to, and runs each set under its
 no viewer counterpart yet (fader 1, the frozen world, the interface mode,
 the thread count) need a source or a fixed value.
 
+## PR 3 result: the viewer's order from the frame
+
+`viewer/src/frame_order.rs` (2026-10-09) makes the frame the viewer's
+`Update` order. Each `world::frame::Stage` is a system set
+(`FrameSet::Stage`), configured in the order `world::frame::stages()` reads
+off `STEPS`; each of the 143 steps is a set too (`FrameSet::Step(i)`,
+inside its stage, in call order). Every stage set runs under
+`world::frame::stage_reached` (only the Tab and Alt return stops a stage)
+and every step set under `world::frame::step_runs` (its `Gate`), both
+evaluated on one `FrameState` resource (`ThisFrame`) that `begin_frame`, the
+first system of stage 1, fills each frame (the menu-state queries of steps
+3-12). The gate logic stays in `world::frame`; the viewer only fills the
+inputs.
+
+Three viewer sets sit around the stages (`ViewerSet`):
+
+- **Loading**, first: the new interior or exterior put on screen and the
+  land streamed around the player. Loading is the frame's in the exe
+  (`TES::ShowLoadingMenu`, step 39; grid cells in
+  `Main::OnIdle_UpdateCurrentGridCell`, step 78), but the viewer's loaders
+  aren't split along those calls yet and other systems rely on a scene
+  asked for in one frame being in place at the start of the next.
+- **Interface**, second: the game's menus, the viewer's own, V.A.T.S. and
+  the lockpicking menu, which take Bevy's input (`reset_all`) before the
+  player's systems read it. In the exe this is `Interface::Idle` (stage 5
+  with one thread, else on the AI thread in stage 6); the player's update
+  (stage 2) reads controls that `Main::OnIdle_PollControls` (step 33)
+  polled in the previous frame, after that frame's interface idle, so the
+  interface meets each input before the player there too. It moves into
+  its stage once the player's update tests menu mode itself (PR 4, PR 7).
+- **AfterFrame**, last: not in `Main::OnIdle` (the viewer's tools:
+  screenshots, help, the cursor, exposure, the F12 report, the frame rate,
+  the window's focus, the present mode, the console key's switch to the
+  viewer's free camera, billboards turned to Bevy's camera), and output
+  whose place isn't traced and which only needs the frame's work done (the
+  GPU's grass and water around the camera, sounds, music, the radio).
+
+Bevy's own schedules around `Update` (input in `PreUpdate`, transforms and
+the camera's final placement in `PostUpdate`) are unchanged.
+
+### Which systems landed where (121 `Update` systems)
+
+| Set | Systems |
+| --- | --- |
+| Loading (5) | `spawn_scene`, `exterior::enter_exterior`, `stream_squares`, `stream_distant_land`, `lod_objects::stream_distant_objects` |
+| Interface (20) | `game_menus`' seven (`start_menu` … `draw_menus`), `vigor::draw`, `compose_hud_over_scene`, `hacking::play_sounds`, `companion_wheel::play_voices`, `pipboy_keys`, `rendered_terminal::show_terminal`, `menus::run_menus`, `vats::run_vats`, `vats::scale_target_time`, `lockpick::pick_locks`, `show_lockpicking`, `caravan_table::show_table`, `casino_scene::show_casino` |
+| 1. Frame start (1) | `frame_order::begin_frame` (steps 3-12's queries) |
+| 2. Player (20) | the view (`scope_sway`, `player_camera::view_input`, `look_around`, `fly_camera`), the player's chain (`give_start_weapon`, `walk`, `player_furniture`, `player_idle::animate`, `player_attack`, `object_shots`, `report_facing_up`, `swap_textures`, `show_dropped_weapons`, `update_scope`, `update_view_model`, `apply_shot_camera`), `player_body::update_player_body`, `crosshair::pick`, `dialogue::talk`, `chatter::say_lines` |
+| 3. Housekeeping (4) | step 32 `Main::OnIdle_UpdateTimer`: `clutter::time_havok_frame` (moved from `First`); step 44 `Main::OnIdle_HandleMenuBackground`: `menu_background::update`; with them `toggle_grade`, `effects::play_effects` |
+| 4. World and time (13) | `scripts::start_use`, `run_scripts` (its `Runner::update` holds parts of steps 56 and 78), `walk::doors`, `doors::update_doors`, the movies, the weather, sky, daylight and emittance chain, `trees::stream_trees`; step 77 `BSTreeManager::Update`: `trees::sway_trees` |
+| 5. Interface and scene | none yet |
+| 6. AI start (39) | the people (`ai::move_offstage`, the three `bring_in_*`, `move_actors`, `fighting::resolve_shots`, `ground_log`, `look::*`, `sitting::idle_requests`, `actors::script_idles`, `animate_actors`, `dress::redress`, the four face systems), shots and hits (`bolts`' two, `explosives::fly_thrown`, `hiteffects::play_hits`, `impact_fx`'s two, `weapon_fx`' three), `clutter`'s Havok step (four), `move_pieces`, the interface idle's HUD and Pip-Boy (`update_hud`, `update_local_map`, `update_pipboy`, `pipboy_light`), `companions::come_along`, `map::find_markers`, `hud::follow_quest_targets`, `scripts::save_and_load` |
+| 7. Render, 8. AI join | none yet |
+| AfterFrame (19) | `toggle_walking`, `adjust_exposure`, `take_screenshot`, `update_help`, `grab_cursor`, `report::report_key`, `sounds::play_sounds`, `face_camera`, `report_fps`, `background::give_focus_back`, `present::use_mailbox`, grass (2), water (4), `music::play_music`, `radio::run_radio` |
+
+Placed for order only, their place in the frame not traced (each says so
+where it is added): objects' shots, the spine's facing, texture swaps,
+dropped weapons and people's lines (in the player's chain); movies (after
+the scripts); map markers, quest targets, saving and `come_along` (stage
+6). The HUD and Pip-Boy go to stage 6 because the interface idle runs
+there with threads > 1.
+
+### Chains removed and kept
+
+Removed, now given by the sets: the one `.chain()` over all of `main`'s
+`Update` groups, and 21 `.before`/`.after`s: the menu background group's
+`.after(draw_menus)`, the movies' `.after(run_scripts)`, `idle_requests`'
+`.after(say_lines)`, `view_input`'s `.after(pick_locks)`,
+`update_player_body`'s `.before(animate_actors)`, `move_pieces`'
+`.after(spawn_scene)`, `face_camera`'s `.after(fly_camera).after(walk)`,
+every `.after(player_attack)` (bolts, clutter, explosives, hit effects,
+weapon effects) and `.after(walk)` (clutter), weapon effects'
+`.after(object_shots)` and `.after(update_view_model)`, `update_pipboy`'s
+`.after(run_scripts)` and `.after(update_view_model)`, and the HUD's,
+music's and radio's `.after(run_scripts)`.
+
+Kept, each with a comment where it is added, because they order systems
+inside one set and the frame doesn't (yet): the loaders' chain; which menu
+takes the input first (the game's menus before the viewer's, then
+V.A.T.S., then lockpicking; the Pip-Boy's keys and the rendered terminal
+between them; menu scenes drawn after their menus ran); the player's chain
+(`PlayerCharacter::Update`'s own order is PR 4) with `view_input` before
+`look_around` and the body after the seat; the grade switch, menu
+background and effects; scripts, doors, movies and sky in the viewer's
+order (the frame has the sky's update, step 53, before `Calendar::Update`,
+step 56, but neither is wired to these systems yet); in stage 6, people
+posed after they moved, faces and clothes after the pose, shots and thrown
+things after people moved and before the hits' effects, the Havok step
+after thrown things, the Pip-Boy's screen before the posing (the interface
+idle is the AI thread's first call, `008c7bd0`) and its map before it
+(the AI thread's order is PR 6); the trees on screen before they sway;
+grass and water's own chains.
+
+### The inputs
+
+`viewer_frame_state` fills `FrameState`:
+
+- menu mode: `menus::Menus::is_open` (the game's menus, the viewer's, the
+  Pip-Boy, lockpicking), the dialogue menu (a conversation that isn't
+  lines only) and the V.A.T.S. menu (modes 1 to 3; playback is not menu
+  mode). The Pip-Boy's opening is inside `Menus::pipboy`, so
+  `pipboy_opening` stays false.
+- V.A.T.S. mode: `vats::Vats::manager_mode` (new; off, 1 to 3, 4 for
+  playback). Top menu: the top game menu's class (`MenuDraw`).
+- Tab and Alt: Bevy's keyboard (Tab, and either Alt, as
+  `GetAsyncKeyState(0x12)`).
+- The four inputs PR 2 left without a source, fixed at the normal PC case:
+  **fader 1** not visible (the viewer's two faders, the sleep's and the
+  menus' fade to black, are both fader 0; there is no fader 1);
+  **the frozen world** not frozen (the viewer has no console window, and
+  its free camera, the ` key, is its own, not `TFC`); **the interface
+  mode** 1, game mode (menu mode comes from the menus above; only the
+  memory free's gate, step 13, open, reads the number, and the exe's value
+  in each menu isn't tracked); **the thread count** the processor count
+  (`std::thread::available_parallelism`, standing for `GetSystemInfo`)
+  raised to 2 when it is 1, as `main` does (`0086a950`-`0086a990`); every
+  gate only asks 1 or more than 1, so the PC case is "more than 1".
+- Also fixed: the console hidden (no console window); the requests and the
+  loading inputs of steps no viewer system implements keep
+  `FrameState::default`'s values.
+
+With these inputs the only gate a viewer system sits under today is "the
+frame reached the stage": the three wired step sets (32, 44, 77) are
+ungated in the exe, and the systems that already handle menu mode their
+own way (the AI's `frozen`, the scripts' time, Bevy's virtual clock in
+V.A.T.S.) are in stage sets, not in the gated steps (the AI work's
+`AiTasks`, the world's `WorldRuns`), because their exe counterparts aren't
+split out yet; gating them now would change what they do in menus without
+evidence. The gates are ready for PR 4 to PR 7.
+
+### Behaviour differences
+
+- The menu background, the screen effects and the grade switch now run
+  before the scripts instead of after them: an effect a script applies
+  plays from the next frame (as an effect from a hit already did).
+- Systems that had no order now have one: the HUD, the Pip-Boy, the trees
+  and the plugins' AI-stage systems run in stage 6 or 4; grass, water,
+  sounds, music and the radio after the frame (sounds asked for by the
+  AI stage play in the same frame).
+- The console key's switch between walking and the free camera takes
+  effect the next frame.
+- Holding Tab and Alt stops every stage after the first, as the exe does
+  (Bevy releases keys when the window loses focus, so an Alt+Tab away
+  doesn't trigger it).
+- The loaders now always run before the game's menus (they were
+  unordered).
+
+Tests (`frame_order::tests`): the sets run in `world::frame`'s stage order
+with the viewer's sets around them, and the step sets in call order inside
+their stage, with systems added in reverse; a system in a gated step set
+(`Calendar::Update`, step 56) doesn't run in menu mode while the rest of
+its stage does, and Tab+Alt stops every stage but the first; the fixed
+inputs. `world::frame` gained `stages`, `stage_reached`, `step_runs` and
+`step_of`, used by the viewer and tested there. Acceptance: doc, vcg02 and
+vms16 pass; on `main` before the change vcg02 missed "XP +50" in one run
+while doc and vms16 passed, so no route got worse.
+
 ## PR sequence
 
 Each PR names one next action, regenerates the ledger and passes the
@@ -339,7 +496,8 @@ acceptance routes, as in B1.
    by `FrameStep` system sets instead of their own `.before`/`.after`
    chains; remove the chains it replaces. This is where "runs in the wrong
    order" bugs get fixed; acceptance routes must pass unchanged or with
-   explained differences.
+   explained differences. *Done*: "PR 3 result" above (no "wrong order"
+   bug was fixed by it: the menus stay ahead of the player, see there).
 4. **Player stage.** `Main::OnIdle_UpdatePlayer` (`0086f940`) and the call
    order inside `PlayerCharacter::Update` (`0093e860`, 22.6 KB, the largest
    game function on this path): order only, calling our systems.

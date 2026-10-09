@@ -17,7 +17,14 @@ pub struct CompanionsPlugin;
 
 impl Plugin for CompanionsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Along>().add_systems(Update, come_along);
+        // With the AI work (stage 6, `crate::frame_order`); its own place in
+        // the frame isn't traced.
+        app.init_resource::<Along>().add_systems(
+            Update,
+            come_along.in_set(crate::frame_order::FrameSet::Stage(
+                world::frame::Stage::AiStart,
+            )),
+        );
     }
 }
 

@@ -178,7 +178,22 @@ impl Plugin for TreePlugin {
             MaterialPlugin::<BranchMaterial>::default(),
         ))
         .init_resource::<TreeField>()
-        .add_systems(Update, (stream_trees, sway_trees).chain());
+        // The trees put on screen with the world (stage 4), then swayed: the
+        // wind is part of `BSTreeManager::Update` (step 77,
+        // `crate::frame_order`).
+        .add_systems(
+            Update,
+            (
+                stream_trees.in_set(crate::frame_order::FrameSet::Stage(
+                    world::frame::Stage::WorldAndTime,
+                )),
+                sway_trees.in_set(crate::frame_order::FrameSet::step(
+                    crate::frame_order::TREE_MANAGER_UPDATE,
+                )),
+            )
+                // Kept: the trees on screen before they sway.
+                .chain(),
+        );
     }
 }
 

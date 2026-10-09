@@ -31,15 +31,15 @@ Map provenance:
 | | Functions | Share |
 | --- | ---: | ---: |
 | translated | 7231 | 10.9% |
-| traced | 4475 | 6.8% |
+| traced | 4476 | 6.8% |
 | platform | 3443 | 5.2% |
 | library | 21918 | 33.1% |
-| open | 29192 | 44.1% |
+| open | 29191 | 44.1% |
 | **all** | **66259** | |
 
-Game code (functions in subsystems that are neither platform nor library): **40523** functions, of which 11328 (28.0%) are translated or traced.
+Game code (functions in subsystems that are neither platform nor library): **40523** functions, of which 11329 (28.0%) are translated or traced.
 
-Rust cites 12013 distinct `.text` addresses; 56 of them lie outside every function in the map (mid-instruction data, or code no function covers).
+Rust cites 12016 distinct `.text` addresses; 56 of them lie outside every function in the map (mid-instruction data, or code no function covers).
 
 Names by tier (see the engine-map README for each tier's evidence):
 
@@ -72,7 +72,7 @@ Largest first. `Named` counts functions with an Xbox PDB (or, in the runtime lib
 | compiler: static init/exit | 21335 | 529 | 102 | 1 | 62 | 0 | 21272 | 0 | - |
 | fallout shared | 10470 | 2065 | 3149 | 6060 | 958 | 0 | 0 | 3452 | 67.0% |
 | Havok SDK | 6591 | 1555 | 3499 | 53 | 71 | 0 | 0 | 6467 | 1.9% |
-| fallout/ai | 4849 | 1475 | 1888 | 618 | 784 | 0 | 0 | 3447 | 28.9% |
+| fallout/ai | 4849 | 1475 | 1888 | 618 | 785 | 0 | 0 | 3446 | 28.9% |
 | fallout/interface | 2645 | 991 | 1247 | 96 | 833 | 0 | 0 | 1716 | 35.1% |
 | (unplaced) | 2353 | 470 | 0 | 30 | 345 | 1 | 0 | 1977 | 15.9% |
 | fallout shared/pathfinding | 1788 | 365 | 452 | 38 | 127 | 0 | 0 | 1623 | 9.2% |

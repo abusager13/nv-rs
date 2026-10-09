@@ -127,7 +127,12 @@ impl Plugin for ImpactFxPlugin {
                 Update,
                 (start_impacts, age_impacts)
                     .chain()
-                    .after(crate::hiteffects::play_hits),
+                    // Kept: the hits' effects start the impacts; both in stage 6
+                    // (`crate::frame_order`), which doesn't order them yet.
+                    .after(crate::hiteffects::play_hits)
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    )),
             )
             .add_systems(
                 PostUpdate,

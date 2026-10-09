@@ -59,7 +59,8 @@
 //! decompiler drops two blocks (`0086ebd7`, `0086ec00`) that test a local
 //! the function sets to 0 just before (`0086ebbb`), so they are never taken.
 //!
-//! Not changed here: how the viewer schedules its systems (Phase 1 PR 3).
+//! The viewer orders its per-frame systems by these stages and steps and
+//! runs them under these gates (`viewer/src/frame_order.rs`, Phase 1 PR 3).
 
 // Translated from 0086e650 (decompiled, FalloutNV.exe 1.4.0.525)
 
@@ -577,7 +578,7 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x0048_3710, None, Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x004e_1610, None, Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x0086_ef40, None, Stage::Housekeeping, Gate::MenuFlagClear, Wiring::Open),
-    step(0x0086_f260, Some("Main::OnIdle_UpdateTimer"), Stage::Housekeeping, Gate::Always, Wiring::Partial("physics::havok::Clock (the frame timer and Havok's delta time only)")),
+    step(0x0086_f260, Some("Main::OnIdle_UpdateTimer"), Stage::Housekeeping, Gate::Always, Wiring::Partial("physics::havok::Clock (the frame timer and Havok's delta time only; viewer: clutter::time_havok_frame with physics::havok::FrameTimer)")),
     step(0x0086_f390, Some("Main::OnIdle_PollControls"), Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x00c3_dbf0, Some("IOManager::UpdateQueue"), Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x0086_efa0, None, Stage::Housekeeping, Gate::Always, Wiring::Open),
@@ -691,15 +692,44 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x00aa_7290, None, Stage::AiJoin, Gate::SortFreeBlocks, Wiring::Open),
 ];
 
+/// Whether step `i` (an index into [`STEPS`]) runs in a frame with these
+/// inputs: the frame got past the Tab and Alt test (`0086e69c`), which
+/// only step 1 comes before, and the step's gate holds.
+pub fn step_runs(s: &FrameState, i: usize) -> bool {
+    if s.alt_tab_held {
+        return i == 0;
+    }
+    STEPS[i].gate.holds(s)
+}
+
 /// The steps that run in a frame with these inputs, as indices into
 /// [`STEPS`]: only step 1 when Tab and Alt are held (`0086e69c`).
 pub fn steps_run(s: &FrameState) -> Vec<usize> {
-    if s.alt_tab_held {
-        return vec![0];
+    (0..STEPS.len()).filter(|&i| step_runs(s, i)).collect()
+}
+
+/// The stages in the exe's order: the order in which [`STEPS`] reaches
+/// them (each stage's steps follow each other).
+pub fn stages() -> Vec<Stage> {
+    let mut out: Vec<Stage> = Vec::new();
+    for step in &STEPS {
+        if out.last() != Some(&step.stage) {
+            out.push(step.stage);
+        }
     }
-    (0..STEPS.len())
-        .filter(|&i| STEPS[i].gate.holds(s))
-        .collect()
+    out
+}
+
+/// Whether the frame gets into `stage` at all. No stage has a test of its
+/// own (the stages are for reading); only the Tab and Alt return
+/// (`0086e69c`) skips every stage after the first.
+pub fn stage_reached(s: &FrameState, stage: Stage) -> bool {
+    !s.alt_tab_held || stage == STEPS[0].stage
+}
+
+/// The first step that calls `address` (an index into [`STEPS`]).
+pub fn step_of(address: u32) -> Option<usize> {
+    STEPS.iter().position(|s| s.address == address)
 }
 
 #[cfg(test)]
@@ -750,6 +780,40 @@ mod tests {
     #[test]
     fn stages_follow_each_other() {
         assert!(STEPS.windows(2).all(|w| w[0].stage <= w[1].stage));
+        assert_eq!(
+            stages(),
+            [
+                Stage::FrameStart,
+                Stage::Player,
+                Stage::Housekeeping,
+                Stage::WorldAndTime,
+                Stage::InterfaceAndScene,
+                Stage::AiStart,
+                Stage::Render,
+                Stage::AiJoin,
+            ]
+        );
+    }
+
+    #[test]
+    fn stages_reached_and_steps_found() {
+        let game = FrameState::default();
+        assert!(stages().into_iter().all(|st| stage_reached(&game, st)));
+        let held = FrameState {
+            alt_tab_held: true,
+            ..game
+        };
+        assert_eq!(
+            stages()
+                .into_iter()
+                .filter(|&st| stage_reached(&held, st))
+                .collect::<Vec<_>>(),
+            [Stage::FrameStart]
+        );
+        assert_eq!(step_of(0x0086_f450), Some(index(0x0086_f450, 0)));
+        assert_eq!(step_of(0x0070_2360), Some(2));
+        assert_eq!(step_of(0x1234_5678), None);
+        assert!((0..STEPS.len()).all(|i| step_runs(&game, i) == STEPS[i].gate.holds(&game)));
     }
 
     #[test]

@@ -112,13 +112,19 @@ impl Plugin for BoltsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Bolts>().add_systems(
             Update,
+            // In the AI work (stage 6, `crate::frame_order`), after the
+            // player's attack (stage 2) by the stages' order.
             (
                 fly_bolts
-                    .after(crate::combat::player_attack)
+                    // Kept: people's shots and the hits' effects are in the
+                    // same stage; the frame doesn't order them yet.
                     .after(crate::fighting::resolve_shots)
                     .before(crate::hiteffects::play_hits),
                 hide_culled_bodies,
-            ),
+            )
+                .in_set(crate::frame_order::FrameSet::Stage(
+                    world::frame::Stage::AiStart,
+                )),
         );
     }
 }

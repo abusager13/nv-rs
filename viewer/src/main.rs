@@ -29,6 +29,7 @@ mod exterior;
 mod faces;
 mod fighting;
 mod fos_start;
+mod frame_order;
 mod frame_work;
 mod game_menus;
 mod grade;
@@ -93,12 +94,14 @@ use bevy::render::view::screenshot::{save_to_disk, Screenshot, ScreenshotCapture
 use bevy::window::{CursorGrabMode, WindowResolution};
 use cellview::{space, Blend, Game, GpuFormat, TextureData, ViewerScene};
 use exterior::{ExteriorStart, PendingExterior};
+use frame_order::{FrameSet, ViewerSet};
 use grade::{GradePlugin, ImageSpaceGrade};
 use lighting::{
     DrawKey, GameLight, GameLighting, GameLightingPlugin, GameLit, GameLitMaterial, MAX_LIGHTS,
 };
 use lod::{LodLandMaterial, LodLandParams, LodPlugin};
 use terrain::{Terrain, TerrainMaterial, TerrainPlugin};
+use world::frame::Stage;
 
 /// Starting exposure (EV100); lower is brighter. At this exposure lit
 /// surfaces show exactly the brightness the game's lighting gives them.
@@ -396,7 +399,11 @@ fn main() {
         } else {
             0
         }))
-        .add_systems(Update, background::give_focus_back)
+        .add_plugins(frame_order::FrameOrderPlugin)
+        .add_systems(
+            Update,
+            background::give_focus_back.in_set(ViewerSet::AfterFrame),
+        )
         .add_plugins(frame_work::FrameWorkPlugin)
         .insert_resource(game_menus::StartMenu(args.open_menu.clone()))
         .insert_resource(scripts::StartUse(args.use_on.clone()))
@@ -460,17 +467,6 @@ fn main() {
             player_camera::place_view.before(bevy::transform::TransformSystem::TransformPropagate),
         )
         .add_systems(
-            Update,
-            (
-                player_camera::view_input
-                    .after(lockpick::pick_locks)
-                    .before(look_around),
-                player_body::update_player_body
-                    .after(sitting::player_furniture)
-                    .before(actors::animate_actors),
-            ),
-        )
-        .add_systems(
             Startup,
             (
                 setup,
@@ -480,29 +476,52 @@ fn main() {
                 combat::setup_hud,
             ),
         )
+        // The per-frame systems, in the game's frame order (`frame_order`,
+        // docs/FRAME_SKELETON.md "PR 3 result"): the stages and steps of
+        // `Main::OnIdle` order them; a chain or `.before`/`.after` left here
+        // is an order inside one set that the frame doesn't give, and says
+        // why it stays.
+        //
+        // Ahead of the frame: a newly loaded place on screen, then the land
+        // streamed around the player (`ViewerSet::Loading`).
         .add_systems(
             Update,
             (
                 spawn_scene,
                 exterior::enter_exterior,
                 exterior::stream_squares,
-                (
-                    exterior::stream_distant_land,
-                    lod_objects::stream_distant_objects,
-                )
-                    .chain(),
-                // Menus take the keyboard before anything else sees it.
-                // V.A.T.S. takes them next while it's on, and the
-                // lockpicking menu (keyboard and mouse) while it's open.
-                (
-                    menus::run_menus,
-                    vats::run_vats,
-                    vats::scale_target_time,
-                    lockpick::pick_locks,
-                    scope::scope_sway,
-                    look_around,
-                )
-                    .chain(),
+                exterior::stream_distant_land,
+                lod_objects::stream_distant_objects,
+            )
+                // Kept: each loader works on what the one before put in
+                // place (the scene, the exterior, its squares).
+                .chain()
+                .in_set(ViewerSet::Loading),
+        )
+        // Then the interface (`ViewerSet::Interface`, which says why it is
+        // ahead of the stages). Menus take the keyboard before anything
+        // else sees it. V.A.T.S. takes them next while it's on, and the
+        // lockpicking menu (keyboard and mouse) while it's open.
+        .add_systems(
+            Update,
+            (
+                menus::run_menus,
+                vats::run_vats,
+                vats::scale_target_time,
+                lockpick::pick_locks,
+            )
+                // Kept: which of them takes the input first.
+                .chain()
+                .in_set(ViewerSet::Interface),
+        )
+        // Stage 2, the player (`Main::OnIdle_UpdatePlayer`, `0086f940`): the
+        // view, walking, furniture, the player's idles, attacks and the
+        // first-person model; the crosshair's pick and E on people.
+        .add_systems(
+            Update,
+            (
+                scope::scope_sway,
+                look_around,
                 fly_camera,
                 (
                     viewmodel::give_start_weapon,
@@ -524,6 +543,51 @@ fn main() {
                     .chain(),
                 // What the crosshair is on, for everything E and the HUD do.
                 (crosshair::pick, dialogue::talk, chatter::say_lines).chain(),
+            )
+                // Kept: the order inside `PlayerCharacter::Update`
+                // (`0093e860`) is Phase 1 PR 4; until then the viewer's (the
+                // scope's sway before the mouse look writes the turn, the
+                // view placed before what aims from it). Objects' shots, the
+                // spine's facing, texture swaps, dropped weapons and people's
+                // lines aren't the player's; their place in the frame isn't
+                // traced and they keep theirs in this chain.
+                .chain()
+                .in_set(FrameSet::Stage(Stage::Player)),
+        )
+        .add_systems(
+            Update,
+            (
+                // Kept: the view key and the third-person view's input
+                // before the mouse look uses the view.
+                player_camera::view_input.before(look_around),
+                // Kept: the body follows the seat the player took.
+                player_body::update_player_body.after(sitting::player_furniture),
+            )
+                .in_set(FrameSet::Stage(Stage::Player)),
+        )
+        // Stage 3, housekeeping: the cell's grade (G, for comparing), the
+        // menus' background (step 44, `Main::OnIdle_HandleMenuBackground`,
+        // which is `world::menu_background`) and the screen effects
+        // played.
+        .add_systems(
+            Update,
+            (
+                toggle_grade.in_set(FrameSet::Stage(Stage::Housekeeping)),
+                menu_background::update.in_set(FrameSet::step(frame_order::HANDLE_MENU_BACKGROUND)),
+                effects::play_effects.in_set(FrameSet::Stage(Stage::Housekeeping)),
+            )
+                // Kept: the background's effect is played with the others;
+                // the grade switch before both, as before. (The step's set is
+                // inside its stage already.)
+                .chain(),
+        )
+        // Stage 4, the world and time: the scripts (`Runner::update` holds
+        // parts of `Calendar::Update`, step 56, and of the current grid
+        // cell's update, step 78; `ProcessLists::RunActorScripts` is step
+        // 60), then the doors, movies and sky.
+        .add_systems(
+            Update,
+            (
                 // The scripts, then E on doors, then the doors' swings.
                 (
                     scripts::start_use,
@@ -532,20 +596,7 @@ fn main() {
                     doors::update_doors,
                 )
                     .chain(),
-                (movie::start_movies, movie::play_movies)
-                    .chain()
-                    .after(scripts::run_scripts),
-                walk::toggle_walking,
-                adjust_exposure,
-                // The cell's grade, then the menus' background and the
-                // screen effects scripts applied, once the menus up this
-                // frame are known (`MenuDraw`).
-                (toggle_grade, menu_background::update, effects::play_effects)
-                    .chain()
-                    .after(game_menus::draw_menus),
-                take_screenshot,
-                update_help,
-                grab_cursor,
+                (movie::start_movies, movie::play_movies).chain(),
                 (
                     weather::run_weather,
                     follow_sky,
@@ -554,6 +605,22 @@ fn main() {
                     emittance::follow_emittance,
                 )
                     .chain(),
+            )
+                // Kept: the viewer's order. The frame puts the sky's update
+                // (step 53) before `Calendar::Update` (step 56), but neither
+                // is wired to these systems yet; movies start from the
+                // scripts' `PlayBink`, whose place isn't traced.
+                .chain()
+                .in_set(FrameSet::Stage(Stage::WorldAndTime)),
+        )
+        // Stage 6, the AI work (on the AI linear task threads with threads
+        // > 1, as `main` leaves the PC: FRAME_SKELETON.md "The actor
+        // updates"): people moved, shot and posed. Map markers, the HUD's
+        // quest targets and saving keep their place here; theirs in the
+        // frame isn't traced.
+        .add_systems(
+            Update,
+            (
                 (
                     map::find_markers,
                     hud::follow_quest_targets,
@@ -565,20 +632,20 @@ fn main() {
                     fighting::resolve_shots.after(ai::move_actors),
                     ai::ground_log.after(ai::move_actors),
                     scripts::save_and_load,
-                    report::report_key,
-                    sounds::play_sounds,
                 ),
                 (
                     look::set_up,
-                    sitting::idle_requests.after(chatter::say_lines),
+                    sitting::idle_requests,
                     look::follow_player,
                     actors::script_idles,
                     actors::animate_actors,
                 )
                     .chain(),
-                report_fps,
             )
-                .chain(),
+                // Kept: people are posed where they moved to (the AI
+                // thread's own order, `008c7bd0`, is Phase 1 PR 6).
+                .chain()
+                .in_set(FrameSet::Stage(Stage::AiStart)),
         )
         // People redrawn where what they wear or hold changed, once posed
         // (their new face pieces then get their faces).
@@ -586,8 +653,10 @@ fn main() {
         .add_systems(
             Update,
             dress::redress
+                // Kept: after the pose, before the faces (as above).
                 .after(actors::animate_actors)
-                .before(faces::start_lines),
+                .before(faces::start_lines)
+                .in_set(FrameSet::Stage(Stage::AiStart)),
         )
         // Faces: lines' lip sync and blinking, once lines have started and
         // the bones have moved.
@@ -602,16 +671,32 @@ fn main() {
                 dialogue::focus_camera,
             )
                 .chain()
-                .after(actors::animate_actors),
+                // Kept: the faces move with the posed heads.
+                .after(actors::animate_actors)
+                .in_set(FrameSet::Stage(Stage::AiStart)),
         )
-        // Models' own animations (a ceiling fan's blades), and billboards
-        // turned to the camera once it has moved.
+        // Models' own animations (a ceiling fan's blades): the cells'
+        // animations (`TES::UpdateCellAnimations`, `00453550`, on the AI
+        // thread).
+        .add_systems(Update, move_pieces.in_set(FrameSet::Stage(Stage::AiStart)))
+        // After the frame (`ViewerSet::AfterFrame`): the viewer's tools and
+        // output. Billboards turn to the camera once it has moved; the
+        // console key's switch between walking and flying takes effect the
+        // next frame.
         .add_systems(
             Update,
             (
-                move_pieces.after(spawn_scene),
-                face_camera.after(fly_camera).after(walk::walk),
-            ),
+                walk::toggle_walking,
+                adjust_exposure,
+                take_screenshot,
+                update_help,
+                grab_cursor,
+                report::report_key,
+                sounds::play_sounds,
+                face_camera,
+                report_fps,
+            )
+                .in_set(ViewerSet::AfterFrame),
         )
         .run();
 }

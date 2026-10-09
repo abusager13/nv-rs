@@ -161,7 +161,15 @@ impl Plugin for HudPlugin {
         .init_resource::<HudMessages>()
         .init_resource::<GameHud>()
         .add_systems(Startup, setup_hud_layer)
-        .add_systems(Update, update_hud.after(crate::scripts::run_scripts));
+        // The HUD's update is the interface idle's, which with threads > 1
+        // runs on the AI thread in stage 6 (`crate::frame_order`), after the
+        // scripts (stage 4) by the stages' order.
+        .add_systems(
+            Update,
+            update_hud.in_set(crate::frame_order::FrameSet::Stage(
+                world::frame::Stage::AiStart,
+            )),
+        );
     }
 }
 

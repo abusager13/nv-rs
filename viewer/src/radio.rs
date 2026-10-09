@@ -27,7 +27,12 @@ pub struct RadioPlugin;
 impl Plugin for RadioPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RadioOut>()
-            .add_systems(Update, run_radio.after(crate::scripts::run_scripts));
+            // After the frame's stages, so after the scripts
+            // (`crate::frame_order::ViewerSet::AfterFrame`).
+            .add_systems(
+                Update,
+                run_radio.in_set(crate::frame_order::ViewerSet::AfterFrame),
+            );
     }
 }
 

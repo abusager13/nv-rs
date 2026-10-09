@@ -914,6 +914,34 @@ The maintainer set a one-week fast track (about 1.9 billion tokens).
   `docs/FRAME_SKELETON.md`, `docs/LEDGER.md` (generated).
 - Next action: PR 3 (order the viewer's systems by `FrameStep` sets).
 
+### Phase 1 PR 3: the viewer's order from the frame (`claude/phase1-bevy-order`, 2026-10-09)
+
+- Evidence: `viewer/src/frame_order.rs`: `world::frame`'s 8 stages and 143
+  steps as Bevy system sets in `Update`, in the exe's order, each run under
+  its gate from `world::frame` (`stage_reached`, `step_runs`, new) on one
+  `FrameState` filled once per frame (`begin_frame`). 121 `Update` systems
+  placed: Loading 5 and Interface 20 ahead of the stages (the menus take
+  Bevy's input before the player; explained there), stage 1: 1, stage 2:
+  20, stage 3: 4 (steps 32 and 44), stage 4: 13 (step 77), stage 6: 39,
+  AfterFrame 19. Removed the one chain over `main`'s groups and 21
+  `.before`/`.after`s; the rest stay, each with its reason. The four
+  inputs without a source (fader 1, the frozen world, the interface mode,
+  the thread count) fixed at the PC case (thread count: the processor
+  count, at least 2). FRAME_SKELETON.md "PR 3 result".
+- Tests: set order equals `world::frame::stages()`, step sets in call order;
+  menu mode stops a gated step set (`Calendar::Update`) but not its stage;
+  Tab+Alt stops stages 2-8. Acceptance: doc, vcg02, vms16 pass (on `main`
+  before the change vcg02 missed "XP +50" in one run; doc and vms16 passed).
+- Behaviour: the menu background and screen effects now run before the
+  scripts (a script's effect plays a frame later); previously unordered
+  systems have fixed places; no system is gated differently yet.
+- Files: `viewer/src/frame_order.rs` (new), `viewer/src/main.rs`,
+  `viewer/src/vats.rs` and 21 plugin files, `crates/world/src/frame.rs`,
+  `docs/FRAME_SKELETON.md`, `docs/LEDGER.md` (generated).
+- Next action: PR 4 (the player stage: `PlayerCharacter::Update`'s order,
+  with menu mode tested by the player so the interface can move into its
+  stage).
+
 ## Deferred
 
 Cosmetic material/lighting discrepancies, isolated facial polish, sun glare,

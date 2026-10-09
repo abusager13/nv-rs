@@ -129,18 +129,30 @@ impl Plugin for PipboyPlugin {
             .add_systems(Startup, setup_pipboy)
             .add_systems(
                 Update,
+                // Kept, inside the interface set (`crate::frame_order`):
+                // after the game's own menus, so one open over the Pip-Boy
+                // (a question, "how many?") has the input first.
+                pipboy_keys
+                    .after(crate::game_menus::run_open_menus)
+                    .before(crate::menus::run_menus)
+                    .in_set(crate::frame_order::ViewerSet::Interface),
+            )
+            // The Pip-Boy's screen is the interface idle's, which with
+            // threads > 1 runs on the AI thread in stage 6
+            // (`crate::frame_order`): after the scripts (stage 4) and the
+            // first-person model (stage 2) by the stages' order.
+            .add_systems(
+                Update,
                 (
-                    // After the game's own menus: one open over the Pip-Boy
-                    // (a question, "how many?") has the input first.
-                    pipboy_keys
-                        .after(crate::game_menus::run_open_menus)
-                        .before(crate::menus::run_menus),
+                    // Kept: the light follows the screen's state.
                     pipboy_light.after(update_pipboy),
-                    update_pipboy
-                        .after(crate::scripts::run_scripts)
-                        .after(crate::viewmodel::update_view_model)
-                        .before(crate::actors::animate_actors),
-                ),
+                    // Kept: the interface idle comes first on the AI thread
+                    // (`008c7bd0`), before the people are posed.
+                    update_pipboy.before(crate::actors::animate_actors),
+                )
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    )),
             );
     }
 }

@@ -284,15 +284,24 @@ impl Plugin for GameMenusPlugin {
                     draw_menus,
                 )
                     .chain()
-                    .before(crate::menus::run_menus),
+                    // Kept: the game's menus have the input before the
+                    // viewer's own (both in the interface set,
+                    // `crate::frame_order`).
+                    .before(crate::menus::run_menus)
+                    .in_set(crate::frame_order::ViewerSet::Interface),
             )
-            .add_systems(Update, vigor::draw.after(run_open_menus))
+            // Kept, inside the interface set: each after the menus it draws
+            // or voices have run this frame.
             .add_systems(
                 Update,
-                compose_hud_over_scene.after(crate::menus::run_menus),
-            )
-            .add_systems(Update, hacking::play_sounds.after(run_open_menus))
-            .add_systems(Update, companion_wheel::play_voices.after(run_open_menus));
+                (
+                    vigor::draw.after(run_open_menus),
+                    compose_hud_over_scene.after(crate::menus::run_menus),
+                    hacking::play_sounds.after(run_open_menus),
+                    companion_wheel::play_voices.after(run_open_menus),
+                )
+                    .in_set(crate::frame_order::ViewerSet::Interface),
+            );
     }
 }
 
