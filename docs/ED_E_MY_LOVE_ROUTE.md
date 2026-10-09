@@ -117,14 +117,22 @@ an exact class (`crates/testdata/src/lib.rs`, `crates/world/tests/scripting.rs`)
 the condition tests cover Pip-Boy and non-Pip-Boy classes
 (`crates/world/tests/more_functions.rs`).
 
+### The map-marker travel value
+
+`GetMapMarkerVisible` returns 0 for a hidden marker, 1 for a visible marker,
+and 2 when the visible marker can also be fast-travelled to. FalloutNV.exe
+1.4.0.525's script-function handler at `005daac0` calls `005a51e0`, which
+returns that three-state value. `ShowMap` at `005c8620` sets visibility via
+`0044de40`; a nonzero second argument also sets the travel bit via
+`0044de80`. The viewer now tracks both states, saves them, and returns 2 only
+when the marker is visible and travelable. Tests cover `ShowMap` with and
+without its second argument, save/load, and travel eligibility.
+
 ## Blockers left (not fixed here)
 
 1. **The natural second keyword.** No non-console trigger for log two has been
    played; every run forced the second `SetStage vDialogueEDE 10`.
-2. **The map-marker travel semantics.** `GetMapMarkerVisible` should answer 0
-   hidden, 1 visible, 2 also travel-able (`005daac0` → `005a51e0`); the radio
-   branch's `== 2` test depends on it.
-3. **Stage 10's entry gate.** The `iCounter == 5` condition and the
+2. **Stage 10's entry gate.** The `iCounter == 5` condition and the
    `GetScriptVariable(001732D1, 0x10)` condition (its form and script
    unresolved) were not measured at dispatch; which entry runs is not explained
    by the record alone.
