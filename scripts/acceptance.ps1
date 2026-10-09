@@ -14,10 +14,13 @@ and docs/PATHING.md):
          player's following are console lines).
   vms16  Ghost Town Gunfight with Trudy's help: the gangers come in and
          die, stage 100.
-  ede    ED-E My Love's completion segment: ED-E's own completion package
-         runs, completing the quest and giving 100 XP (the quest start,
-         the upgrade state and ED-E's place are console lines;
-         docs/ED_E_MY_LOVE_ROUTE.md).
+  ede    ED-E My Love's logs, radio, holotape, Followers upgrade and return:
+         ED-E's greeting and both log INFOs run through their packages; the
+         game-day advance and finished-package cleanup are forced before the
+         radio INFO; the holotape item and travel to Hidden Valley are forced,
+         but their item and marker-discovery scripts run; the Followers
+         handover, three-day wait, Pip-Boy return step and completion package run
+         (docs/ED_E_MY_LOVE_ROUTE.md).
 A route passes when every one of its success lines appears in the
 viewer's output and no panic does.
 Every route runs with the viewer's --answer-boxes test aid, which answers
@@ -117,18 +120,44 @@ $routeArgs = @{
         Success = @('XP +50')
     }
     ede   = @{
-        # ED-E My Love's completion segment (issue #13): the state the
-        # quest's own scripts would have reached (the quest started, ED-E
-        # upgraded and returned to the Nash Residence) is set with console
-        # lines, then ED-E's own package runs (EDEQuestCompleteDialogue is
-        # first in EDE2Ref's list; no AddScriptPackage, no forced
-        # conversation): its End action completes the quest and the quest
-        # script's reward branch gives 100 XP (docs/ED_E_MY_LOVE_ROUTE.md).
-        Args    = @('PrimmNashResidence') +
-            (Run-Line @('StartQuest vDialogueEDE', 'set vDialogueEDE.iEDEOut to 4',
-                'EDE2Ref.Enable', 'EDE2Ref.MoveTo EDEHomeMarker')) +
-            @('--say', 'Log Off', '--wait', '60')
-        Success = @('EDEQuestCompleteDialogue End action', 'Quest completed: ED-E My Love', 'XP +100')
+        # ED-E My Love (issue #13): the two stage-10 dispatches and day advance
+        # are explicit test lines, but each log INFO and the radio INFO run
+        # through the actor's dialogue packages. RemoveScriptPackage is a
+        # forced viewer handoff after log two. AddItem runs the holotape's
+        # OnAdd script; MoveTo the marker exercises proximity discovery.
+        # April's handover INFO, the quest's 3-day timer and MenuMode return
+        # run through their scripts; item spawn, travel and dialogue starts are
+        # test inputs. Package cleanup after log two remains forced.
+        Args    = @('WastelandNV', '--at', '-67845,3000,8400,180') +
+            (Run-Line @('StartQuest vDialogueEDE', 'set vDialogueEDE.iLogsPlayed to 0',
+                'set vDialogueEDE.iEDEDaysPassed to 5',
+                'set VNPCFollowers.bEDEHired to 1', 'SetObjectiveDisplayed vDialogueEDE 10 1',
+                'EDE1Ref.Enable', 'EDE1Ref.MoveTo player')) +
+            (Run-At 1 'SetStage vDialogueEDE 10') +
+            (Run-At 20 'set vDialogueEDE.iEDEDaysPassed to 5') +
+            (Run-At 21 'SetStage vDialogueEDE 10') +
+            (Run-At 45 'set GameDaysPassed to 10') +
+            (Run-At 46 'EDE1Ref.RemoveScriptPackage EDEDialoguePackage') +
+            (Run-At 60 'player.AddItem HVMissionDisc01 1') +
+            (Run-At 75 'player.MoveTo HiddenValleyMarkerREF') +
+            (Run-At 77 'player.MoveTo EDEHomeMarker') +
+            (Run-At 100 'player.MoveTo VFSEDEScientistRef') +
+            # Moving to April's cell can be deferred until the radio dialogue
+            # closes. Give the cell a few seconds to load before starting her
+            # handover conversation; later lines leave room for both talks.
+            (Run-At 116 'VFSEDEScientistRef.StartConversation player') +
+            # Let the quest's delayed upgrade tick record the day ED-E was
+            # taken before advancing three days for the return branch.
+            (Run-At 145 'set GameDaysPassed to 13') +
+            (Run-At 185 'player.MoveTo EDEHomeMarker') +
+            (Run-At 200 'EDE2Ref.StartConversation player') +
+            @('--say-id', '001579CE', '--say', 'End', '--say', 'End',
+                '--say', 'Ok, you can take it for a little while', '--say', 'Log Off',
+                '--key-at', '160', 'tab', '--key-at', '164', 'tab', '--wait', '240')
+        Success = @('00157F17', '00158829', '0015FF67', '0015FF65', '00160411',
+            'Speak to Knight Lorenzo in Hidden Valley about ED-E.',
+            'ED-E has returned to Primm.',
+            'EDEQuestCompleteDialogue End action', 'Quest completed: ED-E My Love', 'XP +100')
     }
 }
 
