@@ -16,6 +16,10 @@ docs/PATHING.md and docs/VANCE_GUN_ROUTE.md):
          die, stage 100.
   vance  Vance's Gun: investigate the missing museum gun and get the Wins'
          safe unlocked through the quest's own activation/dialogue scripts.
+  ede    ED-E My Love's completion segment: ED-E's own completion package
+         runs, completing the quest and giving 100 XP (the quest start,
+         the upgrade state and ED-E's place are console lines;
+         docs/ED_E_MY_LOVE_ROUTE.md).
 A route passes when every one of its success lines appears in the
 viewer's output and no panic does.
 Every route runs with the viewer's --answer-boxes test aid, which answers
@@ -42,8 +46,8 @@ powershell -File scripts\acceptance.ps1 -Background
 param(
     # The game's Data folder (or set NV_DATA).
     [string]$Data = $env:NV_DATA,
-    # Which routes to run, comma-separated (doc, vcg02, vms16, vance).
-    [string]$Routes = 'doc,vcg02,vms16',
+    # Which routes to run, comma-separated (doc, vcg02, vms16, vance, ede).
+    [string]$Routes = 'doc,vcg02,vms16,ede',
     # Where logs and screenshots go (default: %USERPROFILE%\nv-re\acceptance\<time>).
     [string]$Out,
     # Build the release viewer first.
@@ -147,11 +151,25 @@ $routeArgs = @{
             "The gun's in the safe. The combination's 05-23-34.",
             'result script: SammySafeREF.setownership / SammySafeREF.unlock / set nVPrimmVanceGun.VanceGunCase to 3 / set nVPrimmVanceGun.SammyPauline to 2')
     }
+    ede   = @{
+        # ED-E My Love's completion segment (issue #13): the state the
+        # quest's own scripts would have reached (the quest started, ED-E
+        # upgraded and returned to the Nash Residence) is set with console
+        # lines, then ED-E's own package runs (EDEQuestCompleteDialogue is
+        # first in EDE2Ref's list; no AddScriptPackage, no forced
+        # conversation): its End action completes the quest and the quest
+        # script's reward branch gives 100 XP (docs/ED_E_MY_LOVE_ROUTE.md).
+        Args    = @('PrimmNashResidence') +
+            (Run-Line @('StartQuest vDialogueEDE', 'set vDialogueEDE.iEDEOut to 4',
+                'EDE2Ref.Enable', 'EDE2Ref.MoveTo EDEHomeMarker')) +
+            @('--say', 'Log Off', '--wait', '60')
+        Success = @('EDEQuestCompleteDialogue End action', 'Quest completed: ED-E My Love', 'XP +100')
+    }
 }
 
 $chosen = @($Routes.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 foreach ($r in $chosen) {
-    if (-not $routeArgs.ContainsKey($r)) { throw "Unknown route '$r' (doc, vcg02, vms16, vance)." }
+    if (-not $routeArgs.ContainsKey($r)) { throw "Unknown route '$r' (doc, vcg02, vms16, vance, ede)." }
 }
 
 $results = @()
