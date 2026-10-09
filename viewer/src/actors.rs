@@ -630,6 +630,7 @@ pub fn animate_actors(
     menus: Option<Res<crate::menus::Menus>>,
     drawn: Option<Res<crate::game_menus::MenuDraw>>,
     collision: Option<Res<crate::walk::CellCollision>>,
+    havok: Option<Res<crate::clutter::HavokFrame>>,
     look: Option<Res<crate::look::LookSettings>>,
     game: Option<Res<crate::GameFiles>>,
     state: Option<Res<crate::dialogue::DialogueState>>,
@@ -668,8 +669,11 @@ pub fn animate_actors(
             if dead.sim.asleep {
                 continue;
             }
-            if let Some(c) = &collision {
-                dead.sim.update(&c.0, time.delta_secs());
+            // By the game frame's time (`clutter::HavokFrame`), as the
+            // bodies' world.
+            let havok_dt = havok.as_ref().map_or(0.0, |h| h.dt);
+            if let (Some(c), true) = (&collision, havok_dt > 0.0) {
+                dead.sim.update(&c.0, havok_dt);
             }
             if dead.sim.asleep {
                 // The game takes settled bodies out of the world here
@@ -1184,6 +1188,61 @@ mod tests {
         drive(&mut rig, &mut lib, 0.2);
         assert!(rig.player.sequence(section::SPECIAL_IDLE).is_none());
         assert!((rig.pose_now(0.0)[1].translation[2] - 10.0).abs() < 1e-3);
+    }
+
+    /// A seated tree idle holds getting up only while it's starting
+    /// (`00498f80`): Doc Mitchell's 16 s `SitChairRelaxA.kf` held his
+    /// help-up in the opening until it had played out (B14).
+    #[test]
+    fn a_tree_idle_counts_as_starting_only_until_it_has_blended_in() {
+        let mut rig = ActorRig::new(skeleton(10.0, 20.0), 1.0, 0.0);
+        let mut lib = TestLib::new(&rig.skeleton, Vec::new());
+        let relax = Arc::new(Sequence {
+            name: "SitChairRelaxA".into(),
+            start: 0.0,
+            stop: 16.1,
+            looping: false,
+            accum_root: None,
+            materials: Vec::new(),
+            text_keys: vec![(0.0, "start".into()), (16.1, "end".into())],
+            tracks: vec![Track {
+                node: "Arm".into(),
+                priority: 95,
+                motion: Motion::Keys {
+                    translation: vec![(0.0, [0.0, 0.0, 40.0])],
+                    rotation: Vec::new(),
+                    scale: Vec::new(),
+                    default: (None, None, None),
+                    euler: None,
+                },
+            }],
+        });
+        let mut life = crate::sitting::Life::default();
+        let starting = |life: &crate::sitting::Life, rig: &ActorRig| {
+            crate::sitting::special_idle_starting(life, rig, Some(&relax))
+        };
+        // No idle: nothing holds getting up.
+        assert!(!starting(&life, &rig));
+        // Taken by the clock, not yet played by the rig: starting.
+        life.idles.playing = Some(world::idles::PlayingIdle {
+            idle: esm::FormId(7),
+            model: "SitChairRelaxA.kf".into(),
+            length: 16.1,
+            elapsed: 0.0,
+            loops_left: 0,
+        });
+        assert!(starting(&life, &rig));
+        // Playing, blending in from the pose: starting.
+        rig.overlay = Some((relax.clone(), 0.0));
+        drive(&mut rig, &mut lib, 0.0);
+        assert!(starting(&life, &rig));
+        // In at full weight with 15 s still to play: not starting.
+        for frame in 1..=30 {
+            rig.overlay = Some((relax.clone(), frame as f32 / 60.0));
+            drive(&mut rig, &mut lib, 1.0 / 60.0);
+        }
+        assert!(!starting(&life, &rig));
+        assert!(life.idles.playing.is_some());
     }
 
     #[test]

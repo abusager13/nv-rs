@@ -98,7 +98,7 @@ settings, (2) the step driver, (3) the single-body integrator,
 (4) sleeping, (5) simulation islands, (6) the contact manager with
 per-point events, (7) the contact solver (maybe two PRs), (8) ragdoll
 constraints, (9) continuous collision, (10) the character proxy (its
-own task). 1–4 should already stop the jitter and the jiggling. Progress: PRs 1–7 merged (#39, #43: constants, step driver, integrator, sleeping, islands, contact manager with per-point events, contact solver; docs/PHYSICS.md). PR 10 (the character proxy: Bethesda's controller, its states and Havok's proxy and simplex solver for every walker; docs/PHYSICS.md, "The character proxy"); left there: pushing bodies (`applySurfaceInteractions`), Havok's collision agents (stand-ins), swimming/flying/climbing. Not started: PR 8 (ragdoll constraints), PR 9 (continuous collision).
+own task). 1–4 should already stop the jitter and the jiggling. Progress: PRs 1–10 merged (#39, #43, #45, build 30; docs/PHYSICS.md). PR 7: constants, step driver, integrator, sleeping, islands, contact manager, contact solver. PR 8 (ragdoll constraints on the game's solver, "Ragdoll constraints"; left: motors, runtime data's constructor, malleable strength, creatures' ragdolls re-checked). PR 9 (continuous collision: the quality table, simplified time of impact for debris against the world, `physics::continuous`; the tumbleweed that "fell through the land" rolled off the end of the loaded terrain; left: full TOI for moving/critical bodies, the agents' event times). PR 10 (the character proxy, "The character proxy"): pushing bodies (`applySurfaceInteractions`) and `fSpeedPct`'s divisor (the player's run speed) translated, the proxy's linear cast is Havok's GSK cast (`00daf8e0`); left: the GJK and penetration depth under it, moving platforms, a pushed body overlapping the player's hull, swimming/flying/climbing. Build 28 playtest (`claude/physics-clock`, "Frozen bodies and far-off clatter"): bodies froze in the air above ~156 frames a second (the clock now gets the game frame timer's frames, `00aa4ee0`); contact sounds were flat and from anywhere (now at the point, within the sound's reach, `00837550`).
 
 **B2. Grab (Z) 1:1.** Carried objects flail, spasm and pass through
 things. Trace the game's grab spring (`0095f930`, `00960520`, the
@@ -197,9 +197,16 @@ wrong because it took `0088d2f0` for player-only. People sitting down or
 seated no longer block others (`00920d00` sets flag 0x08000000, which
 `00c711d0` honours). Verified live: Doc is seated from the first frame and
 gets up with his special exit at the help-up; Easy Pete is seated on his
-porch. Left: the pass over actors already loaded at a later load, the
+porch. Seated people now get the timed package checks (#60). Help-up timing fixed from the maintainer's recordings: everyone's packages are looked at when the face menu closes (engine path not traced, labelled), Doc up with "Well, I got most of it right"; SayTo lines play their speaker idles; the opening is in daylight (VCG00's 23:00 is a leftover; maintainer's decision). OPENING.md. Left: the pass over actors already loaded at a later load, the
 eat/sleep/patrol branches, the help-up timing against the original, and
 the menu camera (not reproduced).
+`claude/b14-helpup` (play build 28 report): fixed that Doc's exit waited
+for his seated idle to finish (`SitChairRelaxA`, 16 s); the game's stand
+update `00921e80` waits only while an idle is starting (`00498f80`), so he
+now gets up at `00104BFA`'s `evp` (64.4 s, was 68.2 s). Still about 7 s
+after the player's own stand-up begins (end of `00104BF9`); what in the
+game, if anything, gets him up earlier isn't established. docs/OPENING.md,
+"Help-up timing". `claude/opening-trace`: the whole opening traced step by step (docs/OPENING.md, "The whole opening, step by step"); **fixed** that variables a nested stage script set were overwritten when the quest script ended its block, which cut the 3 s blackout and the 2.8 s before Doc's first line to 0.2 s. Left: the tag/trait menus and farewell not driven, the face menu (B15).
 
 **B15. Character creator (race menu).** The face editor/race menu is
 not implemented (it auto-accepts). docs/FACE_CREATION.md and
@@ -272,6 +279,20 @@ NPCs sometimes walk waist-deep in the ground. B4's land rule only lifts
 feet more than 30 units under the land and its far-from-camera rule puts
 people at navmesh height (up to ~21 under the land); this is deeper, so
 something else is involved. Reproduce with `NV_GROUND_LOG=1`. Progress (`claude/b1-character-proxy`, B1 PR 10): with the game's own controller nobody near the camera stood more than 10 under the land in the gunfight, Back in the Saddle or the road runs (PHYSICS.md, "The character proxy"); not seen again, so likely the old controller's push-out. Close after a playtest.
+Seen again in build 28; re-checked on main 56a3d10 (`claude/b25-sink`, 2026-10-08; logs in
+`%USERPROFILE%\nv-re\work\b25`): the vms16 gunfight route, 200 s, `NV_GROUND_LOG=1`, plus a
+per-frame trace of ganger 00104C70. Nobody with a controller was more than 10.7 under the
+land. The deepest rows are all explained: far from the camera (> 2449.5) people stand at the
+navmesh's height (−10 to −24 here, e.g. 00104C68 −23.6; `00697980` interpolates the triangle's
+plane as `world::ground::navmesh_height` does); a ganger handed from that rule to his
+controller at 2465 units came in 1.93 Havok units (13.5) inside the land triangle under him
+(the start collector found it: `Triangle(275418)`, distance −1.93) and rose at the proxy's
+penetration recovery (1 Havok unit a second per unit crossed). Frame rate: the same depths at
+~200 fps (dt ≈ 0.005) and ~70 fps (dt ≈ 0.013), so the viewer's small dt isn't the cause seen
+here. Nothing waist-deep (> 30, which the land rule would lift) was reproduced: not fixed.
+Next: a report (F12) with the actor's form ID and place, or compare a far-rule ganger's
+height in the original game (if the game shows them on the land at 25–50 m, the navmesh
+height or the 2449.5 distance is wrong).
 
 **B26. Ringo greets you as a stranger after the gunfight.** When he comes
 over after the Powder Gangers are dead he uses his first-meeting lines.
@@ -377,3 +398,5 @@ which are all in `main` now. Work found that isn't in `main`:
   procedural audio synthesizer for tests). These aren't traced from the
   game, so they can't be merged as they are; anything traced from them is
   welcome as its own pull request.
+
+**B34. Pip-Boy equip sounds, the arm blinking, silent containers** (playtest 33/34). Done on `claude/pipboy-equip`: ITEMS equip / take off play the item's sound (`008aded0` / `008adcf0`), a read book `UIItemGenericUp`; the Pip-Boy arm rebuilt on equipping keeps the old one until the new one is ready (it blinked out); containers without `SNAM` / `QNAM` (lockers, ammunition boxes, footlockers) play their model's `Open` / `Close` sequence sound keys. Details in docs/PIPBOY.md ("Equip sounds, the arm's swap, container sounds"). Not done: the container's lid / door animation; the arm's swap not seen frame by frame; the "bug out" the maintainer saw couldn't be pinned down beyond the arm blink (lists, highlight and scrolling behaved with long lists).

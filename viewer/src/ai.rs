@@ -827,9 +827,14 @@ pub fn move_actors(
     };
     // How many chose whom to look at this frame (`011df674`).
     let mut head_track_choices = 0;
+    // Everyone's packages looked at once (`GameState::evaluate_everyone`).
+    let everyone = std::mem::take(&mut state.evaluate_everyone);
     for (mut walker, mut life, mut rig, mut transform, mut visibility) in &mut actors {
         let walker = &mut *walker;
         let me = walker.reference;
+        if everyone {
+            state.evaluate.insert(me);
+        }
         // The turn in place under way (as the last frame left it) plays the
         // turn animation, while the turn state lasts (at least
         // `fActorTurnAnimMinTime`).
@@ -1232,8 +1237,8 @@ pub fn move_actors(
             talking,
         };
         // The game's package check runs while sit state is 0, 4 or 9
-        // (`008da670`). A forced EVP must therefore be honored while a
-        // settled actor is still in furniture; otherwise this early-return
+        // (`008da670`): forced, on the 20 s timer or a new hour, also while
+        // a settled actor is still in furniture; otherwise this early-return
         // path prevents the package change from requesting the stand-up.
         let package_checked_before_furniture = rethink_queued_package_before_furniture(
             &mut ctx, walker, &mut life, game_hour, &mut ask,
@@ -1450,6 +1455,8 @@ pub fn move_actors(
         } else {
             world::animation::walk_speed(order, ctx.state, me)
         } * walker.scale;
+        // The turn as this update began (for the mover's own step below).
+        let turn_before = (walker.turn, walker.heading);
         let was_on_path = walker.on_path();
         // Others in the way: wait, or a way round (`009e5ae0`).
         let mut blocked = false;
@@ -1570,6 +1577,22 @@ pub fn move_actors(
         look_frame(&mut ctx, walker, rig.fighting, moves);
         // Idles (`sitting`): once a second of free time, the idle tree.
         crate::sitting::idles_frame(&mut ctx, walker, &mut life, &mut rig);
+        // A turn in place nothing above carried on this update (a walk held
+        // up by someone in the way, a door, a path being made; a path over
+        // before its first turn): the mover turns them all the same each
+        // update, whatever the walk is doing (`ActorMover::UpdateMovement`,
+        // Xbox PDB, `009c9900` → `009e7d70`). Left alone the turn stayed on,
+        // its animation playing in place.
+        if walker.turn.active
+            && (walker.turn, walker.heading) == turn_before
+            && !ctx.state.furniture.contains_key(&me)
+            && !ctx.state.sitters.contains_key(&me)
+        {
+            let side = walker.turn.update(&mut walker.heading, dt, walker.rates[0]);
+            if side.is_some() {
+                walker.turning = side;
+            }
+        }
         // Turned in place or walked: the controller moves them.
         move_body(
             walker,
@@ -1994,9 +2017,14 @@ fn take_forced_package_evaluation(
     walker_forced || state_forced
 }
 
-/// Run a queued forced package check before the furniture path returns early
-/// for a settled sitter. Entry and exit states are left to finish first, as
-/// `008da670` only permits package evaluation in sit states 0, 4 and 9.
+/// The package check (`008da670`) for a settled sitter, before the
+/// furniture path returns early: forced, none, the 20 s timer or a new game
+/// hour, as for anyone (sit states 0, 4 and 9 allow it; 4 is sitting, 9
+/// sleeping). So someone seated gets up once their package's conditions
+/// change without a script's `EvaluatePackage` (Doc at the new game's
+/// help-up: his standing package needs `GetStage VCG01 >= 40`). Entry and
+/// exit states are left to finish first. Whether the clock was looked at
+/// (the caller doesn't count it again this frame).
 fn rethink_queued_package_before_furniture(
     ctx: &mut Ctx,
     walker: &mut Walker,
@@ -2010,19 +2038,19 @@ fn rethink_queued_package_before_furniture(
         .sitters
         .get(&me)
         .is_some_and(|sitter| sitter.state.is_settled());
-    if !settled {
+    // Getting up asked for (the exit's state 5 is about to start): no more
+    // checks, as on the path for anyone else.
+    if !settled || life.getting_up {
         return false;
     }
-    if !take_forced_package_evaluation(walker, ctx.state, me) {
-        return false;
-    }
+    let forced = take_forced_package_evaluation(walker, ctx.state, me);
     let due = walker
         .clock
-        .due(ctx.dt, game_hour, true, walker.package.is_some());
+        .due(ctx.dt, game_hour, forced, walker.package.is_some());
     if due {
         rethink(ctx, walker, life, ask);
     }
-    due
+    true
 }
 
 /// A walk to a reference that moves (whom they follow, a package's
@@ -2794,7 +2822,8 @@ fn chat_frame(
     let their_off = mv::wrap_pi(mv::heading_to(at, walker.position) - their_heading).abs();
     if !seated
         && !alone
-        && (walker.turn.active
+        && ((walker.turn.active
+            && mv::wrap_pi(walker.turn.target - toward).abs() <= mv::ONE_DEGREE)
             || (their_off > moves.settings.turn_degree * mv::ONE_DEGREE && !walker.turn.active))
     {
         face(walker, toward, ctx.dt, false, ctx.moves);
@@ -3220,10 +3249,17 @@ fn look_frame(ctx: &mut Ctx, walker: &mut Walker, fighting: bool, moves: &Moves)
         return;
     }
     let toward = mv::heading_to(walker.position, at);
-    if walker.turn.active
-        || walker
-            .turn
-            .should_face(walker.heading, toward, &moves.settings)
+    // Its own turn carries on; another turn under way (a travel's end
+    // heading) isn't taken over: taking it over every frame turned it back
+    // and forth between the two headings and it never ended, the turn
+    // animation playing in place (Doc Mitchell after getting up).
+    let own_turn =
+        walker.turn.active && mv::wrap_pi(walker.turn.target - toward).abs() <= mv::ONE_DEGREE;
+    if own_turn
+        || (!walker.turn.active
+            && walker
+                .turn
+                .should_face(walker.heading, toward, &moves.settings))
     {
         face(walker, toward, ctx.dt, false, ctx.moves);
     }
@@ -4152,7 +4188,7 @@ pub(crate) fn move_body(
     walker: &mut Walker,
     collider: &mut physics::Collider,
     others: &[(FormId, physics::Person)],
-    movers: &mut Vec<physics::rigid::Mover>,
+    movers: &mut Vec<physics::proxy::SurfaceContact>,
     rules: &Ground,
     dt: f32,
 ) {
@@ -4160,19 +4196,6 @@ pub(crate) fn move_body(
     if far_move(walker, wanted, rules) {
         walker.against_someone = false;
         return;
-    }
-    // Walking into moving clutter pushes it (the character proxy's push
-    // on the bodies it touches, at the velocity the controller is given;
-    // `clutter` and `physics::rigid` carry it out). The controller itself
-    // is held by them meanwhile, as by anything solid (`00c711d0`).
-    if let (Some(m), true) = (wanted, walker.body.is_some() && dt > 0.0) {
-        let shape = body_shape(walker);
-        movers.push(physics::rigid::Mover {
-            feet: walker.position,
-            radius: shape.radius,
-            height: shape.height,
-            velocity: [m[0] / dt, m[1] / dt, 0.0],
-        });
     }
     let p = walker.position;
     if let Some(body) = &walker.body {
@@ -4224,6 +4247,8 @@ pub(crate) fn move_body(
         dt,
     );
     body.fell = None;
+    // What the proxy touched, for the clutter to push (`applySurfaceInteractions`).
+    movers.extend(body.surface.iter().copied());
     // Outdoors, feet left more than 30 under the land are put on it
     // (`0092f260` at `0093012a`: the land's height under them, `004572e0`,
     // and `SetPosition`, which moves the controller too, `00931620`).
@@ -4697,9 +4722,35 @@ mod tests {
     }
 
     #[test]
-    fn walking_people_are_handed_to_the_clutter_as_pushers() {
+    fn walking_people_hand_the_bodies_they_touch_to_the_clutter() {
         let mut collider = floor_and_wall();
         let mut w = Walker::at(FormId(1), [0.0, -300.0, 0.0], 0.0, 1.0, false);
+        // A clutter box, its face 25 in front of the walker.
+        let (h, y) = (15.0, -260.0);
+        let corners: Vec<[f32; 3]> = (0..8)
+            .map(|k| {
+                [
+                    if k & 1 == 0 { -h } else { h },
+                    y + if k & 2 == 0 { -h } else { h },
+                    if k & 4 == 0 { 0.0 } else { 2.0 * h },
+                ]
+            })
+            .collect();
+        let faces: [[u32; 3]; 12] = [
+            [0, 2, 1],
+            [1, 2, 3],
+            [4, 5, 6],
+            [5, 7, 6],
+            [0, 1, 4],
+            [1, 5, 4],
+            [2, 6, 3],
+            [3, 6, 7],
+            [0, 4, 2],
+            [2, 4, 6],
+            [1, 3, 5],
+            [3, 7, 5],
+        ];
+        collider.add_layered(&corners, &faces, (0.0, 77, physics::NO_MATERIAL), None, 4);
         w.set_path(
             vec![[0.0, -300.0, 0.0], [0.0, 0.0, 0.0]],
             0.0,
@@ -4709,8 +4760,7 @@ mod tests {
         let dt = 1.0 / 60.0;
         let mut movers = Vec::new();
         // The first frame makes the controller; then they walk and push.
-        for _ in 0..3 {
-            movers.clear();
+        for _ in 0..12 {
             step(&mut w, 85.0, dt);
             move_body(
                 &mut w,
@@ -4724,10 +4774,14 @@ mod tests {
                 dt,
             );
         }
-        assert_eq!(movers.len(), 1);
-        // At the walk's speed, along the path (+y).
-        let v = movers[0].velocity;
-        assert!((v[1] - 85.0).abs() < 1.0 && v[0].abs() < 1.0, "{v:?}");
+        // The clutter box ahead (reference 77, layer 4) is touched; its
+        // face is toward the walker (-y), who closes on it at the walk's
+        // speed.
+        assert!(!movers.is_empty());
+        let t = movers.last().unwrap();
+        assert_eq!(t.reference, 77);
+        assert!(t.normal[1] < -0.5, "{:?}", t.normal);
+        assert!(t.velocity[1] > 0.0, "{:?}", t.velocity);
     }
 
     #[test]

@@ -76,8 +76,8 @@ of the mouse spring is telekinesis (`fMagicTelekinesis…`).
   (translated). `Collider` triangles carry their body's layer;
   `Collider::raycast_layer` casts as a layer does.
 - `physics::rigid`: `RigidWorld`, `Clock`, bodies with their
-  hulls/spheres/capsules, contacts against the collider, each other and
-  walkers (`Mover`; only bodies under `MOVE_LIMIT_MASS`), friction and
+  hulls/spheres/capsules, contacts against the collider, each other,
+  the character proxy's pushes (`apply_surface_interactions`), friction and
   restitution combined as the game does, damping, speed limits, sleeping
   and waking, Havok-unit impulses, `Spring` (the mouse spring),
   `ContactEvent`s (a pair beginning to touch, with its closing speed),
@@ -93,7 +93,7 @@ of the mouse spring is telekinesis (`fMagicTelekinesis…`).
 - Viewer `clutter`: bodies registered (at their saved pose and velocity;
   once the collider has ground under them; asleep), moved in
   `CellCollision` and drawn; shot pushes and blasts;
-  the player and every moving `Walker` push (and `clutter::actor_walks`
+  the player and every moving `Walker` push through their proxies (and `clutter::actor_walks`
   for actor controllers to report their controller); the Grab control
   (`grab_held`); contact sounds through `SoundRequests` with the material
   pair gate; physics damage worked out and logged for destructible
@@ -118,7 +118,7 @@ Batch 3 (`claude/m2-physics-3`):
   bone): the dog's pelvis/spine bodies and the eight constraints that
   join her legs, head and tail to them.
 - `physics::ragdoll`: `BodySetup::layer`/`part`, `parts_meet`, pairs of a
-  ragdoll's own capsules pushed apart (this solver's, frictionless).
+  ragdoll's own capsules as contact points in the solve (PR 8, below).
 - `world::actor::slot_parent_bone`, `ActorPart::parent_bone`,
   `Armor::pieces_facegen`; `preview::actor` hangs unskinned armour pieces
   from the slot's bone (FaceGen ones upright, as head parts).
@@ -126,10 +126,9 @@ Batch 3 (`claude/m2-physics-3`):
 This solver's own (labelled in code; Havok's contact solver isn't
 translated yet, B1 PR 7): XPBD substeps (8) and passes (4) for bodies with
 something near them; contact generation (no edge-against-edge
-between bodies); overlap recovery at most 0.05 units per correction; walkers
-as unstoppable capsules reaching 2 units out (`hkpCharacterProxy`'s
-surface interactions aren't translated; the walkers themselves are the
-game's controller, below); a contact "added" is a pair that
+between bodies); overlap recovery at most 0.05 units per correction (walkers
+as unstoppable capsules reaching 2 units out were this solver's, replaced by
+the character proxy's push, "The character proxy"); a contact "added" is a pair that
 starts touching (Havok adds and removes single points).
 
 ## Havok's world step (B1, PRs 1–4, `claude/b1-havok-step`, 2026-10-07)
@@ -232,7 +231,7 @@ triangle, body or walker within its reach plus a step's travel) is stepped
 exactly by the translation; one with something near gets the damping once,
 gravity per substep inside this solver's XPBD substeps (which also move it:
 PR 7 replaces them), then the reset, the linear clamp and the turn cap on
-ω. Ragdolls likewise (damping and caps were per substep). The gravity
+ω. Ragdolls likewise until PR 8 (damping and caps were per substep). The gravity
 factor is 1 for every body (nothing traced sets another).
 
 ### Sleeping (deactivation, PR 4)
@@ -268,8 +267,8 @@ between checks never sleeps.
 In nv-rs: sleeping is per simulation island (PR 5, below). Waking an awake
 body (an impulse, the wind's force, the spring) cancels its island's
 pending sleep. Each ragdoll is one island.
-Walkers still wake what they push faster than 2 units/s (this solver's
-walkers, PR 10). The invented rules are gone: "1 s under 2 units/s and
+People pushing a body wake it through the proxy's impulse (`00c9c1d0` in
+`applySurfaceInteractions`). The invented rules are gone: "1 s under 2 units/s and
 0.3 rad/s" (clutter) and "1 s under 4 units/s and 0.6 rad/s" (ragdolls).
 
 ### Simulation islands (PR 5, `claude/b1-p5-islands`)
@@ -340,7 +339,7 @@ corner, edge end, triangle) that keeps its identity from step to step, as
 Havok's agents keep their points. The position is on the other side's
 surface (taken: the agents aren't traced). A fixed body is a collider
 triangle's placed reference (0: the landscape and unowned statics).
-Walkers' pushes aren't Havok contacts and aren't heard. The contacts still
+The proxy's pushes aren't Havok contacts and aren't heard. The contacts still
 move bodies by this solver's substeps until PR 7, which solves these
 points.
 
@@ -375,11 +374,11 @@ from 200 units leaves the floor at about 2% of its landing speed (the
 integrated-velocity scheme spends the target on moving it out).
 
 In nv-rs: the island's constraints are its manifolds in key order (the
-game's order is its entities' constraint lists); walkers pushing a body
-are keyframed bodies at their velocity whose touches are new points every
-step (this solver's walkers, PR 10). Not translated: maximum-impulse
-contacts (0x12; the game's points have none), constraint priorities ≥ 4
-(TOI, PR 9), the contact impulse limit callbacks (`00d01700`), thin box
+game's order is its entities' constraint lists); people pushing a body are
+the character proxy's impulses (`applySurfaceInteractions`, "The character
+proxy"), not contacts. Not translated: maximum-impulse contacts (0x12; the
+game's points have none), constraint priorities >= 4
+(full TOI, "Continuous collision" below), the contact impulse limit callbacks (`00d01700`), thin box
 and sphere motion specifics (all bodies use the box motion's rules).
 
 Verified live (release viewer, installed data, the PR 4 bottle route,
@@ -392,6 +391,94 @@ units in the first 5 s; before, 0.5–1 unit per 5 s) and are heard as they
 bounce. Two Goodsprings crates woken by them come to rest at 3.7 s.
 Steady frame time 17.1 ms (vsync), main-thread work 9.5–10 ms (PR 4's run:
 11.5 ms).
+
+### Ragdoll constraints (PR 8, `claude/b1-ragdoll`)
+
+Ragdolls (and any `bhkRagdollConstraint`, `bhkLimitedHingeConstraint`,
+`bhkBallAndSocketConstraint` data) are solved by the same island solve as
+the contacts: `physics::constraint` builds the joints' atoms into the
+solver's schemas, `physics::ragdoll` builds the capsules' contacts and
+steps through `solver::solve`, once a world step in the world's solver
+substeps. Private notes: `%USERPROFILE%\nv-re\work\b1-ragdoll` (decompiles in
+`dec\`).
+
+The data objects are the NIF's own: `bhkRagdollConstraint` (`00cc67a0`) holds
+a `hkpRagdollConstraintData` (0x140 bytes) built by `00cdf2f0` (defaults) →
+`00cdf460` (atoms), the loader copying the file's axes, pivots and angles
+into it; the clone `00cc6830` shows which fields come from the file (twist
+least/most `+0x104`/`+0x108`, cone widest `+0x11c`, planes least/most
+`+0x12c`/`+0x130`, `00cde9f0` the most friction torque `+0xf8`). Atoms
+(Xbox PDB `hkpConstraintAtom::AtomType` order, which the builder's switch
+follows: 2 set local transforms, 5 ball socket, 0xc 2-D angular, 0xe angular
+limit, 0xf twist limit, 0x10 cone limit, 0x11 angular friction, 0x12 angular
+motor, 0x13 ragdoll motors):
+
+| Data | Atoms, in memory order | Constants (constructors) |
+| --- | --- | --- |
+| ragdoll `00cdf460` | transforms, ragdoll motors, angular friction, twist, cone, planes, ball socket | friction: axes 0–2 (`+0xf3` first 0, `+0xf4` count 3); twist: twist axis 0, reference axis 1, tau factor 0.8, defaults ±30° replaced by the file; cone: axis 0 against 0, mode 0 (zero when aligned), least −100, tau 0.8, angle offset at runtime +56; planes: axis 0 against 1, mode 1 (zero when perpendicular), tau 0.8; ball socket: stabilization 1.0 (hkUFloat8), most impulse `HK_REAL_MAX` (`0x7f7fffee`: schema 5, no cap) |
+| limited hinge `00cb9170` | transforms, angular motor, angular friction, angular limit, 2-D angular, ball socket | friction axis 0, count 1; limit axis 0, ±π replaced by the file, tau 1.0; 2-D free axis 0; ball socket as above |
+| ball and socket `00d54290` | translations, ball socket | stabilization 1.0 |
+
+| Builder (`00d6f460`, one atom at a time) | Rule |
+| --- | --- |
+| Frames | transforms atom: each body's three axes (the file's twist, plane, motor axes; axle, perpendicular, second perpendicular) and pivot turned by the body's transform |
+| Ball socket `00d6ced0` | three rows along the world axes; the right-hand side the pivots' gap + L ((ω_A × r_A) − (ω_B × r_B)), L = stabilization ÷ rhs factor, × the rhs factor; so stabilization 1 leaves the bodies' turning out of the row. Inverse diagonal = virtual mass factor ÷ (effective mass + ε). Schema 5 |
+| 2-D angular `00dcee80` | rows about B's axes (i+2)%3 and −(i+1)%3 with rhs −(A's axis i · B's other axis) × rhs factor; schema 0xc |
+| Angular limit (0xe) | angle = atan2(B₂·A₁, −(B₀×B₂)·A₁) by the game's polynomial `00cbff80`, kept within π of the last solve's (solver data); row about A's axis; schema 0xd |
+| Twist (0xf) | axis = the normalized sum of the two twist axes; angle of A's reference axis against B's about it; tau = ½\|A+B\|² × tau factor × tau |
+| Cone / planes (0x10) | angle between A's axis and B's reference axis (or π/2 − that), about the cross product × the mode's sign; skipped when parallel; the cone's stabilization: an allowed angle offset kept in the runtime moves the angle as a contact's allowed penetration moves its distance |
+| Limit row | inverse diagonal = tau ÷ (effective mass + ε); rhs −angle ÷ substep; bounds −min and −max ÷ substep × tau; schema 0xd |
+| Angular friction (0x11) | per axis one row, rhs = last solve's drift × 1 ÷ substep, at most torque × micro step; schema 0xe; skipped at torque 0 |
+| Solver | `00d8d030` cases 5, 0xc, 0xd, 0xe: unbounded rows; the limit sees damping × J(ω − Σ) + tau × (damping ÷ tau) × JΣ (Σ the integrated sums), takes the lower bound's impulse while it stays positive, else the upper's; friction scales the micro step's impulse to its most |
+| Export `00def570` | each angular row keeps rhs × substep − JΣ × step (friction × its scale) as solver data for the next step |
+
+In nv-rs: `physics::ragdoll` is one island of dynamic bodies (mass 0 bodies
+are keyframed, as the fixed ones of a tree) in the solve with the capsules'
+contacts. Joints come first, then the world's contacts, then the pairs'. The
+step is the clock's (0.016 s), solver settings `SolverInfo::new` (4 substeps,
+1 micro step, tau 0.6, damping 1.0). The old XPBD substeps, positional
+joint/contact corrections and friction pass are gone. The bodies' damping,
+the speed caps, the turn cap and the deactivation counts are `Motion`'s
+(`apply_accumulator`), as for every rigid body.
+
+Taken, not traced: the atoms' runtime data starts at 0 (the data's `Runtime`
+constructor isn't traced), the ragdoll motors and the angular motor are
+left off (their motor pointers are null in the game's death path; no motor
+data is read), the file's malleable strength (tau 0.9) isn't applied, the
+actor-scale clone `00cbd9e0` (friction torque scaling) isn't followed, the
+violated-constraint list (`m_violatedConstraints`) isn't kept. The contact
+points are this generator's (a capsule's two end spheres and the closest
+point of its axis against each triangle, ends against the other axis for the
+pairs; kept within the collision tolerance plus the distance the body can
+close in the step, which stands where continuous collision, PR 9, will
+stop a fast body); one contact manifold a body for the whole world, one a
+pair. A ragdoll's contacts follow `physics::rigid`'s property rules (friction
+√(f₁f₂), restitution √(r₁r₂) × 128); triangles' surface or
+`DEFAULT_SURFACE`. A new point's penetration is *allowed* by the solver's
+rules (`00d72190`), so a body already deep in another stays so: bodies
+start apart.
+
+Unit tests (`physics::ragdoll`): a chain of ball sockets hanging from a
+fixed rod keeps every joint gap under 2 units while it whips down; a hinge
+keeps its axle aligned and its angle within the limit and hangs; a 30° cone
+limit holds (widest angle within 0.12 rad of the limit) with the pivot
+together; a three-rod chain dropped on a floor lies still, goes to sleep and
+its joints stay together; a rod falls and rests on the floor; own capsules
+meet by the part table. `physics::constraint`: the polynomial atan2, the
+atoms' result slots, the ball socket's right-hand side.
+
+Verified live (release viewer, installed data, nothing compared with the
+game; `Fallout.ini` defaults): `WastelandNV --at -67845,3000,8400,0,0
+--freeze-ai --walk --answer-boxes --box-answers 1 --run-at 3
+"EasyPeteRef.Kill"` (`--wait 25`; a second view from
+`--at -67845,3260,8480,0,45`): "00104C80 goes limp at (-67845, 3334, 8392)
+moving (19.9, 1.4, 0.0) units/s" at 4.1 s and "00104C80 comes to rest, its
+first body at (-67840.3, 3345.0, 8396.5)" at 7.6 s, 3.5 s after he fell
+(before, ragdolls never came to rest: "jitter"). Easy Pete lies on his back
+on a porch's boards (Goodsprings), arms by his sides, legs bent at the
+knees, every limb joined and the hat by his head (`b1-ragdoll\after3.png`;
+`after.png` is the first view, a tumbleweed in front of him). Identical
+runs (the same rest time and place in the three).
 
 ### Data layouts used (Xbox PDB, matched to the PC code)
 
@@ -461,7 +548,7 @@ points; a point's friction, restitution, pairing, normal and distance.
 `nif` scene `reads_collision_shapes_in_game_units`; `physics`
 `layers::tests` (3), `grab::tests` (2), `contacts::tests` (3),
 `impulses::tests` (3), `rigid::tests` (clock, fall and rest, shot off a
-rail, stacking and walker push, the move limit, the player walking into
+rail, stacking and the proxy's push, the proxy's impulse values, the player walking into
 a body whose triangles are in the collider, deltas, impulse units,
 surfaces through `extend`, material combination, landing contact event,
 grab spring carry/release/removal, rail end, bottle at the origin and at
@@ -679,7 +766,8 @@ pushes something under it back up: the 30-unit rule does.
   not compared.
 - A dead ganger's ragdoll lay sunk to the waist after the gunfight
   (`run4\end.png`): ragdoll capsules meet triangles from either side
-  (`physics::ragdoll`, this solver's, B1); not changed here.
+  (`physics::ragdoll`; PR 8 makes them the solver's contacts, keeping the
+  face's side for a point gone through); not rechecked here.
 - The viewer's bridge (no controller until collision is within 320 below)
   stays; the far rule's controller warp conditions (flags 0x2000000,
   0x4000000, 1) and in-air reset (`008e2680`) aren't followed (the
@@ -770,20 +858,100 @@ doesn't count as support. On the ground dynamic friction × `fSpeedPct`.
 
 ### Not translated / stand-ins (labelled in code)
 
-- Havok's collision agents (convex against triangles, linear casts): GJK
-  and separating axes, a conservative-advancement cast with the world's
-  early-out 0.01 and 20 iterations; contact points taken from the touching
-  features (Havok's choice isn't traced). `IsStep`'s convex-shape branch
-  (a ray against the whole shape) uses the triangle test too.
-- `applySurfaceInteractions` (`00cacf80`, pushing bodies): clutter is still
-  pushed by `physics::rigid`'s walker rule, now with the velocity the
-  state asked for (`Character::pushing`).
+- Havok's collision agents, what is translated and what not. The proxy's
+  cast is the game's GSK agent cast (`hkpGskBaseAgent::staticLinearCast`
+  `00daf8e0`; registered by `00d41fd0` for convex against convex, the
+  agent functions `{create, getPenetrations 00dac2b0, getClosestPoints
+  00dac450, linearCast 00daf8e0}`, a `TtGsk` timer in each): the closest
+  points are asked within the start tolerance plus the path's length; the
+  cast counts only if `distance + path . normal <= 0` and the path goes
+  into the surface by more than the 0.01 extra penetration; a first
+  distance within the early-out 0.01 (or penetrating) is a hit at
+  fraction 0; otherwise the fraction starts at `distance / -(path .
+  normal)` and up to 20 closest-points queries at the moved position
+  reject (nothing near, moving away, the rest of the path too short),
+  accept (distance within 0.01) or advance the fraction by `distance / -(path
+  . normal)`; running out of iterations accepts the last query at the
+  fraction it was made at. The hit's point and normal are the last
+  query's. (`character_cd::gsk_linear_cast`; the swept-AABB culling of the
+  MOPP/world caster `00df7340`/`00df7760`, which passes the same input
+  and the all-points collector, is our candidate search.) The static
+  getClosestPoints (`00dac450`) is followed for its results: normal from
+  the second shape toward the first, distance less both convex radii,
+  the point on the second shape's surface, nothing beyond the tolerance.
+  Not translated: the GJK underneath (`00daad40`: separate simplexes for
+  the two shapes, alternating support queries, a doubling tolerance from
+  1e-10, helpers `00da9340`, `00da8fb0`, `00da8500`, `00d22e40`,
+  `00da9880`) and the penetration depth for overlapping cores
+  (`00daa7e0`, called from it when the caller's flag is 0, as
+  getClosestPoints does; getPenetrations `00dac2b0` sets it and treats
+  overlap as a hit): here a generic GJK and separating axes, so which of
+  several equally close points (a hull's side against a wall) is the
+  contact point is ours (`contact_on`), as are the convex-vertices and
+  triangle shapes' support-vertex tie breaks. `IsStep`'s convex-shape
+  branch (a ray against the whole shape) uses the triangle test too.
+- `applySurfaceInteractions`: translated (below). Left of it: the listener
+  callback for bodies with property 0x1300 (`00c6ca30`, moving platforms,
+  with the moving platforms above) and other characters' interaction
+  callbacks.
 - Bethesda's point collector (`00cd36a0`: edge-hit filtering, trigger
   bookkeeping), the support material and velocity (`00c6e980`), moving
   platforms (`01267bb4`), hurtful bodies, pitch and roll, lying
   creatures, creatures' shapes from `BSBound`, the swimming, flying,
   climbing and projectile states, `VelocityMod`.
-- `fSpeedPct`'s divisor is taken as 308 (77 × 4).
+
+### Pushing bodies (`applySurfaceInteractions` `00cacf80`) and `fSpeedPct`'s divisor
+
+Called by `integrateImplementation` (`00cade20`) after each pass's solve and
+before the cast move (`StApplySurf`), with the update's time and the world's
+gravity, for every manifold point (so up to 4 times an update). For a point
+whose collidable is a rigid body (type 1) that isn't fixed or keyframed
+(motion types 4, 5): the listener's `+0x10` for bodies with property 0x1300
+(moving platforms, not translated; the character listener's `+0x14` is a
+no-op stub, `00c6c760`); then, with `n` the point's normal toward the
+character, `v` the body's velocity at the point (`v + ω × (p − centre of
+mass)`) less the proxy's velocity (`+0x10`) along `n`, `f = −0.9 v`, plus
+`0.4 ÷ dt` × the distance when it is negative; `f < 0`: impulse
+`f ÷ (1/m + (r × n)·I⁻¹(r × n))` along `n`, no less than `−strength × dt`
+(`+0x6c`); then `g·n × dt` (less `v` when `v < 0`) × the character's mass
+(`+0x70`) along `n` when below −1.19e-7. The body is woken (`00c9c1d0`: its
+deactivation counters cleared, activated) and the impulse applied at the
+point (`applyPointImpulse`, motion vtable `+0x50`) whatever its size (a
+resting touch zero), so **any body within 0.15 of the character stays
+awake**. Bethesda's settings feed it nothing: the cinfo's strength is
+FLT_MAX and mass 0 (`00c6cde0`, nothing sets them later), so a touch gives
+the body 0.9 of the closing speed whatever its mass (through its centre of
+mass; `fMoveLimitMass` isn't read here), and the weight term is zero.
+
+In nv-rs: `Proxy::integrate` records the touches (`proxy::SurfaceContact`:
+the triangle's placed reference, point, normal, distance, the proxy's
+velocity, dt, strength, mass), `Character::surface` hands them out, and
+`RigidWorld::apply_surface_interactions` applies them in order (the body
+state doesn't change between passes but by these impulses, so applying
+afterwards equals applying in the pass). The viewer's `clutter` applies the
+player's and the people's (`ai::move_body`) once per update. The walker rule
+(`Mover`, `WALKER_WAKE_SPEED`, `PUSH_SKIN`, `MOVE_LIMIT_MASS`, keyframed
+capsules in the island solver) is gone. Not like the game: nothing keeps a
+pushed body out of the character (the game's characters also have the
+controller's world presence; not traced), so a pushed body can end inside
+the hull the proxy has stepped into (dynamic bodies are support straight up
+and never walls, `00c711d0`). `NV_PUSH_LOG=1` logs the player's feet and
+each body the proxies touched.
+
+`fSpeedPct`'s divisor (`01267bc4`, zero in the executable) is written only
+by `0055e230` (when above zero), from `0055d760` when the player's
+controller is set up: `00647f00(player's actor values, 0, 0, 0, 1, 0, 0)`
+= `00647d10` × `fMoveRunMult` (`011d0898`, 4). `00647d10`: SpeedMult
+(actor value 21) × 0.01 × `fMoveBaseSpeed` (`011d0448`, 77) × `fMoveOneCrippledLegSpeedMult`
+(0.85, `011d11b8`) or `fMoveTwoCrippledLegsSpeedMult` (0.75, `011d0268`)
+when one or two legs are crippled (actor values 29, 30; 1 otherwise; 1 too
+when actor value 72 is set), with
+the sneak, no-weapon (`fMoveNoWeaponMult`) and armour terms off for these
+arguments. So 308 for SpeedMult 100 and sound legs, and otherwise the
+player's own: `physics::controller::set_reference_speed` takes
+`world::animation::run_speed` once, at the player's first walking update
+(the game keeps it from loading: later changes of SpeedMult or legs don't
+change it). The people use the same one value.
 
 ### Tested (generated)
 
@@ -819,10 +987,113 @@ feet ten times a second.
   the game's controller; it was likely the viewer's own controller's
   push-out, or needs another place to reproduce. The deepest anyone stood
   was the navmesh hand-over above, which the game has too (its far rule).
+- **Pushing bodies through the proxy** (`NV_PUSH_LOG=1 --answer-boxes`, at
+  −69538, 2700 heading north, W held 3 s from 3 s; nothing compared with
+  the game): the player walks into the two Goodsprings crates
+  (0010B8CF/0010B8D0) in front of the general store: 244 log lines of
+  touches, the crate at speeds of about 115–175 units a second while
+  touched (the walk's), moved from (−69538, 2825) to (−69570, 2844), the
+  pair coming to rest at 5.7 s, 52.5 and 67.2 units from where they were
+  put (the player arrived at about 4.5 s). The
+  specified tumbleweed route no longer meets 00178A80: with the wind it is
+  960 units off by 5 s (the player starts walking at 3 s); the run logged no
+  touches. Without `--answer-boxes` the "Classic Pack" notice keeps the
+  player from moving.
 
 Seen, not changed: an actor placed inside a wall (a bad `--at`) is held
 there: its penetration recovery is a slow velocity, and a beam on the
 other side stops it, as Havok's proxy would.
+
+## Frozen bodies and far-off clatter (`claude/physics-clock`, 2026-10-08)
+
+Playtest of build 28: moved objects lag or freeze in the air; the
+clattering is back.
+
+**Frozen in the air: the game's frame timer.** The viewer runs uncapped
+(mailbox, ~210 frames a second in Doc's house). `bhkWorld::SetDeltaTime`
+(`00c66760`, [`physics::havok::Clock`]) rounds the carried time plus the
+frame to whole steps and carries the rest, which goes negative after
+rounding up (a frame of 0.6 steps runs one and carries −0.4); a total at
+or under 0 returns early *without touching the carried time*. So once
+frames are shorter than the negative carry (under ~6.4 ms) no step runs
+again until a slow frame comes: bodies hang where they were, then jump.
+The game never meets this: its frame timer (`00aa4ee0`, the timer at
+`011f6394` that `0086f260` passes to `00c66760`) counts whole
+milliseconds of `GetTickCount`, sleeps out a frame under 10 ms and reports
+10, caps one over 166 ms at 166. `physics::havok::FrameTimer` translates
+it: the viewer's frame times are gathered until 10 whole ms have passed
+and handed over as one game frame (the fraction kept); the bodies' world,
+the wind and the ragdolls step only on those frames
+(`clutter::HavokFrame`). Tests: `havok::tests::
+short_frames_through_the_timer_keep_the_clock_stepping` (straight from
+210 Hz frames: 1 step in 2 s; through the timer: 125).
+
+**The clatter: contact sounds everywhere.** `ImpactMixer::
+PlayCollisionSound` (`00837550`) first checks each side's sound can be
+heard (`0082eca0`: on each axis within the sound's largest distance byte
+(`SNDD` +1, `00553b90`, raw) × 100 of the listener, else nothing at all,
+the 333 ms gate untouched), then plays it at the contact point (flags
+0x4102, the sound's own distances, position `00ad8b60`) with the
+contact's static attenuation and frequency (`00ad89b0`, `00ad8a90`). The
+viewer queued them as flat 2D sounds at full volume: every tumbleweed
+rolling in the wind anywhere in the loaded squares rattled in the
+player's ears (163 `PHYBabyRattle`s in 16 s at the VCG02 fence).
+Now `clutter::play_contact_sounds` starts them with
+`weapon_fx::play_at_with` at the point; `within_reach` is the box test.
+
+Seen in the build 28 playtest as "a tumbleweed blown fast enough passes
+through the land" (00178A82, from z 7992 to 1082 in 5 s): **it isn't
+tunnelling.** It rolls at 50–150 units/s (2–3 units a step) and falls
+freely as it crosses y = −4096, where the viewer's loaded terrain ends
+(`--at -68232.9,4990`: the squares y −1 to 3; 2265 triangles in
+x −66000..−63000, y −4096..−3000, 6 south of −4096 in z 7000..8500). The
+game's own loaded grid ends somewhere else; what the game does with a
+body that rolls out of it isn't traced (left).
+
+## Continuous collision (B1 PR 9, `claude/b1-ccd`, 2026-10-08)
+
+`physics::continuous`; `RigidWorld::continuous`. The world is continuous
+(`iSimType` 1, `00c681c0`; `hkpContinuousSimulation` ctor `00d0d020`).
+Each body's quality is the model's cinfo byte (`bhkRigidBody::LoadBinary`
+`00c8ea30` only byte-swaps the blob; `00c8d4a0` names 0 fixed, 1 keyframed,
+2 debris, 4 moving, 5 critical, 6 bullet, 7 user, 0xff invalid; 3 is
+`DEBRIS_SIMPLE_TOI`, Xbox PDB). `RigidSetup::quality` carries it. This
+settles B1 question 3 of the Havok map: **the tumbleweeds (all twelve
+near the start) and the bottle model carry 3**, and the dispatcher's
+quality table (`00cfb570`, `+0x1bb0`; the whole table is in
+`continuous::pair_quality`) gives fixed against 3 the collision quality 2,
+simplified time of impact (against debris 2: a plain step; against
+moving, critical, bullet: the full one).
+
+| What | Where | Rule |
+| --- | --- | --- |
+| Queue | `00d0d150` | the narrowphase (`00d0d8b0`, "TtNarrowPhase") queues an event per pair whose agent found a time: time, separating normal, agent; the quality info's `+0x14` byte (set for index 2, `00cfb570`) marks it simple; 250 events (`sizeOfToiEventQueue`), a full queue asserts and loses the event |
+| Order | `handleAllToisTill` `00d0e9c0` (from `advanceTimeInternal` `00d0ed10`, "TtTOIs") | the earliest first, a tie by the bodies' ids (`+0xd4`); an event whose agent no longer confirms it (`00d0bc20`) is dropped |
+| Handling | `handleSimpleToi` `00d0e210` ("TtSimpleTOI") | for each body of quality 3: the swept transform is set to the event's time (`00cf1d50`: position lerp, rotation by two half blends through the normalized sum of the ends, then both ends of the sweep are that pose), the body's other queued events and its agents' predictions are dropped (`00cc0ea0`); velocities untouched. The contacts at that pose come from the next collide, the solver acts on the next step; the rest of the step's travel is lost |
+
+Translated in `RigidWorld::continuous` / `swept_pose`: the table, the
+event order and queue, the handling. **Not traced, labelled in the code:**
+how the narrowphase finds an event's time. The predictive agents
+(`00cfedd0`, the tables at dispatcher `+0x16b8`/`+0x16dc`) keep a
+separating plane, bound the pair's remaining separation by the bodies'
+travel and turn, and run the shape pair's linear cast when it falls
+below the collision tolerance; the separation the time is for comes from
+the quality info's fractions (−0.5, −0.25, −0.35/(n−1)…, `00cfb570`,
+n = 3 for simplified) of the bodies' allowed penetration depth. Here: the
+first time a corner (sphere, capsule end) of the body touches a triangle
+that the step carried it through (behind its plane at the end, the nearest
+point straight below), by conservative advancement; only when the step
+carried a point further than the PSI's own reach (`point_triangle`), so
+slower bodies behave as before. Edges against hull faces, capsule axes
+and events between two bodies (quality 3 bodies meet at 1: a plain step)
+aren't swept. Not translated: the full time of impact (`simulateToi`
+`00d100a0`: a solve at the time and the rest of the step again) for
+quality 4 and 5 bodies, the `toiCollisionResponseRotateNormal` (0.2) and
+`numToisTillAllowedPenetration` bookkeeping, the safe-time backstep for
+them. Unit-tested: a ball and a slanted box shot at a floor of no
+thickness at 1500–9000 units/s stay above it; as debris (quality 2) the
+same ball goes through. Live (the PR 9 route, 40 s, release viewer, tumbleweeds all quality 3): 00178A82 still goes down at (−64959, −4254) in the run with this on (z 8000 at 10 s at y −4109, 724 at 15 s), in the other three runs it stayed on the land; the runs differ (the dice). So the continuous collision doesn't touch that fall: it is the terrain edge.
+
 ## Not compared / gaps
 
 - Nothing compared with the original game: how far bottles fly, how they
@@ -831,16 +1102,16 @@ other side stops it, as Havok's proxy would.
   are not reproduced yet (B1 PRs 6–9; the step driver, integrator,
   deactivation and simulation islands are, above). Clutter constraints aren't
   simulated: joined or constrained clutter bodies stay solid (ragdolls'
-  joints are, in `physics::ragdoll`). Inertia under a reference's
+  joints are solved: PR 8). Inertia under a reference's
   scale isn't traced (scaled by s², mass kept).
 - Dying: the living bodies' velocity handed over at death (which branch
   of `00c65b00` the biped takes) isn't traced; the `Death` group's
   post-animation action (`0089d900` asks the 3D for 0xe0 and, when it
   has one, adds process post-animation action 0x20, `00903180`) isn't
   followed; creatures without a ragdoll still tip over as a stand-in
-  (`ai::fallen_transform`) instead of playing `Death`. Ragdolls jitter
-  instead of settling (the dog's still moves at 10–30 units/s after
-  10 s). Ragdoll self-contacts are frictionless positional pushes.
+  (`ai::fallen_transform`) instead of playing `Death`. Ragdolls
+  settle now (PR 8); the dog's ragdoll and the other creatures' weren't
+  run again.
 - The wind listener's call each frame follows `00c6ae70`; the wind
   direction stays 1 rad (no other writer of the sky's `+0xd0` was found
   in the sky's code). Which slot of a multi-slot armour holds its model

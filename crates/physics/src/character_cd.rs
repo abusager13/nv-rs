@@ -3,13 +3,19 @@
 //! other characters, giving Havok-style contact points
 //! (`hkpRootCdPoint`, Xbox PDB).
 //!
-//! The shape is the game's (`00c70de0`, below). How Havok's collision
-//! agents compute a convex shape's closest points and linear casts against
-//! triangles (its GSK and iterative linear cast agents) is not traced
-//! (HAVOK_MAP open question 7): here they are generic closest-point
-//! queries (GJK, and separating axes when the shapes' cores overlap) and
-//! a conservative-advancement cast with the world's iterative linear cast
-//! settings (`hkpWorldCinfo` +0x9c/+0xa0: early-out 0.01, 20 iterations).
+//! The shape is the game's (`00c70de0`, below). The cast is the game's own
+//! (`hkpGskBaseAgent::staticLinearCast` `00daf8e0`, [`gsk_linear_cast`]:
+//! conservative advancement on the closest points, with the world's
+//! iterative linear cast settings `hkpWorldCinfo` +0x9c/+0xa0: early-out
+//! 0.01, 20 iterations), and the closest points keep the agent's outputs
+//! (`staticGetClosestPoints` `00dac450`: the normal from the second
+//! shape toward the first, the distance less both convex radii, the point
+//! on the second shape's surface, only within the tolerance). The GJK
+//! underneath (`00daad40` and its helpers) and the penetration depth for
+//! overlapping cores (`00daa7e0`) are not translated (HAVOK_MAP open
+//! question 7): here they are generic closest-point queries (GJK, and
+//! separating axes when the shapes' cores overlap), so which of several
+//! equally close points is the contact point is ours (`contact_on`).
 //! Everything here is in Havok units, relative to an origin near the
 //! character, so positions far out in a worldspace keep their precision.
 
@@ -25,6 +31,11 @@ pub const HULL_RADIUS: f32 = 0.1;
 /// Havok's defaults kept by the game; HAVOK_MAP section 4).
 pub const CAST_EARLY_OUT: f32 = 0.01;
 pub const CAST_MAX_ITERATIONS: usize = 20;
+
+/// The cast collector's early-out distance: the proxy's collector is an
+/// all-points collector (`hkpAllCdPointCollector`, its early-out distance
+/// the maximum float, `7f7fffee` as the collector constructor stores it).
+const COLLECTOR_EARLY_OUT: f32 = f32::MAX;
 
 /// The ring directions of the character's hull (`011b0154` x, `011b0174`
 /// y: every 45 degrees, 0.7071 as stored).
@@ -580,45 +591,34 @@ impl Query<'_> {
     /// A linear cast of the hull from `from` by `displacement` (Havok
     /// frame): every body it meets on the way, with the hit's fraction of
     /// the way in `distance` (as a cast collector holds it before the proxy
-    /// converts it, `00cac890`). Conservative advancement, stopping within
-    /// [`CAST_EARLY_OUT`] (not traced: see the module's notes). A body
-    /// already overlapped at the start is met at fraction 0 when the move
-    /// goes further into it by more than `max_extra_penetration`.
+    /// converts it, `00cac890`). Per body this is the game's GSK agent
+    /// cast ([`gsk_linear_cast`]); `tolerance` is the phantom's start point
+    /// tolerance (the cast input's `m_tolerance`).
     pub fn linear_cast(
         &self,
         from: Vec3,
         displacement: Vec3,
         max_extra_penetration: f32,
+        tolerance: f32,
     ) -> Vec<RootCdPoint> {
         let mut out = Vec::new();
         let len2 = dot(displacement, displacement);
         if len2 <= 0.0 {
             return out;
         }
+        // The agent's closest points are asked within the start tolerance
+        // plus the path's length (`00daf8e0`: input +0x08 and +0x64).
+        let reach = tolerance + len2.sqrt();
         for body in self.candidates(from, displacement, CAST_EARLY_OUT) {
-            let mut t = 0.0f32;
-            let mut hit = None;
-            for i in 0..CAST_MAX_ITERATIONS {
-                let at = add(from, scale(displacement, t));
-                let c = self.closest_to(at, body);
-                let closing = -dot(displacement, c.normal);
-                if c.distance <= CAST_EARLY_OUT {
-                    if i == 0 && c.distance < 0.0 && closing <= max_extra_penetration {
-                        break;
-                    }
-                    if closing > 0.0 {
-                        hit = Some((t, c));
-                    }
-                    break;
-                }
-                if closing <= 0.0 {
-                    break;
-                }
-                t += c.distance / closing;
-                if t > 1.0 {
-                    break;
-                }
-            }
+            let hit = gsk_linear_cast(
+                |at| {
+                    let c = self.closest_to(at, body);
+                    (c.distance < reach).then_some(c)
+                },
+                from,
+                displacement,
+                max_extra_penetration,
+            );
             if let Some((t, c)) = hit {
                 out.push(RootCdPoint {
                     position: c.point,
@@ -631,6 +631,66 @@ impl Query<'_> {
         }
         out
     }
+}
+
+/// The cast of one convex shape against another by the game's GSK agent
+/// (`hkpGskBaseAgent::staticLinearCast`, `00daf8e0`), a conservative
+/// advancement on its closest points query. `closest_at(position)` is the
+/// agent's closest points (`hkpGskBaseAgent::staticGetClosestPoints`,
+/// `00dac450`) for the moved shape at `position`, `None` when nothing is
+/// within the input's tolerance (the start point tolerance plus the path's
+/// length). The hit is the points of the last query, with the fraction it
+/// was made at.
+///
+/// The cast only counts if, with the first points' normal held, the path
+/// reaches the surface (`distance + path . normal <= 0`) and goes into it
+/// by more than `max_extra_penetration`. A first distance within
+/// [`CAST_EARLY_OUT`] (penetrating included) is a hit at fraction 0 (the
+/// collector's own early-out distance is the all-points collector's
+/// maximum). Otherwise the fraction starts at `distance / -(path .
+/// normal)` and each query (at most [`CAST_MAX_ITERATIONS`]) rejects the
+/// cast (nothing near, moving away, or the rest of the path too short to
+/// close the distance), accepts it (within the early-out) or advances the
+/// fraction by `distance / -(path . normal)`; running out of iterations
+/// accepts the last query.
+pub fn gsk_linear_cast(
+    closest_at: impl Fn(Vec3) -> Option<Closest>,
+    from: Vec3,
+    path: Vec3,
+    max_extra_penetration: f32,
+) -> Option<(f32, Closest)> {
+    // Translated from 00daf8e0 (decompiled, FalloutNV.exe 1.4.0.525).
+    let first = closest_at(from)?;
+    let d = first.distance;
+    let into = dot(path, first.normal);
+    if !(d + into <= 0.0 && max_extra_penetration + into < 0.0) {
+        return None;
+    }
+    if d <= CAST_EARLY_OUT {
+        return Some((0.0, first));
+    }
+    let mut fraction = d / -into;
+    let mut hit = None;
+    for _ in 0..CAST_MAX_ITERATIONS {
+        let c = closest_at(add(from, scale(path, fraction)))?;
+        let into = dot(path, c.normal);
+        if into >= 0.0 {
+            return None;
+        }
+        let into = -into;
+        if into < c.distance + into * fraction {
+            return None;
+        }
+        if c.distance <= CAST_EARLY_OUT {
+            return Some((fraction, c));
+        }
+        hit = Some((fraction, c));
+        fraction += c.distance / into;
+        if fraction > COLLECTOR_EARLY_OUT {
+            return None;
+        }
+    }
+    hit
 }
 
 /// Another character's hull, and its centre's height above their feet
@@ -706,6 +766,86 @@ mod tests {
         assert!((c.normal[2] + 1.0).abs() < 1e-4, "{c:?}");
     }
 
+    /// A cube of half extent 1 (core 0.9, radius 0.1) over the plane z = 0, as
+    /// the cast's closest points query (a flat triangle, no radius), moved by `at`.
+    fn floor_query(at: Vec3) -> Option<Closest> {
+        let a = Hull {
+            radius: 0.1,
+            ..cube(0.9)
+        };
+        let tri = Hull::triangle(
+            [[-50.0, -50.0, 0.0], [50.0, -50.0, 0.0], [0.0, 50.0, 0.0]],
+            0.0,
+        );
+        Some(closest(&a, at, &tri, [0.0; 3]))
+    }
+
+    #[test]
+    fn a_cast_that_cannot_reach_the_surface_is_no_hit() {
+        // Gap 1 (the cube's bottom at z = 1); the path goes down 0.5 only.
+        assert!(gsk_linear_cast(floor_query, [0.0, 0.0, 2.0], [0.0, 0.0, -0.5], 0.01).is_none());
+        // Moving away, or along the surface.
+        assert!(gsk_linear_cast(floor_query, [0.0, 0.0, 2.0], [0.0, 0.0, 3.0], 0.01).is_none());
+        assert!(gsk_linear_cast(floor_query, [0.0, 0.0, 2.0], [5.0, 0.0, 0.0], 0.01).is_none());
+    }
+
+    #[test]
+    fn a_cast_hits_where_the_surface_is_reached() {
+        let (t, c) = gsk_linear_cast(floor_query, [0.0, 0.0, 3.0], [0.0, 0.0, -4.0], 0.01).unwrap();
+        // The gap is 2 and the path 4 long: half way, within the early-out.
+        assert!((t - 0.5).abs() <= CAST_EARLY_OUT / 4.0 + 1e-4, "{t}");
+        assert!(c.distance <= CAST_EARLY_OUT, "{c:?}");
+        assert!((c.normal[2] - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_cast_started_within_the_early_out_hits_at_fraction_zero() {
+        // 0.005 above the surface, going down 1: a hit where it starts.
+        let (t, _) =
+            gsk_linear_cast(floor_query, [0.0, 0.0, 1.005], [0.0, 0.0, -1.0], 0.01).unwrap();
+        assert_eq!(t, 0.0);
+        // Already sunk 0.5: a hit at fraction 0 as well.
+        let (t, c) = gsk_linear_cast(floor_query, [0.0, 0.0, 0.5], [0.0, 0.0, -1.0], 0.01).unwrap();
+        assert_eq!(t, 0.0);
+        assert!(c.distance < 0.0);
+    }
+
+    #[test]
+    fn a_move_into_the_surface_by_no_more_than_the_extra_penetration_is_no_hit() {
+        // 0.005 above the surface moving down 0.008: it neither reaches
+        // far (0.008 < 0.01 extra) nor is that counted as a hit.
+        assert!(
+            gsk_linear_cast(floor_query, [0.0, 0.0, 1.005], [0.0, 0.0, -0.008], 0.01).is_none()
+        );
+        // The same move with no extra penetration allowed is a hit.
+        assert!(gsk_linear_cast(floor_query, [0.0, 0.0, 1.005], [0.0, 0.0, -0.008], 0.0).is_some());
+    }
+
+    #[test]
+    fn a_cast_stops_asking_after_twenty_queries() {
+        use std::cell::Cell;
+        let queries = Cell::new(0);
+        // A surface that is always 1 away along the path but never closer
+        // by the path's direction (a normal tilted so each step gains
+        // little): the iterations are bounded.
+        let n = [0.1f32, 0.0, 0.995_f32];
+        let hit = gsk_linear_cast(
+            |_| {
+                queries.set(queries.get() + 1);
+                Some(Closest {
+                    distance: 0.5,
+                    normal: n,
+                    point: [0.0; 3],
+                })
+            },
+            [0.0; 3],
+            [0.0, 0.0, -10.0],
+            0.01,
+        );
+        // The first query plus at most twenty iterations.
+        assert!(queries.get() <= 21, "{}", queries.get());
+        assert!(hit.is_none() || queries.get() == 21);
+    }
     #[test]
     fn closest_point_on_a_triangles_edge() {
         let a = cube(0.5);

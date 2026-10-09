@@ -827,6 +827,95 @@ failures. The viewer starts from a save with `--load-fos <SAVE>`
 time and quest stages printed). **Next action:** compare a loaded save
 against the original game running the same save.
 
+## Engine port Phase 0: map and ledger (`claude/phase0-ledger`, 2026-10-09)
+
+Done ([ENGINE_PORT_PLAN.md](ENGINE_PORT_PLAN.md) "Phase 0 result",
+[LEDGER.md](LEDGER.md), [research/engine-map](../research/engine-map/README.md)).
+
+- Evidence: 66,259 functions (3,271 created on a private Ghidra copy at
+  vtable slot targets analysis had missed), 17,604 with Xbox PDB names
+  (hold-out error about 1.7% for the call-graph tier), a subsystem for every
+  function (2,353 explicitly unplaced). Game code 40,523 functions, 8.6%
+  translated or traced. Ledger regenerates with one command; map with
+  `scripts/engine-map.ps1`.
+- Forecast: a 12-function trial cost about 19k Sonnet tokens per function;
+  the 37,047 open game functions project to about 700M tokens before
+  wiring. A week covers one or two whole systems, not the game.
+- Files (owner: this branch): `research/engine-map/*`,
+  `research/ghidra/NvEngineMap.java`, `research/ghidra/NvCreateFunctions.java`,
+  `research/ghidra/README.md` (two sections), `scripts/ledger/*`,
+  `scripts/engine-map.ps1`, `docs/LEDGER.md` (generated),
+  `docs/FRAME_SKELETON.md`, `docs/ENGINE_PORT_PLAN.md`.
+- Private state: named Ghidra copy `%USERPROFILE%
+v-reghidra-phase0`
+  (plus `-a`, `-b`, `-c` copies used by the trial agents, deletable);
+  intermediate files in `%USERPROFILE%
+v-reworkphase0`. The shared
+  server (8089) was not running and was not touched.
+- Unfinished checks: PROTOTYPE_SYMBOLS.md's manual 100-row spot-check per
+  tier; `NvCreateFunctions.java` has no fixture test yet.
+- Next action: Phase 1 PR 1 (frame map) from
+  [FRAME_SKELETON.md](FRAME_SKELETON.md); restart the shared server on the
+  named copy when convenient.
+
+### Translation push (`claude/engine-crate`, from 2026-10-09 night)
+
+The maintainer set a one-week fast track (about 1.9 billion tokens).
+
+- Architecture: `crates/engine` on a model of the game's memory
+  ([ADR-0006](adr/0006-engine-crate-memory-model.md), for maintainer review;
+  [ENGINE_CRATE.md](ENGINE_CRATE.md)). Merged: #72 (Phase 0), #73 (crate).
+- 16 Sonnet agents in parallel, each in its own worktree under
+  `%USERPROFILE%/nv-re/work/agents/aNN`, one unit file (or unit part) each,
+  40 functions per session; the lead collects, checks (fmt, clippy -D
+  warnings, all engine tests), commits and re-tasks (private scripts in
+  `%USERPROFILE%/nv-re/work/phase0/bin`: `cycle.sh`, `task.sh`, `split.sh`).
+  Decompiles come from a private read-only Ghidra server on the named copy
+  (127.0.0.1:8090, `binstart-srv.ps1`).
+- Measured: about 6.7k to 11k Sonnet tokens per translated function,
+  15 to 30 minutes per 40-function session.
+- Files: every unit file under `crates/engine/src/units` has one owner at a
+  time (the slot's task file says which). `units/platform.rs`,
+  `units/crt.rs`, `types.rs` and the engine core are lead-owned.
+- Next action: keep the slots cycling; merge a rolling PR whenever CI
+  passes; then Phase 1 wiring from FRAME_SKELETON.md.
+
+### Phase 1 PR 1: frame map (`claude/phase1-frame-map`, 2026-10-09)
+
+- Evidence: `research/engine-map/frame.tsv` (the `Main::OnIdle` tree to
+  depth 3, 6,692 call sites) from the new `frame` step; LEDGER.md "Frame"
+  counts it by status (depth 1: 22 translated, 37 traced, 5 platform,
+  79 open). FRAME_SKELETON.md: 38 more depth-1 functions paired with
+  evidence, the Havok step traced to `TES::UpdateCellAnimations`
+  (`00453550`) on the AI linear task threads, and the actor updates to
+  the thread functions `008c7bd0`/`008c7da0`/`008c7f50`.
+- Files: `research/engine-map/src/bin/frame.rs`, `src/names.rs` (shared
+  with `match.rs`), `frame.tsv`, README; `scripts/engine-map.ps1`;
+  `scripts/ledger/src/main.rs`; `docs/LEDGER.md`; `docs/FRAME_SKELETON.md`.
+- Open: the threads = 1 path (`008ca070`) and whether the INI can lower
+  `iNumHWThreads`; six `?` rows and six position-only leads.
+- Next action: PR 2 (`world::frame`, the control flow of `0086e650`).
+
+### Phase 1 PR 2: `world::frame` (`claude/phase1-world-frame`, 2026-10-09)
+
+- Evidence: `crates/world/src/frame.rs`, translated from `0086e650`
+  (disassembly and decompiler agree): the 143 calls in the exe's order
+  (`STEPS`, checked against `frame.tsv` by a test), each with its gate
+  (36 gate kinds, one test per gate naming its branch addresses) and its
+  wiring. Gates: Tab+Alt held ends the frame; menu mode (V.A.T.S.'s menu,
+  sleep/wait, dialogue, the Pip-Boy, the pause menu) and the free camera's
+  frozen world (`TFC 1`, `Main` +7) stop the world block, the process
+  lists and the AI work; the fader lets the lists and AI run in menu mode,
+  the console stops them; V.A.T.S. playback skips the scene graph's field
+  of view; the loading block; sleeping redraws the menu background;
+  threads = 1 vs > 1. FRAME_SKELETON.md "PR 2 result".
+- Wiring: 1 step is an existing system (`Main::OnIdle_HandleMenuBackground`
+  → `world::menu_background`); 5 partly exist (timer, faders, calendar,
+  tree wind, grid move); 137 open. Nothing in the viewer changed.
+- Files: `crates/world/src/frame.rs`, `crates/world/src/lib.rs`,
+  `docs/FRAME_SKELETON.md`, `docs/LEDGER.md` (generated).
+- Next action: PR 3 (order the viewer's systems by `FrameStep` sets).
+
 ## Deferred
 
 Cosmetic material/lighting discrepancies, isolated facial polish, sun glare,

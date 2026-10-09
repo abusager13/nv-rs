@@ -202,6 +202,198 @@ player's `LooseVCG01PlayerStandup` (VCG01PlayerSection2, added by the
 result script of INFO `00104BF9`). Its timing against the original isn't
 compared.
 
+#### Help-up timing (`claude/b14-helpup`, 2026-10-08)
+
+Play build 28: Doc helps the player up at the wrong time. Private notes,
+dumps and the live log in `%USERPROFILE%\nv-re\work\b14-helpup`.
+
+The data:
+- INFO `00104BF9` ("Well, I got most of it right…", voice 3.61 s), end
+  script: `player.addscriptpackage VCG01PlayerSection2` (`001055C4`,
+  begin idle `LooseVCG01PlayerStandup` `001055C2`), then `SayTo` the next
+  line.
+- INFO `00104BFA` ("Okay. No sense keeping you in bed anymore…", voice
+  7.03 s), end script: `SetStage VCG01 45`, then `DocMitchellREF.evp`
+  with the comment "Make Doc stand up before you do". Stage 45: a 3 s
+  timer ("delay while the player stands") to stage 50.
+- Doc's `VCG01DocMitchellBedsideStandingPackage` (`00107238`, travel to
+  `GSDocMitchellBesideMarker` `00107235`) has `GetStage VCG01 >= 40`, so
+  any package check from stage 40 on gets him up. Stage 40 is set by
+  VCG01SCRIPT's `MenuMode 1036` (the race menu).
+- His exit `NVchairStandDoc` (`00169CDE`): `SpecialIdle_NVDocChairFrontExit.kf`,
+  11.97 s. Sampled: he rises 1.0–2.5 s, bends down to the player
+  6–7.5 s (`Bip01 NonAccum` z 67 → 45; `Sound: NPCDocPlyStand` 7.07 s,
+  `0017469A`), pulls back up 8.5–11 s.
+- The player's `SpecialIdle_NVCG01PlayerStandup.kf`, 11.13 s: the
+  `Camera1st` track leans forward 1.5–4 s and rises 4–6.5 s (z −29 → +3).
+  So the two line up when Doc's exit starts about 2–4.5 s before the
+  player's stand-up.
+
+What the viewer did wrong (fixed): getting up waited for the seated idle
+playing to end. Doc's `SitChairRelaxIdleA` (16.1 s, from 52.1 s) held his
+exit to 68.2 s although `evp` had changed his package at about 64 s.
+In the game the stand update `00921e80` (cases 4/9) waits only while
+`00498f80` holds: the animation's current idle (+0x124) or queued one
+(+0x128) has no sequence yet, or its sequence's state (+0x44) is 2
+(easing in) or 5 (transition destination). An idle playing at full weight
+doesn't hold it; the exit replaces it (`00497ca0` stops it with its
+blend-out, `004994f0`). Implemented: `world::animation::Player::idle_starting`,
+`sitting::special_idle_starting` and `replace_seated_idle`. Regression
+tests: `world/tests/furniture_blend.rs`
+`a_seated_idle_holds_getting_up_only_while_it_blends_in`, viewer
+`actors::tests::a_tree_idle_counts_as_starting_only_until_it_has_blended_in`.
+
+Live (release viewer, `--new-game --no-movies --answer-boxes --box-answers 2`,
+log only): `00104BF9` 52.8 s, player's stand-up from about 57.1 s,
+`00104BFA` 57.1 s, Doc `Sitting -> Want to stand` with the front exit at
+64.4 s (was 68.2 s), `Want to stand -> Normal` 76.4 s.
+
+**Not resolved:** even so Doc's exit starts about 7 s after the player's
+stand-up, so his bend (≈ 70–72 s) comes after the player is up (≈ 61–64 s).
+By the data alone the game would do the same unless something checks
+Doc's packages between stage 40 and the end of `00104BFA` (his 20 s
+package timer or hour check, `008da670`, could; whether `SayTo` or the
+race menu's close forces one wasn't found: `SayTo` `005c9100` and the
+process's say `008dbe30` don't call it in what was read). The end of a
+non-menu line (where its end script runs and whether a package check
+follows) wasn't traced. Next: trace the speech-finished path that runs an
+INFO's end script for `SayTo`, or record the original from the race
+menu's close to the help-up.
+
+
+#### Seated people's timed package checks (`claude/b14-timer`, 2026-10-08)
+
+`008da670` checks someone's packages in sit states 0, 4 (sitting) and 9
+(sleeping): forced, with none, on the 20 s timer or a new game hour. The
+viewer only honoured forced checks for a settled sitter, so a seated Doc
+waited for `DocMitchellREF.evp` at the end of `00104BFA`. Now his clock runs
+seated too (`ai::rethink_queued_package_before_furniture`). Live (`--new-game
+--no-movies --answer-boxes --box-answers 2`, `%USERPROFILE%\nv-re\work\b14-timer`):
+stage 40 at ~52.7 s (the race menu's `MenuMode 1036`, run once as the menu
+isn't drawn), Doc `Sitting -> Want to stand` at 61.3 s (was 64.4 s), on his
+timer. Still about 5 s behind the player's stand-up (~57 s, the on-begin
+idle of `VCG01PlayerSection2`, which `AddScriptPackage` `005cc4f0` sets at
+once). Ruled out: `00762160` (the dialogue menu's close) and
+`AddScriptPackage` deferring the player's package. Callers of the forced
+check `008a6ce0` not yet read: `00573f40`, `005c9530`, `00886360`,
+`008d0e80` (via `00925700`), `008e0f80` (a process update, forced under a
+condition near its line 152), `00967da0`. Also open: whether the viewer's
+package clocks count menu time (the game's don't).
+
+
+#### Help-up timing and daylight, from the original (2026-10-08)
+
+The maintainer's two recordings of the original's opening, aligned with
+Doc's voice files by their loudness envelopes (correlation 0.95):
+"Well, I got most of it right" (`00104BF9`) starts the moment the face
+menu closes, and Doc's chair exit starts with it (rising by 0.6 s, bending
+down at ≈ 6.4 s); the player's stand-up (on-begin idle of
+`VCG01PlayerSection2`, set at that line's end) rises at ≈ 8–10 s, so his
+help lands as the player stands. Doc's standing package needs
+`GetStage VCG01 >= 40`, set by `VCG01SCRIPT`'s `MenuMode 1036` while the
+menu is open. Ruled out as the trigger: `SetStage` (`005c7140` →
+`0060d510`, runs the stage only), the line's end (`00935f60`: the end
+script, then process vfunc +0x88 `008d8dc0`, which clears the "saying"
+byte +0x459), the menu's finish (`007ada40`), the 20 s timer and the hour
+(both pause in menu mode: `0086e650` sets `011dea2b` from `00702360`/
+`007023a0`, interface +0xc != 1). `EvaluatePackage` (`008a6ce0`) itself
+only flags actor +0x145 and sets the process's last hour to the hour − 1
+(`00693d50`), so the hour test fires at the next update; many callers
+use the same trick, none traced to the menu's close. Implemented from the
+recording, labelled: `GameState::evaluate_everyone`, set after the face
+menu's MenuMode blocks; every walker's packages are looked at once. Live:
+Doc `Sitting -> Want to stand` at 52.7 s, with `00104BF9` (was 61.3 s).
+
+`SayTo` lines now ask for their speaker idle (`005c9100` → `008dbe30` →
+`008a20d0`, as greetings): "Whoa, easy there" plays `VCG01DocWhoaThere`
+(Doc leaning forward in his chair as the player sits up, as recorded),
+"How'd I do?" `VCG01DocGiveMirror`.
+
+Daylight: `VCG00` stage 0 (source "DEMO ONLY") sets `GameHour` to 23;
+nothing after changes it, and `VCG01` stage 0 is set only by `VCG00`'s
+cleanup, so the game does run it. The recordings show daylight; the
+maintainer's decision: it's a leftover, the opening is meant in daylight.
+The viewer keeps the hour through that stage (`GameHour`'s own value, 12).
+
+## The whole opening, step by step (`claude/opening-trace`, 2026-10-08)
+
+Every step of the new game from the first frame to Doc's farewell, from the
+quests' stage scripts (`VCG00`, `VCG01`, `VCG01SCRIPT`), the INFOs of topic
+`VCG01Intro` (`00104BEE`..`00104BFC`), the packages `VCG01PlayerSection0/1/2`
+and Doc's `VCG01DocMitchell*` packages (all `FalloutNV.esm`), and runs of
+the release viewer (`--new-game --no-movies --answer-boxes --box-answers 2
+--walk`; `--stage VCG01 75` and `85` for the later steps; logs in
+`%USERPROFILE%\nv-re\work\opening-trace`). Without `--walk` a
+`--screenshot` run leaves the player in fly mode (`Player::new(false)`):
+the first-person camera idles then never advance, and only "Wakeup" is
+accepted, which is why earlier logs showed no sit-up, bed-sit or stand-up
+idles. Use `--walk` for any log about the opening camera.
+
+Status: **matches** (viewer follows the data, checked in a run), **fixed
+here**, **differs** (why, what is needed), **not run** (traced from data
+only).
+
+| Step | What the game does (evidence) | Viewer |
+|---|---|---|
+| New game | `VCG00` stage 0: `PlayBink FNVIntro.bik`, white/black screen effects, `GameHour` 23 (leftover, see above), `SetStage VCG00 90` | movie skipped by `--no-movies`; daylight by decision |
+| Blackout | `VCG00` 90: `MQ08AllBlackedOutISFX`, timer 3 s; 95 (empty); 100 cleanup: removes the effect, restores controls, `SetStage VCG01 0` | **fixed here** (was 0.01 s, see below), now 3.0 s |
+| Wake | `VCG01` 0: Victor disabled, timer 0.2 s, only looking allowed, `AddScriptPackage VCG01PlayerSection0` (begin idle `LooseVCG01PlayerWakeup`, looping), white fade effect, Pip-Boy removed | matches (controls log, "Player camera idle: LooseVCG01PlayerWakeup") |
+| Doc's first line | 0 -> 1 (`fTimer` 2.8 s) -> 3: `SayTo` "You're awake" (`00104BEE`); 3.0 s after stage 0 (recording: voice at 2.94 s) | **fixed here** (was 0.2 s after stage 0) |
+| Sit up | end of that line `SetStage 5`: `Section1` (begin idle `LooseVCG01PlayerSitup`), strain effect, timer 3.25 s | matches (Situp requested at stage 5) |
+| Bed-sit | 7: `Section1` again, "triggers the OnChange animation" (`LooseVCG01PlayerBedsit`, looping), timer 0 | matches (Bedsit accepted). The same call also queues Situp again; only the idle gate refuses it while Bedsit blends in (`world::animation::Player::request_special_idle`), see "Open" |
+| "Whoa, easy there" | 8: `SayTo` `00104BEF`; its speaker idle `VCG01DocWhoaThere` | matches (idle requested) |
+| Relax, name question | `00104BF0`, `00104BF1` (end `SetStage 10`) | matches |
+| Name | 10: `GetPlayerName` (name menu), `bRunTimer`, timer 1 s; 15 after the timer: `SayTo` `00104BF2` | matches (name menu, then the line) |
+| Doc introduces himself | `00104BF2` -> `00104BF3` ("I'm Doc Mitchell", idle `SitChairTalkPlayerD`, end `SetStage 25`) -> `00104BF6` (`SitChairTalkPlayerA`) -> `00104BF7` (end `SetStage 30`) | matches |
+| Sex choice | `VCG01SCRIPT` shows `VCG01ChooseSexMessage` only at stage 17 (`bChooseSex`); nothing in `FalloutNV.esm` ever sets stage 17 (no `SetStage VCG01 17` text anywhere; the race menu takes the choice) | matches (dead branch, nothing to do) |
+| Mirror | 30: `PlayIdle VCG01DocGiveMirror`, 3 s; 35: `SayTo` "How'd I do?" (`00104BF8`, end `SetStage 36`) | matches |
+| Face menu | 36: `ShowRaceMenu`; `VCG01SCRIPT`'s `MenuMode 1036` sets stage 40 while it is open | differs: the menu isn't built (B15); the viewer auto-accepts and runs the `MenuMode` block once |
+| Help-up | 40: `SayTo` `00104BF9`; Doc's exit starts with it, the player's `Section2` (`LooseVCG01PlayerStandup`) at its end, `00104BFA` (end `SetStage 45`, `evp`); 45: 3 s | matches the recording (see the sections above) |
+| Walk to the tester | 50: `SayTo` `00104BFB`, `RemoveScriptPackage` (view released); `00104BFC` end `SetStage 55`; 55: controls, `AutoDisplayObjectives`, autosave, objective 10, tutorial, Doc `ResetAI` (leaves the chair for `VCG01DocMitchellTravelToPlayerAtTester`) | matches (log: controls, autosave, objective, Doc walks 574 units) |
+| Tester, SPECIAL, reactions | 60 reached; 65 tester used (objective 30, `SetDestroyed`), 1 s; 70 Doc's reaction (`VCG01DocReactions`); 75 -> 76 -> 79 | 60 -> SPECIAL verified live in the thirteenth batch; 75 -> 79 run today: matches |
+| Psych exam | 79: `Look Player`, `SayTo` `VCG01DocPsychIntro` (`001055AD`, `001055AE`, end `SetStage 80`); 80: `StopLook`, `evp`, Doc walks to the couch (`VCG01DocMitchellTravelToExamSpot`, stage >= 80) and sits, objective 40 | matches (run today: Doc sits at about 20 s) |
+| Tag skills | 85: 1 s; 90: `SetTagSkills 3 1` (menu), timer 1 s | opens ("Tag skills menu: 3 to tag" in a `--stage VCG01 85` run); the rest wasn't run (the menu needs input) |
+| Traits, farewell, leaving | 95 `SayTo` `VCG01DocTraitIntro`; 98 -> 100 -> 102 `ShowTraitMenu`; 105 `VCG01DocFarewellTransition`; 110 Doc `evp` to the exit (`VCG01DocMitchellTravelToExit`), controls, objective 50; 115 conversation (`VCG01DocMitchellFarewellDialogueStart`); 200: `GameHour` 8, `StopQuest VCG01`, `StartQuest VMQ01`, `VCG04` | not run in the viewer (needs the tag and trait menus driven); not compared with the original |
+
+### Found and fixed: variables set by a nested stage script were lost
+
+`VCG01SCRIPT` sets stages from its own `GameMode` block (`setstage VCG01 1`).
+A stage's result script runs with the quest's own variables (stage 1:
+`set VCG01.fTimer to 2.8`). The runner takes the quest's variables out of
+the state while its block runs and puts the block's copy back at the end,
+so what the nested script set was overwritten with the block's old
+`fTimer`. The game keeps one copy of a script's variables. Effects in the
+opening: `VCG00` 90 -> 100 (the 3 s blackout) took 0.01 s; `VCG01` 0 -> 1
+-> 3 took 0.23 s instead of 3.0 s, so Doc spoke 0.2 s into the scene
+instead of 3.0 s after the cleanup (the recording has his voice at 2.94 s,
+taking the recording to start at the cleanup: labelled assumption); the
+timers of later stages set from the same block (`90`: 1 s before the trait
+intro, `102`: 1 s after the trait menu) were lost the same way. Fix:
+`Runner::call` hands the block's variables over for the commands that run
+other scripts (`SetStage`, `StartQuest`, `StopQuest`) and takes them back
+(`crates/world/src/scripting.rs`). Regression: `world/tests/scripting.rs`
+`a_stage_set_from_the_quests_script_keeps_the_variables_it_sets` (fails
+without the fix, `fTimer` 0). Live (release viewer, `--new-game
+--no-movies --walk`): `VCG00` 95 at 3.02 s of script time, `VCG01` 0 at
+3.03, 1 at 3.24, 3 at 6.07, Doc speaks at 6.9 s of the viewer's clock
+(0.9 s of it the pack-message boxes, when script time stands still); every
+later gap is unchanged. The black start is the script's blackout after the
+movie.
+
+### Open
+
+- The first-person idle gate refuses the second `Situp` of
+  `AddScriptPackage VCG01PlayerSection1` only because `Bedsit` is still
+  blending in; whether the game starts a package's begin action again when
+  the same package is added again isn't traced (the quest script's own
+  comment says the second call "triggers the OnChange animation").
+- Stages 105..200 (farewell, leaving the house) and the tag/trait menus
+  were not driven; `--box-answers` doesn't answer `CharGenMenu`.
+- The recordings only cover up to the help-up; later steps have no
+  original footage to compare with.
+- Whether the original shows the 3 s blackout before the white fade the
+  same way (the recording starts after it) isn't checked.
+
 ## The character-revision prompt (B29)
 
 Branch `claude/b29-revise-loop`, 2026-10-07. Playtest bug: the "revise your
