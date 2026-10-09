@@ -1,6 +1,6 @@
 # nv-rs milestones
 
-Updated 2026-10-06. Priority tracker and session handoff.
+Updated 2026-10-09. Priority tracker and session handoff.
 
 ## Baseline
 
@@ -67,6 +67,8 @@ B1 PR 10 (`claude/b1-character-proxy`, 2026-10-08): every walker moved by the ga
 B1 PR 5 (`claude/b1-p5-islands`): Havok's simulation islands translated (`physics::islands`: swept broadphase boxes `00d1a330`, pairs merge islands `00cc0f40`/`00cb4c60` so a moving body wakes a sleeper when their boxes meet, parted pairs split at the next step `00cb6060`, sleep and wake per island through the dirty list `00cb55d0`). Evidence: [PHYSICS.md](PHYSICS.md) "Simulation islands". **Next action:** B1 PR 6 (contact manager).
 B1 PR 6 (`claude/b1-p6-contacts`): Havok's contact manager translated (`physics::manifold`: points per agent kept within 0.1 Havok units, properties `00cfd800`, pairing `00d92df0`, removal `00cfd200`; one "contact point added" event per new point `00cfcf80` → `00d01850`, so resting bodies stop re-sounding). Evidence: [PHYSICS.md](PHYSICS.md) "Contact points". **Next action:** B1 PR 7 (contact solver).
 B1 PR 7 (`claude/b1-p7-solver`): Havok's contact solver translated (`physics::solver`: accumulators `00d29830`, new-point callbacks `00d92900`, contact and friction Jacobians `00d72190`, `hkSolveConstraints` `00d8d030` with 4 substeps and the integrated-velocity sums, export `00def570`, apply `00d29bf0`); this solver's XPBD contacts deleted. Contact resting velocity FLT_MAX turns off Havok's immediate bounce. Evidence: [PHYSICS.md](PHYSICS.md) "The contact solver". **Next action:** B1 PR 8 (ragdoll constraints).
+
+Issue #13, ED-E My Love (2026-10-09): fixed and regression-tested dialogue packages whose second location is a cell (`0067f060`, `00676390`); the Linux release viewer's completion segment runs ED-E's own package, completes the quest and queues its 100 XP reward from forced state. This is partial route evidence, not an end-to-end quest: the natural second-log trigger, Pip-Boy `MenuMode` dispatch, map-marker travel value, and the stage-10 entry gate remain unresolved. Details and exact forced lines: [ED_E_MY_LOVE_ROUTE.md](ED_E_MY_LOVE_ROUTE.md). **Next action:** implement and test quest `MenuMode` dispatch while the Pip-Boy is open, then remove the forced handover state from acceptance.
 
 Overnight batches, 2026-10-06 (local session; integration branch
 `claude/overnight-integration`, not merged into `main`; each batch also has
