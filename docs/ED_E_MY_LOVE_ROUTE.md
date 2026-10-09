@@ -190,8 +190,13 @@ Hidden Valley's proximity-discovery scripts run. The player begins outside
 EDE1Ref is moved beside the player. The quest selects its radio branch after
 the log-two result and day advance; acceptance does not set `iPlayRadio`:
 
+The verified Linux run invoked the release binary directly at
+`viewer/target/release/nv-viewer`; Windows builds use `nv-viewer.exe`. The
+route is also listed in `scripts/acceptance.ps1`, whose executable-path
+selection remains Windows-specific.
+
 ```
-nv-viewer.exe <Data> WastelandNV --at -67845,3000,8400,180
+viewer/target/release/nv-viewer <Data> WastelandNV --at -67845,3000,8400,180
   --run "StartQuest vDialogueEDE"
   --run "set vDialogueEDE.iLogsPlayed to 0"
   --run "set vDialogueEDE.iEDEDaysPassed to 5"
