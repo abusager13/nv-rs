@@ -139,8 +139,8 @@ acceptance routes (Windows, PowerShell):
 powershell -File scripts\acceptance.ps1 -Data "<path to Fallout New Vegas\Data>" -Build
 ```
 
-Windows is the tested platform; a macOS / Metal port is being worked on in
-a fork.
+Windows is the established platform; native macOS / Metal support is being
+validated in a fork.
 
 ### Build and run on macOS
 
