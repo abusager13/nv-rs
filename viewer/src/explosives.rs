@@ -128,10 +128,16 @@ impl Plugin for ExplosivesPlugin {
             .init_resource::<PlacedMines>()
             .add_systems(
                 Update,
+                // In the AI work (stage 6, `crate::frame_order`), after the
+                // player's attack (stage 2) by the stages' order.
                 fly_thrown
-                    .after(crate::combat::player_attack)
+                    // Kept: people's moves and the hits' effects are in the
+                    // same stage; the frame doesn't order them yet.
                     .after(crate::ai::move_actors)
-                    .before(crate::hiteffects::play_hits),
+                    .before(crate::hiteffects::play_hits)
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    )),
             );
     }
 }

@@ -256,14 +256,27 @@ impl Plugin for ClutterPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Clutter>()
             .init_resource::<HavokFrame>()
-            .add_systems(First, time_havok_frame)
+            // The frame timer: part of `Main::OnIdle_UpdateTimer` (step 32,
+            // `crate::frame_order`).
+            .add_systems(
+                Update,
+                time_havok_frame.in_set(crate::frame_order::FrameSet::step(
+                    crate::frame_order::UPDATE_TIMER,
+                )),
+            )
+            // The bodies' Havok step: on the AI thread (stage 6,
+            // `TES::UpdateCellAnimations` `00453550`), after the player's
+            // walk and attack (stage 2) by the stages' order.
             .add_systems(
                 Update,
                 (grab_held, simulate, play_contact_sounds, draw)
                     .chain()
-                    .after(crate::combat::player_attack)
+                    // Kept: thrown things land first; both are in stage 6,
+                    // which doesn't order them yet.
                     .after(crate::explosives::fly_thrown)
-                    .after(crate::walk::walk),
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    )),
             );
     }
 }

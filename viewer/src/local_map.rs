@@ -168,7 +168,13 @@ impl Plugin for LocalMapPlugin {
             .init_resource::<LocalMap>()
             .add_systems(
                 Update,
-                update_local_map.before(crate::pipboy::update_pipboy),
+                update_local_map
+                    // Kept: the Pip-Boy shows the map made this frame; both
+                    // with the interface in stage 6 (`crate::frame_order`).
+                    .before(crate::pipboy::update_pipboy)
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    )),
             );
     }
 }

@@ -28,8 +28,10 @@ pub struct PresentPlugin;
 impl Plugin for PresentPlugin {
     fn build(&self, app: &mut App) {
         let found = Mailbox::default();
-        app.insert_resource(found.clone())
-            .add_systems(Update, use_mailbox);
+        app.insert_resource(found.clone()).add_systems(
+            Update,
+            use_mailbox.in_set(crate::frame_order::ViewerSet::AfterFrame),
+        );
         if let Some(render) = app.get_sub_app_mut(RenderApp) {
             render
                 .insert_resource(found)

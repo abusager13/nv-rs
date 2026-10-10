@@ -119,9 +119,14 @@ impl Plugin for HitEffectsPlugin {
             .init_resource::<HitEffects>()
             .add_systems(
                 Update,
+                // In the AI work (stage 6, `crate::frame_order`), after the
+                // player's attack (stage 2) by the stages' order.
                 play_hits
-                    .after(crate::combat::player_attack)
-                    .after(crate::ai::move_actors),
+                    // Kept: people's moves are in the same stage.
+                    .after(crate::ai::move_actors)
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    )),
             );
     }
 }

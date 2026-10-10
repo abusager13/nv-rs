@@ -44,9 +44,11 @@ impl Plugin for MusicPlugin {
             // movie holds until it ends (`movie`).
             .add_systems(
                 Update,
+                // After the frame's stages, so after the scripts
+                // (`crate::frame_order::ViewerSet::AfterFrame`).
                 play_music
-                    .after(crate::scripts::run_scripts)
-                    .run_if(not(crate::movie::playing)),
+                    .run_if(not(crate::movie::playing))
+                    .in_set(crate::frame_order::ViewerSet::AfterFrame),
             );
     }
 }

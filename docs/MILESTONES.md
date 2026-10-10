@@ -914,6 +914,124 @@ The maintainer set a one-week fast track (about 1.9 billion tokens).
   `docs/FRAME_SKELETON.md`, `docs/LEDGER.md` (generated).
 - Next action: PR 3 (order the viewer's systems by `FrameStep` sets).
 
+### Phase 1 PR 3: the viewer's order from the frame (`claude/phase1-bevy-order`, 2026-10-09)
+
+- Evidence: `viewer/src/frame_order.rs`: `world::frame`'s 8 stages and 143
+  steps as Bevy system sets in `Update`, in the exe's order, each run under
+  its gate from `world::frame` (`stage_reached`, `step_runs`, new) on one
+  `FrameState` filled once per frame (`begin_frame`). 121 `Update` systems
+  placed: Loading 5 and Interface 20 ahead of the stages (the menus take
+  Bevy's input before the player; explained there), stage 1: 1, stage 2:
+  20, stage 3: 4 (steps 32 and 44), stage 4: 13 (step 77), stage 6: 39,
+  AfterFrame 19. Removed the one chain over `main`'s groups and 21
+  `.before`/`.after`s; the rest stay, each with its reason. The four
+  inputs without a source (fader 1, the frozen world, the interface mode,
+  the thread count) fixed at the PC case (thread count: the processor
+  count, at least 2). FRAME_SKELETON.md "PR 3 result".
+- Tests: set order equals `world::frame::stages()`, step sets in call order;
+  menu mode stops a gated step set (`Calendar::Update`) but not its stage;
+  Tab+Alt stops stages 2-8. Acceptance: doc, vcg02, vms16 pass (on `main`
+  before the change vcg02 missed "XP +50" in one run; doc and vms16 passed).
+- Behaviour: the menu background and screen effects now run before the
+  scripts (a script's effect plays a frame later); previously unordered
+  systems have fixed places; no system is gated differently yet.
+- Files: `viewer/src/frame_order.rs` (new), `viewer/src/main.rs`,
+  `viewer/src/vats.rs` and 21 plugin files, `crates/world/src/frame.rs`,
+  `docs/FRAME_SKELETON.md`, `docs/LEDGER.md` (generated).
+- Next action: PR 4 (the player stage: `PlayerCharacter::Update`'s order,
+  with menu mode tested by the player so the interface can move into its
+  stage).
+
+### Phase 1 PR 4: the player stage (`claude/phase1-player-stage`, 2026-10-09)
+
+- Evidence: `crates/world/src/frame/player.rs` (`world::frame::player`):
+  `Main::OnIdle_UpdatePlayer` (`0086f940`) as its 30 calls in order (27
+  direct, equal to `frame.tsv`'s depth-2 rows, and three through the
+  player's vtable: the 3D twice, `PlayerCharacter::Update` at slot +0x2f8,
+  `0108ad34`) with 15 gates, and `PlayerCharacter::Update` (`0093e860`) as
+  58 sub-steps (the calls that do the player's work, at their call sites)
+  with 16 gates: V.A.T.S. ended, a forced activation, the fade, knocked
+  down or paralysed, the controlled branch (AI-controlled or dead) and its
+  time-out, the free branch, dialogue, V.A.T.S. ending, a muzzle flash;
+  each gate with its branch addresses, steps whose own block tests more
+  (controls, timers, the weapon) list those branches. In menu mode the
+  player's update doesn't run (only `ForceGrenadeHold`) unless the Pip-Boy
+  is opening; the fly camera (`Main` +6) replaces it.
+  FRAME_SKELETON.md "PR 4 result".
+- Viewer: `frame_order::PlayerSet` (calls and sub-steps as sets under
+  their gates on `ThisPlayer`). Mapped: `fly_camera` (UpdateFlyCamera),
+  `player_attack` (the attack, `00948310`), `walk` (the move, `009ea570`);
+  inside the update's gated call: `scope_sway`, `player_furniture`; at
+  their sub-step but ungated (they work in menus too): `look_around`
+  (UpdateHeadingAndLooking), `player_idle::animate` (the own view's
+  animation update); ungated around the step, with reasons: `view_input`,
+  `give_start_weapon`, the body, and ten systems after it. All 30 calls and
+  58 sub-steps stay open (none is a world system).
+- Tests: `world::frame::player` 16 (order against `frame.tsv`, a test per
+  gate); engine (new dev-dependency on `world`): the translations of
+  `0086f940` (16 input combinations, exact call list) and `0093e860` (13,
+  every reached step called in order) follow the model; viewer: player
+  sets in the exe's order, menu mode and the fly camera stop their sets,
+  the fixed inputs.
+- Behaviour: in menu mode (menus, Pip-Boy, dialogue, V.A.T.S.'s menu,
+  message boxes) walking, attacks, the scope's sway and the furniture stop
+  (the player no longer falls while a menu is up; `player_attack`'s HUD
+  line and timers wait); the attack runs before the move; flying, the move
+  follows the mouse a frame later.
+- Files: `crates/world/src/frame/player.rs` (new),
+  `crates/world/src/frame.rs`, `crates/engine/Cargo.toml`,
+  `crates/engine/src/units/fallout_misc/main.rs` and
+  `fallout_ai/playercharacter.rs` (tests only), `viewer/src/frame_order.rs`,
+  `viewer/src/main.rs`, `docs/FRAME_SKELETON.md`, `docs/LEDGER.md`
+  (generated).
+- Next action: PR 5 (the world and time stage).
+
+### Phase 1 PR 5: the world and time stage (`claude/phase1-world-stage`, 2026-10-09)
+
+- Evidence: `crates/world/src/frame/world_time.rs`
+  (`world::frame::world_time`): the 12 functions stage 4 calls, as their
+  work calls in call-site order with gates from their own branches (all from
+  the disassembly): `TES::TestAllCells` (25 sub-steps), `Calendar::Update`
+  (7), `TES::RunAnimations` (3), `ProcessLists::RunActorScripts` (1),
+  `UpdateRadiationList` (9), `ChangeProcessLevelTempList` (17),
+  `UpdateFollowerTempList` (2), `GarbageCollector::Update` (18) and
+  `ClearTempEffects` (4), `BSTreeManager::Update` (7, untranslated),
+  `Main::OnIdle_UpdateCurrentGridCell` (6) and `TES::UpdateCurrentGridCell`
+  (22: the first load, queueing inside the centre cell, the detach and
+  attach across a border, the terrain). The grid update stops in menu mode,
+  while a new game's loading menu is up (`[011d8907]`) and with the world
+  frozen; the trees' clock and wind stop in menu mode. Correction: the
+  stage's slot +0x104 call is `BSSceneGraph::SetViewDistanceBasedOnFrameRate`
+  (`00c52590`), not the sky's update (`Sky::Update` is in stage 6).
+  FRAME_SKELETON.md "PR 5 result".
+- Viewer: `frame_order::WorldSet` (each sub-step a set under its gate on
+  `ThisWorld`). Mapped: `trees::blow_wind` (new, split from `sway_trees`)
+  under the wind update's gate; at their sub-steps but ungated, with
+  reasons: `sway_trees` (camera axes, light, levels of detail),
+  `run_scripts` at `RunActorScripts`' `RunScript` (with the game clock,
+  `Calendar::Update`'s work), `stream_squares` at `GridCellArray::SetCenter`
+  and the distant land and objects at `BGSTerrainManager::Update` (moved
+  from `ViewerSet::Loading`). Doors, movies and the weather chain placed for
+  order after the scripts. Open: the cell tests, `RunAnimations` (AI thread
+  with threads > 1), the radiation, process-level and follower lists, the
+  garbage collector, the rest of the tree manager and the grid.
+- Tests: `world_time` 13 (order against `frame.tsv` to depth 3, a test per
+  gate); engine: the translations of `0086fbe0`, `00867a40`, `00455640`,
+  `00452580`, `004556d0`, `00978550`, `009777a0`, `0096eb40`, `0096e9b0`,
+  `00868850`, `00868d10` checked against the model under their gates;
+  viewer: world sets in the exe's order, menu mode stops the gated sets, the
+  fixed inputs.
+- Behaviour: trees hold still in menu mode; the squares and distant land
+  stream after the player's move in the same frame; weather before trees.
+- Files: `crates/world/src/frame/world_time.rs` (new),
+  `crates/world/src/frame.rs`, engine tests in
+  `fallout_misc/{main,calendar,garbagecollector}.rs`,
+  `fallout_shared/tes.rs`, `fallout_ai/processlists.rs`,
+  `viewer/src/frame_order.rs`, `viewer/src/main.rs`, `viewer/src/trees.rs`,
+  `docs/FRAME_SKELETON.md`, `docs/LEDGER.md` (generated).
+- Next action: PR 6 (the AI task stage: `Sky::Update` and the weather chain
+  move there with `TES::UpdateCellAnimations`).
+
 ## Deferred
 
 Cosmetic material/lighting discrepancies, isolated facial polish, sun glare,

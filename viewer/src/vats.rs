@@ -261,6 +261,17 @@ impl Vats {
         self.phase == Phase::Menu
     }
 
+    /// The V.A.T.S. manager's mode (`[011f2250]`+8, `world::vats::mode`):
+    /// off, the menu's mode (1 to 3) while it's open, playback while the
+    /// queue plays.
+    pub fn manager_mode(&self) -> u8 {
+        match self.phase {
+            Phase::Off => mode::OFF,
+            Phase::Menu => self.mode.max(mode::MENU),
+            Phase::Playback => mode::PLAYBACK,
+        }
+    }
+
     /// Whether a camera shot has the view (the first-person model hides).
     pub fn shot_view(&self) -> bool {
         self.shot_camera.is_some()
