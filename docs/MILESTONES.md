@@ -1,6 +1,6 @@
 # nv-rs milestones
 
-Updated 2026-10-06. Priority tracker and session handoff.
+Updated 2026-10-10. Priority tracker and session handoff.
 
 ## Baseline
 
@@ -32,6 +32,17 @@ mod compatibility need separate researched scope; custom saves and plugin
 reading do not establish them.
 
 ## Active work: M1
+
+Controller-input review candidate (2026-10-10, fork branch
+`codex/controller-support`): standard gamepad input now reaches walking,
+camera look, combat, interaction, dialogue, menus, Pip-Boy, V.A.T.S., the
+companion wheel and lockpicking. The viewer reads action button bindings
+from `FalloutPrefs.ini`, draws an FPS counter, and has an opt-in
+`--controller-test` loadout. `cargo check --manifest-path viewer/Cargo.toml`
+passes on macOS. A physical controller has not been checked. The user will
+test the branch before any PR; see [CONTROLLER_INPUT.md](CONTROLLER_INPUT.md).
+**Next action:** collect the user's controller-test results and address any
+input or sensitivity issues.
 
 Next session: start with [HANDOFF.md](HANDOFF.md). Open tasks:
 [TASKS.md](TASKS.md); contributor rules: [CONTRIBUTING.md](../CONTRIBUTING.md).

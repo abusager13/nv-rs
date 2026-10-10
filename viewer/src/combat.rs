@@ -710,6 +710,7 @@ pub fn player_attack(
     scripts: Res<Scripts>,
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    pad: Res<crate::gamepad::Input>,
     (mut state, player, conversation, menus): (
         ResMut<DialogueState>,
         Res<Player>,
@@ -860,7 +861,7 @@ pub fn player_attack(
     let switching = view.camera.want_third != view.camera.actually_third;
     let readying_now = now < attack.busy_until;
     let control = world::iron_sights::aim_control(weapon.as_ref().map(|w| w.animation), attack.out);
-    if aim.pressed(&keys, &mouse) {
+    if aim.pressed(&keys, &mouse, &pad) {
         if !attack.iron_sights
             && !switching
             && !vats.is_on()
@@ -901,7 +902,7 @@ pub fn player_attack(
     // `009462c0`): the next carried kind loads, with the reload animation
     // when the swap timer has passed and the weapon is out.
     let swap_key = controls.ammo_swap;
-    if swap_key.just_pressed(&keys, &mouse) && attack.out && !readying_now {
+    if swap_key.just_pressed(&keys, &mouse, &pad) && attack.out && !readying_now {
         if let Some(w) = weapon.as_ref() {
             let (swap, reset) = world::ammo_swap::press(
                 order,
@@ -953,9 +954,9 @@ pub fn player_attack(
         .as_ref()
         .is_some_and(|w| ammo_held(state, w).is_some());
     let readying = now < attack.busy_until;
-    let key = if keys.pressed(KeyCode::KeyR) {
+    let key = if controls.ready_item.pressed(&keys, &mouse, &pad) {
         combat::KeyState::Held
-    } else if keys.just_released(KeyCode::KeyR) {
+    } else if controls.ready_item.just_released(&keys, &mouse, &pad) {
         combat::KeyState::Released
     } else {
         combat::KeyState::Up
@@ -981,7 +982,10 @@ pub fn player_attack(
     let melee_out = attack.out && weapon.as_ref().is_none_or(|w| w.is_melee());
     let melee_settings = world::melee::Settings::read(order);
     let mut power_now = false;
-    if melee_out && use_key.pressed(&keys, &mouse) && !use_key.just_pressed(&keys, &mouse) {
+    if melee_out
+        && use_key.pressed(&keys, &mouse, &pad)
+        && !use_key.just_pressed(&keys, &mouse, &pad)
+    {
         if !attack.power && !attack.power_queued {
             attack.power_timer += dt;
         }
@@ -998,7 +1002,7 @@ pub fn player_attack(
                 power_now = true;
             }
         }
-    } else if !use_key.pressed(&keys, &mouse) {
+    } else if !use_key.pressed(&keys, &mouse, &pad) {
         attack.power_timer = 0.0;
     }
     if attack.power_queued {
@@ -1010,7 +1014,7 @@ pub fn player_attack(
             power_now = true;
         }
     }
-    let pressed = use_key.just_pressed(&keys, &mouse);
+    let pressed = use_key.just_pressed(&keys, &mouse, &pad);
     if !power_now && (!pressed || now < attack.next || now < attack.reloaded_at) {
         return;
     }

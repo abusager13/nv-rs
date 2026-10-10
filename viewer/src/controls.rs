@@ -100,6 +100,7 @@ pub fn exe_default(control: usize) -> u32 {
 pub struct Binding {
     pub key: Option<KeyCode>,
     pub mouse: Option<MouseButton>,
+    pub pad: Option<crate::gamepad::Binding>,
 }
 
 impl Binding {
@@ -113,20 +114,41 @@ impl Binding {
                 2 => Some(MouseButton::Middle),
                 _ => None,
             },
+            pad: crate::gamepad::Binding::from_legacy(value as u8),
         }
     }
 
-    pub fn pressed(&self, keys: &ButtonInput<KeyCode>, mouse: &ButtonInput<MouseButton>) -> bool {
-        self.key.is_some_and(|k| keys.pressed(k)) || self.mouse.is_some_and(|m| mouse.pressed(m))
+    pub fn pressed(
+        &self,
+        keys: &ButtonInput<KeyCode>,
+        mouse: &ButtonInput<MouseButton>,
+        pad: &crate::gamepad::Input,
+    ) -> bool {
+        self.key.is_some_and(|k| keys.pressed(k))
+            || self.mouse.is_some_and(|m| mouse.pressed(m))
+            || pad.binding_held(self.pad)
     }
 
     pub fn just_pressed(
         &self,
         keys: &ButtonInput<KeyCode>,
         mouse: &ButtonInput<MouseButton>,
+        pad: &crate::gamepad::Input,
     ) -> bool {
         self.key.is_some_and(|k| keys.just_pressed(k))
             || self.mouse.is_some_and(|m| mouse.just_pressed(m))
+            || pad.binding_just_pressed(self.pad)
+    }
+
+    pub fn just_released(
+        &self,
+        keys: &ButtonInput<KeyCode>,
+        mouse: &ButtonInput<MouseButton>,
+        pad: &crate::gamepad::Input,
+    ) -> bool {
+        self.key.is_some_and(|k| keys.just_released(k))
+            || self.mouse.is_some_and(|m| mouse.just_released(m))
+            || pad.binding_just_released(self.pad)
     }
 }
 
@@ -145,6 +167,18 @@ pub struct Controls {
     pub ammo_swap: Binding,
     /// Control 4, "Use": attacking.
     pub attack: Binding,
+    /// Control 5, "Activate".
+    pub activate: Binding,
+    /// Control 7, "Ready Item" (draw, stow, or reload).
+    pub ready_item: Binding,
+    /// Control 12, "Jump".
+    pub jump: Binding,
+    /// Control 13, "Toggle POV".
+    pub pov: Binding,
+    /// Control 14, "Menu Mode" (the Pip-Boy control).
+    pub menu_mode: Binding,
+    /// Control 16, "Vats".
+    pub vats: Binding,
     /// Control 27, "Grab": pick up and carry clutter (`clutter`).
     pub grab: Binding,
     /// `bAlwaysRunByDefault` (the player's +0x651 at the start).
@@ -165,6 +199,12 @@ impl Default for Controls {
             auto_move: d(11),
             ammo_swap: d(18),
             attack: d(4),
+            activate: d(5),
+            ready_item: d(7),
+            jump: d(12),
+            pov: d(13),
+            menu_mode: d(14),
+            vats: d(16),
             grab: d(27),
             always_run_default: true,
             hotkeys: std::array::from_fn(|n| d(FIRST_HOTKEY + n)),
@@ -190,6 +230,12 @@ impl Controls {
             auto_move: binding(11, base.auto_move),
             ammo_swap: binding(18, base.ammo_swap),
             attack: binding(4, base.attack),
+            activate: binding(5, base.activate),
+            ready_item: binding(7, base.ready_item),
+            jump: binding(12, base.jump),
+            pov: binding(13, base.pov),
+            menu_mode: binding(14, base.menu_mode),
+            vats: binding(16, base.vats),
             grab: binding(27, base.grab),
             always_run_default: settings
                 .get("Controls", "bAlwaysRunByDefault")
@@ -197,6 +243,15 @@ impl Controls {
             hotkeys: std::array::from_fn(|n| binding(FIRST_HOTKEY + n, base.hotkeys[n])),
         }
     }
+}
+
+/// Inputs needed by actions driven by a game control binding.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct PlayerInput<'w> {
+    pub keys: ResMut<'w, ButtonInput<KeyCode>>,
+    pub mouse: Res<'w, ButtonInput<MouseButton>>,
+    pub controls: Res<'w, Controls>,
+    pub pad: Res<'w, crate::gamepad::Input>,
 }
 
 #[cfg(test)]

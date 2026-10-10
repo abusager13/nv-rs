@@ -923,7 +923,7 @@ pub fn setup_notices(mut commands: Commands) {
         TextColor(Color::srgb(0.95, 0.85, 0.55)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(8.0),
+            top: Val::Px(34.0),
             right: Val::Px(8.0),
             max_width: Val::Percent(40.0),
             padding: UiRect::all(Val::Px(8.0)),
@@ -969,6 +969,8 @@ pub struct HereNow<'w> {
     later: ResMut<'w, LaterCommands>,
     /// The casinos' anti-cheat lock, on the real clock (`game_menus::casino`).
     casino_lock: ResMut<'w, crate::game_menus::casino::CasinoLock>,
+    controller_test: Res<'w, crate::controller_test::Loadout>,
+    controller_test_applied: ResMut<'w, crate::controller_test::Applied>,
     real_time: Res<'w, Time<bevy::time::Real>>,
 }
 
@@ -1034,6 +1036,8 @@ pub fn run_scripts(
         mut player_seat,
         mut later,
         mut casino_lock,
+        controller_test,
+        mut controller_test_applied,
         real_time,
     } = here_now;
     let order = &game.0.order;
@@ -1100,6 +1104,16 @@ pub fn run_scripts(
     }
     // Where the player is, for GetInCell and GetInWorldspace.
     let state = &mut state.0;
+    if player.ready && controller_test.0 {
+        if !controller_test_applied.0 {
+            let (weapons, ammo) = crate::controller_test::apply(order, state);
+            controller_test_applied.0 = true;
+            println!(
+                "Controller test loadout: {weapons} weapons, {ammo} ammo types; health and carry weight raised."
+            );
+        }
+        crate::controller_test::keep_alive(state);
+    }
     let (eye, dir, heading) = cameras
         .single()
         .map(|(t, input, _)| {

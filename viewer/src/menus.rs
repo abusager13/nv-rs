@@ -400,6 +400,7 @@ pub fn run_menus(
     mut player: ResMut<Player>,
     conversation: Res<Conversation>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
+    pad: Res<crate::gamepad::Input>,
     mut typed: EventReader<KeyboardInput>,
     mut panel: Query<(&mut Text, &mut Visibility), With<MenuText>>,
 ) {
@@ -450,7 +451,20 @@ pub fn run_menus(
     let Some(open) = menus.open.as_mut() else {
         return;
     };
-    let pressed = |k: KeyCode| keys.just_pressed(k);
+    let pressed = |k: KeyCode| {
+        keys.just_pressed(k)
+            || match k {
+                KeyCode::ArrowUp => pad.just_pressed(GamepadButton::DPadUp),
+                KeyCode::ArrowDown => pad.just_pressed(GamepadButton::DPadDown),
+                KeyCode::ArrowLeft => pad.just_pressed(GamepadButton::DPadLeft),
+                KeyCode::ArrowRight => pad.just_pressed(GamepadButton::DPadRight),
+                KeyCode::Enter | KeyCode::NumpadEnter => pad.just_pressed(GamepadButton::South),
+                KeyCode::Escape | KeyCode::Tab => {
+                    pad.just_pressed(GamepadButton::East) || pad.just_pressed(GamepadButton::Start)
+                }
+                _ => false,
+            }
+    };
     let (up, down) = (pressed(KeyCode::ArrowUp), pressed(KeyCode::ArrowDown));
     let enter = pressed(KeyCode::Enter) || pressed(KeyCode::NumpadEnter);
     let digit = [

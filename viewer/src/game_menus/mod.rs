@@ -1011,6 +1011,7 @@ pub struct MenuInput<'w, 's> {
     fixed_keys: ResMut<'w, FixedKeys>,
     answer_boxes: ResMut<'w, AnswerBoxes>,
     pads: Query<'w, 's, &'static Gamepad>,
+    pad: Res<'w, crate::gamepad::Input>,
     /// Terminals drawn on the terminal's screen: the pointer goes through
     /// it.
     rendered: ResMut<'w, crate::rendered_terminal::RenderedTerminal>,
@@ -1350,6 +1351,61 @@ pub(crate) fn run_open_menus(
                 if let OpenMenu::Vigor(v) = top {
                     sounds.0.extend(v.inputs(&game.0, &mut state.0));
                 }
+            }
+        }
+        for (button, code) in [
+            (GamepadButton::DPadUp, ui::menu::key::UP),
+            (GamepadButton::DPadDown, ui::menu::key::DOWN),
+            (GamepadButton::DPadLeft, ui::menu::key::LEFT),
+            (GamepadButton::DPadRight, ui::menu::key::RIGHT),
+            (GamepadButton::South, ui::menu::key::ENTER),
+            (GamepadButton::West, u32::from(b'X')),
+            (GamepadButton::North, u32::from(b'Y')),
+        ] {
+            if input.pad.just_pressed(button) {
+                interface.key(ui, menu, top.code(), code, false, false, now);
+            }
+        }
+        if input.pad.just_pressed(GamepadButton::East)
+            || input.pad.just_pressed(GamepadButton::Start)
+        {
+            let class = top.code().class();
+            match top {
+                OpenMenu::Start(s) => s.menu.escape(ui, now),
+                OpenMenu::CompanionWheel(w) => {
+                    use ui::menu::MenuCode;
+                    w.menu
+                        .special_key(ui, ui::menus::companion_wheel::LEAVE, now * 1000.0);
+                }
+                OpenMenu::Hacking(h) => {
+                    use ui::menu::MenuCode;
+                    h.menu
+                        .special_key(ui, ui::menus::hacking::LEAVE, now * 1000.0);
+                }
+                OpenMenu::Computers(c) => {
+                    use ui::menu::MenuCode;
+                    c.menu
+                        .special_key(ui, ui::menus::computers::LEAVE, now * 1000.0);
+                }
+                OpenMenu::Tutorial(t) => {
+                    use ui::menu::MenuCode;
+                    t.special_key(ui, ui::menus::tutorial::CLOSE_CODE, now * 1000.0);
+                }
+                _ if class == ui::menus::recipe::CLASS => {
+                    interface.key(ui, menu, top.code(), u32::from(b'X'), false, false, now);
+                }
+                _ if class == ui::menus::message::CLASS => {
+                    interface.key(
+                        ui,
+                        menu,
+                        top.code(),
+                        ui::menu::key::ESCAPE_TO_MESSAGE,
+                        false,
+                        false,
+                        now,
+                    );
+                }
+                _ => {}
             }
         }
         // `--menu-keys`: the ones due (`mDX/DY` moves the mouse).

@@ -16,6 +16,7 @@ mod chatter;
 mod clutter;
 mod combat;
 mod companions;
+mod controller_test;
 mod controls;
 mod crosshair;
 mod daylight;
@@ -29,9 +30,11 @@ mod exterior;
 mod faces;
 mod fighting;
 mod fos_start;
+mod fps;
 mod frame_order;
 mod frame_work;
 mod game_menus;
+mod gamepad;
 mod grade;
 mod grass;
 mod hiteffects;
@@ -284,6 +287,7 @@ fn main() {
         .insert_resource(ai::CellBuffer::new(&game))
         .insert_resource(player_camera::PlayerView::new(&game.order, &game.settings))
         .insert_resource(controls::Controls::read(&game.settings))
+        .init_resource::<gamepad::Input>()
         .init_resource::<player_body::PlayerBody>()
         .insert_resource(look::LookSettings(world::look_ik::Settings::read(
             |section, key| game.settings.float(section, key),
@@ -426,6 +430,9 @@ fn main() {
         .insert_resource(pipboy::StartPipboy(args.pipboy.clone()))
         .insert_resource(pipboy::StartPipboyKeys(args.pipboy_keys.clone()))
         .insert_resource(pipboy::PretendPad(args.pad))
+        .insert_resource(controller_test::Loadout(args.controller_test))
+        .init_resource::<controller_test::Applied>()
+        .init_resource::<fps::Readout>()
         .add_plugins(grass::GrassPlugin)
         .add_plugins(trees::TreePlugin)
         .add_plugins(water::WaterPlugin)
@@ -462,6 +469,7 @@ fn main() {
             PreUpdate,
             test_keys::press_test_keys.after(bevy::input::InputSystem),
         )
+        .add_systems(PreUpdate, gamepad::poll.after(bevy::input::InputSystem))
         .add_systems(
             PostUpdate,
             player_camera::place_view.before(bevy::transform::TransformSystem::TransformPropagate),
@@ -474,8 +482,10 @@ fn main() {
                 scripts::setup_notices,
                 menus::setup_menu_text,
                 combat::setup_hud,
+                fps::setup,
             ),
         )
+        .add_systems(Update, fps::update)
         // The per-frame systems, in the game's frame order (`frame_order`,
         // docs/FRAME_SKELETON.md "PR 3 result"): the stages and steps of
         // `Main::OnIdle` order them; a chain or `.before`/`.after` left here
@@ -3282,8 +3292,10 @@ type MenuGates<'w> = (
 /// while a button is held.
 #[allow(clippy::too_many_arguments)]
 fn look_around(
+    time: Res<Time>,
     mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
+    pad: Res<gamepad::Input>,
     state: Res<dialogue::DialogueState>,
     player: Res<walk::Player>,
     start_stage: Res<scripts::StartStage>,
@@ -3313,6 +3325,16 @@ fn look_around(
     if !locked && held && !taken {
         camera.yaw -= motion.delta.x * LOOK_SPEED;
         camera.pitch = (camera.pitch - motion.delta.y * LOOK_SPEED).clamp(-1.54, 1.54);
+    }
+    if !locked
+        && player.walking
+        && !mouse_in_menus(menus.as_deref(), conversation.as_deref(), vats.as_deref())
+    {
+        const PAD_LOOK_RADIANS_PER_SECOND: f32 = 2.6;
+        camera.yaw -= pad.right_stick.x * PAD_LOOK_RADIANS_PER_SECOND * time.delta_secs();
+        camera.pitch = (camera.pitch
+            + pad.right_stick.y * PAD_LOOK_RADIANS_PER_SECOND * time.delta_secs())
+        .clamp(-1.54, 1.54);
     }
     transform.rotation = Quat::from_euler(EulerRot::YXZ, camera.yaw, camera.pitch, 0.0);
 }
@@ -3385,6 +3407,7 @@ fn toggle_grade(
 fn fly_camera(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
+    pad: Res<gamepad::Input>,
     scroll: Res<AccumulatedMouseScroll>,
     player: Res<walk::Player>,
     mut cameras: Query<(&mut Transform, &mut FlyCamera)>,
@@ -3426,6 +3449,7 @@ fn fly_camera(
             direction += step;
         }
     }
+    direction += forward * pad.left_stick.y + right * pad.left_stick.x;
     if direction != Vec3::ZERO {
         let boost = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) {
             4.0
