@@ -21,10 +21,12 @@ The source viewer builds for Apple Silicon and selects Metal. Launch it with
 the `Data` folder from your own PC installation, as described in the
 [macOS build instructions](../README.md#build-and-run-on-macos). On
 2026-10-07, the release viewer rendered the `WastelandNV` exterior using a
-PC `Data` folder on Apple Silicon. This was a rendering smoke check; the
-Doc Mitchell, Back in the Saddle and Ghost Town Gunfight acceptance routes
-have not been run on macOS. It does not establish gameplay-route parity or
-support for running `FalloutNV.exe` on macOS.
+PC `Data` folder on Apple Silicon. On 2026-10-10, Doc Mitchell's scripted
+acceptance route reached the dialogue marker on macOS. Back in the Saddle
+and Ghost Town Gunfight have not been run on macOS, and the Doc route's
+dialogue-marker result has not been checked on Windows. This does not
+establish gameplay-route parity or support for running `FalloutNV.exe` on
+macOS.
 
 ## Current live route
 
