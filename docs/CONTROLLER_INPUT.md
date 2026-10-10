@@ -10,6 +10,11 @@ connected pad feeds walking and camera look; mapped buttons feed combat,
 interaction, dialogue, Pip-Boy and game menus. V.A.T.S. and the companion
 wheel use the sticks and buttons while their menus are open.
 
+On macOS, the viewer also reads Apple's Game Controller framework's extended
+gamepad profile when available, then uses the same shared button-edge and
+stick-shaping code. Linux and other platforms continue through Bevy/Gilrs;
+they can exercise the shared controls but do not run the Apple-specific path.
+
 In lockpicking, the left stick turns the cylinder and the right stick moves
 the pick horizontally. X forces the lock and B leaves; the controller
 tutorial (ID 0x1C) is selected while a pad is connected. The viewer maps full
@@ -28,13 +33,13 @@ test state if used, so launch without this option for normal play.
 
 ## Current evidence and gaps
 
-- `cargo check` for `viewer/` passes on macOS.
-- No physical controller has been tested in this session. The user will
-  verify this branch before any pull request is opened.
+- The original Bevy/Gilrs controller branch passed `cargo check` on macOS.
+- The new Apple-framework fallback has not been built or verified with a
+  physical controller. Linux's Bevy/Gilrs path has not been checked on Linux.
 - The lockpick analog sensitivity and complete controller behavior remain
   unverified on a physical pad.
 - Rumble is not implemented. The viewer currently uses one connected pad.
 
-**Next action:** have the user try movement, look, combat, interaction,
-menus, Pip-Boy, V.A.T.S. and lockpicking on a physical controller, then fix
-the reported issues before preparing a pull request.
+**Next action:** test movement, look, combat, interaction, menus, Pip-Boy,
+V.A.T.S. and lockpicking on physical controllers on macOS and Linux; adjust
+the platform-specific input path and sensitivity from those results.

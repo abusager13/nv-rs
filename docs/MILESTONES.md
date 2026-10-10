@@ -38,11 +38,15 @@ Controller-input review candidate (2026-10-10, fork branch
 camera look, combat, interaction, dialogue, menus, Pip-Boy, V.A.T.S., the
 companion wheel and lockpicking. The viewer reads action button bindings
 from `FalloutPrefs.ini`, draws an FPS counter, and has an opt-in
-`--controller-test` loadout. `cargo check --manifest-path viewer/Cargo.toml`
-passes on macOS. A physical controller has not been checked. The user will
-test the branch before any PR; see [CONTROLLER_INPUT.md](CONTROLLER_INPUT.md).
-**Next action:** collect the user's controller-test results and address any
-input or sensitivity issues.
+`--controller-test` loadout. This branch adds a macOS Game Controller
+framework input path while keeping button-edge and stick handling shared
+with Bevy/Gilrs on Linux and other platforms. The new macOS fallback has not
+been built or checked with a physical controller; Linux has not been tested
+on a Linux system. Review is limited to the user's fork and targets its
+`codex/macos-metal-support` branch, not upstream `main`. See
+[CONTROLLER_INPUT.md](CONTROLLER_INPUT.md).
+**Next action:** have the user test physical controllers on macOS and Linux,
+then address any input or sensitivity issues.
 
 Next session: start with [HANDOFF.md](HANDOFF.md). Open tasks:
 [TASKS.md](TASKS.md); contributor rules: [CONTRIBUTING.md](../CONTRIBUTING.md).

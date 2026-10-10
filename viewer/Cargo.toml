@@ -30,6 +30,18 @@ speedtree = { path = "../crates/speedtree" }
 # whose own .ogg playback crashed the viewer in Dead Money's Villa).
 lewton = "0.10"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-game-controller = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "GCController",
+    "GCExtendedGamepad",
+    "GCPhysicalInputProfile",
+    "GCControllerElement",
+    "GCControllerButtonInput",
+    "GCControllerDirectionPad",
+    "GCControllerAxisInput",
+] }
+
 [dev-dependencies]
 testdata = { path = "../crates/testdata" }
 
