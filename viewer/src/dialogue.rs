@@ -353,7 +353,7 @@ type TalkExtras<'w, 's> = (
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn talk(
     mut commands: Commands,
-    mut keys: ResMut<ButtonInput<KeyCode>>,
+    input: crate::controls::PlayerInput,
     time: Res<Time>,
     game: Res<GameFiles>,
     mut state: ResMut<DialogueState>,
@@ -378,6 +378,12 @@ pub fn talk(
     mut prompt: Query<&mut Text, (With<Prompt>, Without<DialogueText>)>,
     mut panel: Query<(&mut Text, &mut Visibility), With<DialogueText>>,
 ) {
+    let crate::controls::PlayerInput {
+        mut keys,
+        mouse,
+        controls,
+        pad,
+    } = input;
     let now = time.elapsed_secs();
     let order = &game.0.order;
     // Who is saying a line now, for scripts' `IsTalking`.
@@ -415,7 +421,10 @@ pub fn talk(
             .is_some_and(crate::game_menus::dialog::take_cut_line);
         let ended = screen.is_none()
             && !line_only
-            && (keys.just_pressed(KeyCode::Tab) || keys.just_pressed(KeyCode::Escape));
+            && (keys.just_pressed(KeyCode::Tab)
+                || keys.just_pressed(KeyCode::Escape)
+                || controls.menu_mode.just_pressed(&keys, &mouse, &pad)
+                || controls.vats.just_pressed(&keys, &mouse, &pad));
         keys.clear_just_pressed(KeyCode::Escape);
         if ended {
             end(&mut commands, &mut conversation.0, &mut player, &mut panel);
@@ -442,6 +451,7 @@ pub fn talk(
         }
         let skip = !hidden
             && (keys.just_pressed(KeyCode::Space)
+                || controls.activate.just_pressed(&keys, &mouse, &pad)
                 || answer == Some(ui::menus::dialog::Answer::Skip));
         if talk.choices.is_none() {
             // Saying the line: next response when the voice ends (or, with
@@ -795,7 +805,7 @@ pub fn talk(
                 text.0 = line;
             }
         }
-        if !keys.just_pressed(KeyCode::KeyE) {
+        if !controls.activate.just_pressed(&keys, &mouse, &pad) {
             return;
         }
         keys.clear_just_pressed(KeyCode::KeyE);

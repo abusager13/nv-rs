@@ -230,6 +230,7 @@ type SneakParts<'w, 's> = (
 pub fn walk(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
+    pad: Res<crate::gamepad::Input>,
     mut collision: ResMut<CellCollision>,
     game: Res<GameFiles>,
     mut state: ResMut<crate::dialogue::DialogueState>,
@@ -265,7 +266,7 @@ pub fn walk(
     // mover's sneak flag, with the crouch sound (`NPCHumanCrouchDown` /
     // `NPCHumanCrouchUp`) and out of the sights (`008bb650(0, 0, 0)`).
     let in_furniture = state.0.furniture.contains_key(&player_ref);
-    if controls.sneak.just_pressed(&keys, &mouse)
+    if controls.sneak.just_pressed(&keys, &mouse, &pad)
         && !state.0.controls_off[world::scripting::controls::MOVEMENT]
         && may_toggle_sneak(
             state.0.dead.contains(&player_ref),
@@ -291,14 +292,17 @@ pub fn walk(
     // press; a movement key held ends Auto Move (`0093e860`, `00940c84` …
     // `00940d48`).
     let always_run = *player.always_run.get_or_insert(controls.always_run_default);
-    if controls.always_run.just_pressed(&keys, &mouse) {
+    if controls.always_run.just_pressed(&keys, &mouse, &pad) {
         player.always_run = Some(!always_run);
     }
-    if controls.auto_move.just_pressed(&keys, &mouse) {
+    if controls.auto_move.just_pressed(&keys, &mouse, &pad) {
         player.auto_move = !player.auto_move;
     }
     let move_keys = [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyD, KeyCode::KeyA];
-    if move_keys.iter().any(|&k| keys.pressed(k)) || locked {
+    if move_keys.iter().any(|&k| keys.pressed(k))
+        || pad.left_stick.length_squared() > 0.01
+        || locked
+    {
         player.auto_move = false;
     }
     let auto = player.auto_move;
@@ -314,6 +318,10 @@ pub fn walk(
             wish[0] += dir[0] * sign;
             wish[1] += dir[1] * sign;
         }
+    }
+    if !locked {
+        wish[0] += forward[0] * -pad.left_stick.y + right[0] * pad.left_stick.x;
+        wish[1] += forward[1] * -pad.left_stick.y + right[1] * pad.left_stick.x;
     }
     let len = (wish[0] * wish[0] + wish[1] * wish[1]).sqrt();
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
@@ -355,6 +363,18 @@ pub fn walk(
                 flags |= flag;
             }
         }
+        if !locked {
+            if pad.left_stick.y < -0.1 {
+                flags |= m::FORWARD;
+            } else if pad.left_stick.y > 0.1 {
+                flags |= m::BACK;
+            }
+            if pad.left_stick.x < -0.1 {
+                flags |= m::LEFT;
+            } else if pad.left_stick.x > 0.1 {
+                flags |= m::RIGHT;
+            }
+        }
         if state.0.player_running {
             flags |= m::RUNNING;
         }
@@ -381,9 +401,10 @@ pub fn walk(
     }
     let shape = CharacterShape::PLAYER;
     // Jump: not over-encumbered; `fJumpHeightMin` × the player's scale (1).
-    let jump =
-        (keys.just_pressed(KeyCode::Space) && !locked && locomotion::may_jump(over_encumbered))
-            .then(|| locomotion::jump_height(settings, 1.0, false));
+    let jump = (controls.jump.just_pressed(&keys, &mouse, &pad)
+        && !locked
+        && locomotion::may_jump(over_encumbered))
+    .then(|| locomotion::jump_height(settings, 1.0, false));
     let dt = time.delta_secs();
     // The running speed `fSpeedPct` is measured against, kept once
     // (`0055d760`).
@@ -473,7 +494,7 @@ pub(crate) fn is_door(order: &esm::LoadOrder, reference: esm::FormId) -> bool {
 /// E goes through it, into the next interior or out to a worldspace.
 #[allow(clippy::too_many_arguments)]
 pub fn doors(
-    keys: Res<ButtonInput<KeyCode>>,
+    input: crate::controls::PlayerInput,
     game: Res<GameFiles>,
     doors: Res<Doors>,
     crosshair: Res<crate::crosshair::Crosshair>,
@@ -492,6 +513,12 @@ pub fn doors(
         Res<crate::menus::Menus>,
     ),
 ) {
+    let crate::controls::PlayerInput {
+        keys,
+        mouse,
+        controls,
+        pad,
+    } = input;
     // A lock just picked: the player uses the door or container, as the
     // game has them do after the lockpicking menu (`00573170`): E again.
     let again = lockpicking.again.take();
@@ -530,7 +557,8 @@ pub fn doors(
         }
     }
     // The game's menus have E while they're open (game_menus).
-    let pressed = !menus.game_open && (keys.just_pressed(KeyCode::KeyE) || again.is_some());
+    let pressed = !menus.game_open
+        && (controls.activate.just_pressed(&keys, &mouse, &pad) || again.is_some());
     let Some(door) = door else {
         if !pressed {
             return;

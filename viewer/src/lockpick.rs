@@ -73,9 +73,9 @@ const CLEAR_LAYER: usize = 26;
 
 /// The straining sound (`0078eb50`), kept to fade it.
 const TENSION_SOUND: &str = "UILockpickingPickTensionLPM";
-/// The lockpicking tutorial (`00790290`: 0x14, 0x1C with a pad, which
-/// this menu doesn't take).
+/// The lockpicking tutorials (`00790290`: 0x14 on PC, 0x1C on a pad).
 const TUTORIAL: u8 = world::tutorial::id::LOCKPICKING_PC;
+const TUTORIAL_PAD: u8 = world::tutorial::id::LOCKPICKING_XBOX;
 /// Refusals' sound when the skill is too low (`0078db00`).
 pub const POPUP_SOUND: &str = "UIPopUpMessageGeneral";
 
@@ -432,6 +432,7 @@ pub struct MenuInput<'w, 's> {
     buttons: ResMut<'w, ButtonInput<MouseButton>>,
     motion: ResMut<'w, AccumulatedMouseMotion>,
     typed: EventReader<'w, 's, KeyboardInput>,
+    pad: Res<'w, crate::gamepad::Input>,
 }
 
 /// Opens the menu when asked, and runs it each frame: the keyboard and
@@ -453,6 +454,7 @@ pub fn pick_locks(
         mut buttons,
         mut motion,
         mut typed,
+        pad,
     } = input;
     let order = &game.0.order;
     let state = &mut state.0;
@@ -530,19 +532,33 @@ pub fn pick_locks(
     let ms = now_ms.saturating_sub(open.clock) as u32;
     open.clock = now_ms;
     let turn = turn_keys(&game.0);
+    let tutorial = if pad.connected {
+        TUTORIAL_PAD
+    } else {
+        TUTORIAL
+    };
     let frame = Frame {
         ms,
         // On top unless one of the game's menus (its tutorial) is over it.
         active: !menus.game_open,
-        mouse: motion.delta.x * open.ui.screen_size.resolution_converter(),
-        turn_pressed: turn.iter().any(|&k| keys.just_pressed(k)),
-        turn_held: turn.iter().any(|&k| keys.pressed(k)),
-        tutorial_unseen: !state.tutorials.is_shown(TUTORIAL),
+        // The PC cursor is mouse motion. A pad's right stick moves the pick
+        // continuously across the menu; the left stick turns the cylinder,
+        // as the menu's 0x1C pad tutorial distinguishes from PC input.
+        // The original pad cursor's sensitivity isn't traced; one screen
+        // width per second at full stick deflection gives it a stable rate.
+        mouse: motion.delta.x * open.ui.screen_size.resolution_converter()
+            + pad.right_stick.x * open.ui.screen_size.width() * time.delta_secs(),
+        turn_pressed: turn.iter().any(|&k| keys.just_pressed(k)) || pad.left_stick_just_pressed,
+        turn_held: turn.iter().any(|&k| keys.pressed(k)) || pad.left_stick.length_squared() > 0.01,
+        tutorial_unseen: !state.tutorials.is_shown(tutorial),
     };
     let mut effects = Vec::new();
     // F and E click the buttons the menu names (`HandleClick`, `00790330`).
-    for (key, letter) in [(KeyCode::KeyF, 'F'), (KeyCode::KeyE, 'E')] {
-        if !keys.just_pressed(key) {
+    for (key, pad_button, letter) in [
+        (KeyCode::KeyF, GamepadButton::West, 'F'),
+        (KeyCode::KeyE, GamepadButton::East, 'E'),
+    ] {
+        if !keys.just_pressed(key) && !pad.just_pressed(pad_button) {
             continue;
         }
         let clicked = open
@@ -611,7 +627,7 @@ pub fn pick_locks(
                 let wait = world::tutorial::ask(
                     order,
                     &mut state.tutorials,
-                    TUTORIAL,
+                    tutorial,
                     world::tutorial::menu::LOCKPICK,
                     0,
                 );

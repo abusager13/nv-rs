@@ -772,6 +772,7 @@ fn grab_held(
     game: Res<GameFiles>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
+    pad: Res<crate::gamepad::Input>,
     controls: Res<Controls>,
     player: Res<Player>,
     (conversation, menus): (Res<Conversation>, Res<Menus>),
@@ -791,7 +792,7 @@ fn grab_held(
     let s = *clutter.grab_settings.get_or_insert_with(|| {
         GrabSettings::read(|name| world::scripting::game_setting(&game.0.order, name))
     });
-    let pressed = !busy && controls.grab.just_pressed(&keys, &mouse);
+    let pressed = !busy && controls.grab.just_pressed(&keys, &mouse, &pad);
     if let Some(held) = clutter.held {
         let Some(i) = clutter.world.find(held.reference) else {
             clutter.held = None;

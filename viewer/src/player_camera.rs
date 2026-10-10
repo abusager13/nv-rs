@@ -168,6 +168,8 @@ pub fn view_input(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
+    controls: Res<crate::controls::Controls>,
+    pad: Res<crate::gamepad::Input>,
     (motion, scroll): (Res<AccumulatedMouseMotion>, Res<AccumulatedMouseScroll>),
     state: Res<crate::dialogue::DialogueState>,
     player: Res<Player>,
@@ -237,8 +239,8 @@ pub fn view_input(
     let s = &*settings;
     let ai_controlled = state.script_packages.contains_key(&PLAYER_REF);
     camera.view_key_input(
-        keys.pressed(KeyCode::KeyF),
-        keys.just_released(KeyCode::KeyF),
+        controls.pov.pressed(&keys, &buttons, &pad),
+        controls.pov.just_released(&keys, &buttons, &pad),
         menu_mode,
         pov_off,
         false,

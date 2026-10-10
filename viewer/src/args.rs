@@ -104,6 +104,8 @@ OPTIONS:
                             it away)
     --pad                   for testing: the menus as with a 360 pad
                             connected (its buttons shown)
+    --controller-test       for testing: never die, carry limit 1,000,000,
+                            all loaded weapons, 1000 of every loaded ammo
     --vats [N]              for testing: open V.A.T.S. three seconds after
                             loading (as V does); with N, queue N attacks on
                             the part it opens on and play them
@@ -164,6 +166,8 @@ OPTIONS:
                             more than one button, one per box in turn
 
 CONTROLS:
+    gamepad: left stick move; right stick look; mapped buttons drive
+             actions, combat and the menus (FalloutPrefs.ini bindings)
     mouse                          look around (walking; flying: hold
                                    a button)
     left mouse button              attack (walking)
@@ -183,9 +187,8 @@ CONTROLS:
                                    talk to the person in view, take
                                    an item, open a container, search
                                    a body, or use a machine
-    picking a lock: move the mouse to place the pick, W A S D (the
-              game's movement controls) turn the lock, F force it,
-              E leave
+    picking a lock: right stick moves the pick and left stick turns the
+              lock; X force it, B leave. Keyboard and mouse also work.
     1-9, Space, Tab                choose, skip a line, end talking
     menus: arrows, Space, Enter    move, pick, accept
     Tab                            the Pip-Boy (held: its light)
@@ -274,6 +277,8 @@ pub struct Args {
     pub pipboy_keys: Vec<String>,
     /// `--pad`: the menus as with a pad connected.
     pub pad: bool,
+    /// Give the player a controller test loadout and high health/carry limit.
+    pub controller_test: bool,
     /// `--lockpick REF`: try this lock once loaded.
     pub lockpick: Option<String>,
     /// `--open-menu`: a game menu to open once loaded (`name[:id]`).
@@ -365,6 +370,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
     let mut pipboy = None;
     let mut pipboy_keys = Vec::new();
     let mut pad = false;
+    let mut controller_test = false;
     let mut lockpick = None;
     let mut open_menu = None;
     let mut use_on = None;
@@ -491,6 +497,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
                 }
             }
             "--pad" => pad = true,
+            "--controller-test" => controller_test = true,
             "--open-menu" => open_menu = Some(value("--open-menu")?),
             "--use" => use_on = Some(value("--use")?),
             "--menu-pointer" => {
@@ -603,6 +610,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
             pipboy,
             pipboy_keys,
             pad,
+            controller_test,
             lockpick,
             open_menu,
             use_on,

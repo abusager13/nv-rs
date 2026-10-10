@@ -506,6 +506,8 @@ pub fn run_vats(
         ResMut<ButtonInput<KeyCode>>,
         ResMut<ButtonInput<MouseButton>>,
     ),
+    controls: Res<crate::controls::Controls>,
+    pad: Res<crate::gamepad::Input>,
     mut vats: ResMut<Vats>,
     mut state: ResMut<DialogueState>,
     (mut player, menus, conversation): (ResMut<Player>, Res<Menus>, Res<Conversation>),
@@ -570,7 +572,7 @@ pub fn run_vats(
                 }
             }
             let auto_due = vats.auto.is_some() && now >= AUTO_AFTER && !rigs.is_empty();
-            let key = keys.just_pressed(KeyCode::KeyV);
+            let key = controls.vats.just_pressed(&keys, &mouse, &pad);
             let auto_due = auto_due && !key;
             // Walking (not the free camera); `--vats` also in pictures,
             // which fly unless `--walk` is given.
@@ -626,19 +628,26 @@ pub fn run_vats(
                 MenuKeys::default()
             } else {
                 MenuKeys {
-                    v_pressed: keys.just_pressed(KeyCode::KeyV),
-                    v_held: keys.pressed(KeyCode::KeyV),
-                    previous_target: keys.just_pressed(KeyCode::KeyA),
-                    next_target: keys.just_pressed(KeyCode::KeyD),
-                    next_part: keys.just_pressed(KeyCode::KeyW),
-                    previous_part: keys.just_pressed(KeyCode::KeyS),
-                    queue: mouse.just_pressed(MouseButton::Left),
+                    v_pressed: controls.vats.just_pressed(&keys, &mouse, &pad),
+                    v_held: controls.vats.pressed(&keys, &mouse, &pad),
+                    previous_target: keys.just_pressed(KeyCode::KeyA)
+                        || pad.just_pressed(GamepadButton::DPadLeft),
+                    next_target: keys.just_pressed(KeyCode::KeyD)
+                        || pad.just_pressed(GamepadButton::DPadRight),
+                    next_part: keys.just_pressed(KeyCode::KeyW)
+                        || pad.just_pressed(GamepadButton::DPadUp),
+                    previous_part: keys.just_pressed(KeyCode::KeyS)
+                        || pad.just_pressed(GamepadButton::DPadDown),
+                    queue: mouse.just_pressed(MouseButton::Left)
+                        || controls.activate.just_pressed(&keys, &mouse, &pad),
                     undo: mouse.just_pressed(MouseButton::Right)
-                        || keys.just_pressed(KeyCode::KeyB),
-                    execute: keys.just_pressed(KeyCode::KeyE),
+                        || keys.just_pressed(KeyCode::KeyB)
+                        || pad.just_pressed(GamepadButton::West),
+                    execute: keys.just_pressed(KeyCode::KeyE)
+                        || pad.just_pressed(GamepadButton::RightTrigger2),
                     special: [
                         keys.just_pressed(KeyCode::KeyR),
-                        keys.just_pressed(KeyCode::KeyF),
+                        keys.just_pressed(KeyCode::KeyF) || pad.just_pressed(GamepadButton::North),
                     ],
                 }
             };

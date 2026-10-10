@@ -869,7 +869,7 @@ fn sound(order: &esm::LoadOrder, requests: &mut SoundRequests, name: &str) {
 /// its menus (`007154b0`, `0070c4a0`): the arrows (Shift with left or
 /// right: the previous or next menu), Enter (Shift: the X button, Alt: the
 /// Y button), and the letters for the menus' `_PCButton_` traits.
-fn menu_keys(keys: &ButtonInput<KeyCode>) -> Vec<Key> {
+fn menu_keys(keys: &ButtonInput<KeyCode>, pad: &crate::gamepad::Input) -> Vec<Key> {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
     let mut out = Vec::new();
@@ -891,6 +891,19 @@ fn menu_keys(keys: &ButtonInput<KeyCode>) -> Vec<Key> {
     }
     if pressed(KeyCode::PageDown) {
         out.push(Key::PageDown);
+    }
+    for (button, key) in [
+        (GamepadButton::DPadUp, Key::Up),
+        (GamepadButton::DPadDown, Key::Down),
+        (GamepadButton::DPadLeft, Key::Left),
+        (GamepadButton::DPadRight, Key::Right),
+        (GamepadButton::South, Key::Activate),
+        (GamepadButton::West, Key::ButtonX),
+        (GamepadButton::North, Key::ButtonY),
+    ] {
+        if pad.just_pressed(button) {
+            out.push(key);
+        }
     }
     if pressed(KeyCode::Enter) || pressed(KeyCode::NumpadEnter) {
         out.push(if shift {
@@ -980,6 +993,8 @@ pub struct Mouse<'w, 's> {
     scroll: ResMut<'w, bevy::input::mouse::AccumulatedMouseScroll>,
     /// A connected pad, for its sticks on DATA's maps.
     pads: Query<'w, 's, &'static Gamepad>,
+    /// Shared gamepad state and button edges.
+    pad: Res<'w, crate::gamepad::Input>,
     /// The keys' own events, for the number keys (hot keys), which the
     /// Pip-Boy clears from `ButtonInput` while it's up.
     keyboard: EventReader<'w, 's, bevy::input::keyboard::KeyboardInput>,
@@ -1115,6 +1130,7 @@ fn pipboy_keys(
     let order = &game.0.order;
     let now = time.elapsed_secs();
     let pipboy = &mut *pipboy;
+    let control_bindings = controls.as_deref().copied().unwrap_or_default();
     // The mouse buttons, read from their events every frame (up or not,
     // so what's held is known on opening): `buttons` is cleared below
     // while it's up, so it would never see a button come up.
@@ -1123,7 +1139,7 @@ fn pipboy_keys(
         mouse.events.read().map(|e| (e.button, e.state)),
     );
     let hotkeys_released = hotkey_events(
-        &hotkey_keys(controls.as_deref()),
+        &hotkey_keys(Some(&control_bindings)),
         &mut pipboy.hotkeys_held,
         mouse.keyboard.read().map(|e| (e.key_code, e.state)),
     );
@@ -1242,8 +1258,11 @@ fn pipboy_keys(
         // the function key of the menu shown, while another's turns to
         // its menu (`00704c10` / `007048f0` / `00704170`).
         let shown = pipboy.built.as_ref().map(|b| b.pipboy.section);
-        let close_now =
-            keys.just_released(KeyCode::Tab) || (section_key.is_some() && section_key == shown);
+        let close_now = keys.just_released(KeyCode::Tab)
+            || control_bindings
+                .menu_mode
+                .just_released(&keys, &mouse.buttons, &mouse.pad)
+            || (section_key.is_some() && section_key == shown);
         if close_now {
             close(
                 &mut commands,
@@ -1276,7 +1295,13 @@ fn pipboy_keys(
         // Tab (control 14, `00a24b70`'s default): held past
         // `fPlayerPipBoyLightTimer`, the light; let go sooner, the Pip-Boy
         // (`009673d0`).
-        if keys.just_pressed(KeyCode::Tab) && free && allowed {
+        if (keys.just_pressed(KeyCode::Tab)
+            || control_bindings
+                .menu_mode
+                .just_pressed(&keys, &mouse.buttons, &mouse.pad))
+            && free
+            && allowed
+        {
             pipboy.tab_down = Some(now);
             pipboy.held_for_light = false;
         }
@@ -1298,7 +1323,15 @@ fn pipboy_keys(
                     if pipboy.light { "on" } else { "off" }
                 );
             }
-            if keys.just_released(KeyCode::Tab) || !keys.pressed(KeyCode::Tab) {
+            if keys.just_released(KeyCode::Tab)
+                || control_bindings
+                    .menu_mode
+                    .just_released(&keys, &mouse.buttons, &mouse.pad)
+                || (!keys.pressed(KeyCode::Tab)
+                    && !control_bindings
+                        .menu_mode
+                        .pressed(&keys, &mouse.buttons, &mouse.pad))
+            {
                 pipboy.tab_down = None;
                 if !pipboy.held_for_light
                     && free
@@ -1328,7 +1361,7 @@ fn pipboy_keys(
         sound(order, &mut requests, "UIPipBoyAccessDown");
         return;
     }
-    let mut pressed = menu_keys(&keys);
+    let mut pressed = menu_keys(&keys, &mouse.pad);
     // `--pipboy-keys`: one a frame once its menus are filled.
     if pipboy.input.is_some() && !start_keys.0.is_empty() {
         let name = start_keys.0.remove(0);

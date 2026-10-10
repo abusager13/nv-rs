@@ -1058,7 +1058,9 @@ buttons are picked from the original model triangles. Allocation/closing
 has an automated regression and a live PC input check (mouse increase/page
 turn, keyboard allocation, rejected early Done and closing at the budget).
 The Strength page has a checked render; the complete opening route and
-original-game visual comparison remain unverified. Controller input is not connected. The face menu is still
+original-game visual comparison remain unverified. Controller input is
+implemented in the review candidate but has not had a physical-controller
+check; see [controller input](CONTROLLER_INPUT.md). The face menu is still
 missing. See [Vit-o-matic evidence](VIGOR.md).
 
 People and creatures, checked against a recording of the game in the Prospector Saloon:
