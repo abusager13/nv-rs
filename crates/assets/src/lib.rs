@@ -434,7 +434,14 @@ pub fn archive_priority(names: &[&str]) -> Vec<usize> {
 /// Windows game installs use `USERPROFILE`; native macOS builds use `HOME`.
 /// Prefer the Windows variable when running in a compatibility environment.
 fn user_home() -> Option<PathBuf> {
-    user_home_from(std::env::var_os("USERPROFILE"), std::env::var_os("HOME"))
+    #[cfg(target_os = "macos")]
+    {
+        user_home_from(std::env::var_os("USERPROFILE"), std::env::var_os("HOME"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        user_home_from(std::env::var_os("USERPROFILE"), None)
+    }
 }
 
 fn user_home_from(
