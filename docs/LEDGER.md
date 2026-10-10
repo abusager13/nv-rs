@@ -30,16 +30,16 @@ Map provenance:
 
 | | Functions | Share |
 | --- | ---: | ---: |
-| translated | 9483 | 14.3% |
-| traced | 4467 | 6.7% |
-| platform | 3420 | 5.2% |
-| library | 21916 | 33.1% |
-| open | 26973 | 40.7% |
+| translated | 9742 | 14.7% |
+| traced | 4469 | 6.7% |
+| platform | 3418 | 5.2% |
+| library | 21915 | 33.1% |
+| open | 26715 | 40.3% |
 | **all** | **66259** | |
 
-Game code (functions in subsystems that are neither platform nor library): **40523** functions, of which 13547 (33.4%) are translated or traced.
+Game code (functions in subsystems that are neither platform nor library): **40523** functions, of which 13805 (34.1%) are translated or traced.
 
-Rust cites 14436 distinct `.text` addresses; 58 of them lie outside every function in the map (mid-instruction data, or code no function covers).
+Rust cites 14709 distinct `.text` addresses; 58 of them lie outside every function in the map (mid-instruction data, or code no function covers).
 
 Names by tier (see the engine-map README for each tier's evidence):
 
@@ -69,19 +69,19 @@ Largest first. `Named` counts functions with an Xbox PDB (or, in the runtime lib
 
 | Subsystem | Functions | KB | Named | translated | traced | platform | library | open | done |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| compiler: static init/exit | 21335 | 529 | 102 | 1 | 64 | 0 | 21270 | 0 | - |
-| fallout shared | 10470 | 2065 | 3149 | 6166 | 996 | 0 | 0 | 3308 | 68.4% |
+| compiler: static init/exit | 21335 | 529 | 102 | 1 | 65 | 0 | 21269 | 0 | - |
+| fallout shared | 10470 | 2065 | 3149 | 6205 | 981 | 0 | 0 | 3284 | 68.6% |
 | Havok SDK | 6591 | 1555 | 3499 | 53 | 77 | 0 | 0 | 6461 | 2.0% |
-| fallout/ai | 4849 | 1475 | 1888 | 1876 | 612 | 0 | 0 | 2361 | 51.3% |
-| fallout/interface | 2645 | 991 | 1247 | 503 | 742 | 0 | 0 | 1400 | 47.1% |
-| (unplaced) | 2353 | 470 | 0 | 30 | 390 | 1 | 0 | 1932 | 17.8% |
-| fallout shared/pathfinding | 1788 | 365 | 452 | 315 | 199 | 0 | 0 | 1274 | 28.7% |
+| fallout/ai | 4849 | 1475 | 1888 | 1955 | 615 | 0 | 0 | 2279 | 53.0% |
+| fallout/interface | 2645 | 991 | 1247 | 583 | 737 | 0 | 0 | 1325 | 49.9% |
+| (unplaced) | 2353 | 470 | 0 | 30 | 395 | 1 | 0 | 1927 | 18.1% |
+| fallout shared/pathfinding | 1788 | 365 | 452 | 315 | 209 | 0 | 0 | 1264 | 29.3% |
 | NiMain | 1619 | 261 | 1134 | 3 | 75 | 0 | 0 | 1541 | 4.8% |
 | BSHavok | 1615 | 316 | 1134 | 22 | 139 | 0 | 0 | 1454 | 10.0% |
-| BSShader | 1549 | 608 | 350 | 0 | 141 | 1408 | 0 | 0 | - |
+| BSShader | 1549 | 608 | 350 | 0 | 142 | 1407 | 0 | 0 | - |
 | NiAnimation | 1279 | 171 | 903 | 0 | 32 | 0 | 0 | 1247 | 2.5% |
-| fallout/misc | 1045 | 171 | 353 | 311 | 128 | 0 | 0 | 606 | 42.0% |
-| BSMain | 991 | 192 | 478 | 0 | 63 | 0 | 0 | 928 | 6.4% |
+| fallout/misc | 1045 | 171 | 353 | 329 | 124 | 0 | 0 | 592 | 43.3% |
+| BSMain | 991 | 192 | 478 | 43 | 67 | 0 | 0 | 881 | 11.1% |
 | NiXenonRenderer | 965 | 172 | 298 | 0 | 5 | 960 | 0 | 0 | - |
 | SpeedTree | 732 | 234 | 151 | 0 | 112 | 620 | 0 | 0 | - |
 | fallout/magic | 705 | 162 | 378 | 7 | 67 | 0 | 0 | 631 | 10.5% |
@@ -96,14 +96,14 @@ Largest first. `Named` counts functions with an Xbox PDB (or, in the runtime lib
 | BSSystem | 275 | 54 | 36 | 1 | 36 | 238 | 0 | 0 | - |
 | NiCollision | 215 | 104 | 115 | 0 | 4 | 0 | 0 | 211 | 1.9% |
 | fallout shared/distant terrain system | 204 | 37 | 62 | 0 | 26 | 0 | 0 | 178 | 12.7% |
-| BSCore | 197 | 22 | 45 | 1 | 13 | 2 | 0 | 181 | 7.1% |
+| BSCore | 197 | 22 | 45 | 1 | 14 | 2 | 0 | 180 | 7.6% |
 | fallout/audio | 190 | 55 | 49 | 13 | 41 | 0 | 0 | 136 | 28.4% |
 | fallout shared/sky | 164 | 59 | 51 | 2 | 33 | 0 | 0 | 129 | 21.3% |
 | fallout shared/region system | 159 | 26 | 74 | 0 | 20 | 0 | 0 | 139 | 12.6% |
 | fallout shared/tempeffects | 149 | 48 | 58 | 0 | 22 | 0 | 0 | 127 | 14.8% |
 | fallout shared/speedtree | 115 | 33 | 57 | 1 | 19 | 0 | 0 | 95 | 17.4% |
 | NiSystem | 92 | 7 | 39 | 1 | 4 | 0 | 0 | 87 | 5.4% |
-| BSSystemUtilities | 86 | 5 | 25 | 0 | 1 | 85 | 0 | 0 | - |
+| BSSystemUtilities | 86 | 5 | 25 | 0 | 2 | 84 | 0 | 0 | - |
 | fallout/dialogue | 74 | 14 | 46 | 0 | 18 | 0 | 0 | 56 | 24.3% |
 | BSMovie | 62 | 9 | 21 | 0 | 9 | 53 | 0 | 0 | - |
 | libcpmt | 12 | 0 | 8 | 0 | 0 | 0 | 12 | 0 | - |
@@ -128,9 +128,9 @@ The call tree of `Main::OnIdle` (Xbox PDB, PC `0086e650`), the game's per-frame 
 | Depth | Call sites | Functions | translated | traced | platform | library | open |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0 | 1 | 1 | 1 | 0 | 0 | 0 | 0 |
-| 1 | 143 | 117 | 94 | 31 | 3 | 0 | 15 |
-| 2 | 1575 | 583 | 1000 | 414 | 24 | 4 | 133 |
-| 3 | 4973 | 1303 | 3074 | 1156 | 160 | 26 | 557 |
+| 1 | 143 | 117 | 96 | 31 | 3 | 0 | 13 |
+| 2 | 1575 | 583 | 1014 | 401 | 24 | 4 | 132 |
+| 3 | 4973 | 1303 | 3231 | 1156 | 154 | 26 | 406 |
 
 The calls of `Main::OnIdle` itself (depth 1), in order:
 
@@ -160,7 +160,7 @@ The calls of `Main::OnIdle` itself (depth 1), in order:
 | 22 | `00703d50` | `Interface::IsConsoleVisible` | translated |
 | 23 | `008d6f30` | - | translated |
 | 24 | `006da7c0` | `Pathing::ProfilePathing` | translated |
-| 25 | `00851d90` | `BGSSaveLoadManager::UpdateQueuedSaves` | open |
+| 25 | `00851d90` | `BGSSaveLoadManager::UpdateQueuedSaves` | translated |
 | 26 | `0086ef30` | - | translated |
 | 27 | `0086ef90` | - | translated |
 | 28 | `0086f190` | `Main::OnIdle_FixActorBones` | translated |
@@ -172,7 +172,7 @@ The calls of `Main::OnIdle` itself (depth 1), in order:
 | 34 | `00c3dbf0` | `IOManager::UpdateQueue` | open |
 | 35 | `0086efa0` | - | translated |
 | 36 | `0070edf0` | `XUserInterface::XUIIsUp` | traced |
-| 37 | `0078cfc0` | `LoadingMenu::SuspendBackgroundThread` | open |
+| 37 | `0078cfc0` | `LoadingMenu::SuspendBackgroundThread` | translated |
 | 38 | `00705ea0` | `Interface::IsInGameLoadingMenuOpen` | translated |
 | 39 | `00457d70` | `TES::ShowLoadingMenu` | translated |
 | 40 | `0086efe0` | `Main::OnIdle_ScaleLOD` | translated |
