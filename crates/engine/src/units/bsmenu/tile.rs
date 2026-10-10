@@ -13,8 +13,23 @@
 //!   `Tile::GetChildByID` up to and including `Tile::Value::CalculateValue`):
 //!   the dirty and hibernating tile lists, `UpdateAll` / `UpdateTile`,
 //!   `GetTextureAtlasInfo`, the fade controls, `SetParent`, the link
-//!   lookup, and the trait value's actions and calculation. The next
-//!   function to translate is `00a0a0b0` (`Tile::GetUnderscoreValue`).
+//!   lookup, and the trait value's actions and calculation;
+//! * session 3: `00a0a0b0` to `00a0c080` (40 functions, from
+//!   `Tile::GetUnderscoreValue` up to and including the `GetRTTI` slot at
+//!   `00a0c080`): the reactions, `Value::SetFloat` / `SetString`,
+//!   `TileTemplate::AddPair` (the XML reader's template items, with the pool
+//!   of unused items), `BuildStorage`, the colour walks, the rotation update
+//!   and the small `TileText` / `Tile3D` / `XMLStorage` members;
+//! * session 4: `00a0c090` to `00a0d7c0` (40 functions, from the
+//!   `Tile::Extra` deleting destructor up to the hash-map node release at
+//!   `00a0d7c0`): the template constructor and destructor, the template item
+//!   constructor, the `std::string` `rfind` / `append` steps, and the
+//!   container code the unit emitted (`NiTPointerMap` / `NiTMapBase` set,
+//!   iterate, hash and destructor chain, `BSSimpleArray` insert, grow and
+//!   sorted find, `BSSimpleList<FadeControl *>` add and remove). The next
+//!   function to translate is `00a0d7f0` (the `NiTPointerMap<int, int>`
+//!   code and then the map of `Tile::Value *` to `Tile::Reaction *`, up to
+//!   `00a0d990`, the last function of the unit before the library tail).
 //!
 //! Conventions of the whole unit:
 //!
@@ -38,7 +53,7 @@
 
 #[allow(unused_imports)]
 use crate::prelude::*;
-use crate::types::{BSSimpleArray, BSSimpleList, BSStringT, NiTPointerList};
+use crate::types::{BSSimpleArray, BSSimpleList, BSStringT, NiTPointerList, NiTPointerMap};
 use crate::units::platform::MEMORY_MANAGER;
 use crate::Inline;
 
@@ -173,6 +188,15 @@ layout! {
         0x00 preactionValue: Ptr<TileValue>,
         /// `pnext` (Xbox PDB).
         0x04 pnext: Ptr,
+    }
+
+    /// `Tile::Extra` (Xbox PDB, an `NiExtraData`), 0x14 bytes: the extra
+    /// data that ties a model's scene-graph node to its tile.
+    pub struct Extra: 0x14 {
+        /// `pTile` (Xbox PDB).
+        0x0c pTile: Ptr<Tile>,
+        /// `pNode` (Xbox PDB): the `NiNode`.
+        0x10 pNode: Ptr,
     }
 }
 
@@ -784,6 +808,171 @@ const STD_STRING_ASSIGN_STRING: u32 = 0x0044_a580;
 const STD_STRING_APPEND: u32 = 0x00a0_c430;
 const STD_STRING_NPOS: u32 = 0x0101_73f0;
 const TEXTURE_ATLAS_ENTRY_CONSTRUCT: u32 = 0x00a0_beb0;
+
+// Session 3: constants of `GetUnderscoreValue` .. `NiExtraData::GetRTTI`.
+
+/// The `"%s%d"` format of [`tile_get_underscore_value`].
+const UNDERSCORE_NAME_FORMAT: u32 = 0x0109_4c50;
+/// `sscanf` (CRT, no translation yet) and the `"%f"` format
+/// [`template_add_pair`] reads a number with.
+const SSCANF: u32 = 0x00ec_a4a6;
+const FLOAT_SCAN_FORMAT: u32 = 0x0109_4cf0;
+/// `-2147483648.0` as a `float` (`01094cf4`): the "no value yet" marker of
+/// [`template_add_pair`] (the double at [`NO_TRAIT_VALUE`] is the same
+/// number).
+const NO_VALUE_FLOAT: u32 = 0x0109_4cf4;
+/// The doubles [`template_add_pair`] compares with: `999.0` (the marker
+/// value of a template definition), `901.0` and `908.0` (the range of the
+/// tile-type numbers), `4001.0` and `4125.0` (the range of the trait
+/// numbers), `2000.0` and `2025.0` (the range of the action numbers).
+const TEMPLATE_MARKER_VALUE: u32 = 0x0109_4ce8;
+const TILE_TYPE_FIRST_DOUBLE: u32 = 0x0109_4ca0;
+const TILE_TYPE_LAST_DOUBLE: u32 = 0x0109_4c98;
+const TRAIT_ID_FIRST_DOUBLE: u32 = 0x0109_4c90;
+const TRAIT_ID_LAST_DOUBLE: u32 = 0x0109_4c88;
+const ACTION_ID_FIRST_DOUBLE: u32 = 0x0107_3490;
+const ACTION_ID_LAST_DOUBLE: u32 = 0x0109_4c80;
+/// The error messages of [`template_add_pair`].
+const MSG_NESTED_TEMPLATES: u32 = 0x0109_4ca8;
+const MSG_BAD_TRAIT_OR_ACTION: u32 = 0x0109_4c58;
+/// `Tile::enumTag` (Xbox PDB), more of the attribute words the XML reader
+/// numbers (`"src"` at `01094394`, `"trait"` at `0109438c`).
+const TAG_SRC: i32 = 0xbbb;
+const TAG_TRAIT: i32 = 0xbbc;
+/// The trait ids (`Tile::enumTrait`, `0xfa1` to `0x101d`) and the action
+/// numbers (`Tile::VALUE_ACTION`, 2000 to `0x7e9`) as integers; ids from
+/// [`FIRST_USER_TEXT_ID`] on are the user-defined names.
+const TRAIT_ID_FIRST: i32 = 0xfa1;
+const TRAIT_ID_LAST: i32 = 0x101d;
+const ACTION_ID_FIRST: i32 = 2000;
+const ACTION_ID_LAST: i32 = 0x7e9;
+/// The `TEMPLATE_ID` command that [`template_add_pair`] gives an item whose
+/// trait or action number is out of range (it also prints an error).
+const TI_BAD: i32 = -1;
+/// The doubly linked list of a template's items (`TileTemplate::xList`, an
+/// `NiTPointerList`): link a node at the tail `(list, node)`, remove the
+/// head and the tail and answer the element `(list)` (no PDB names;
+/// `thiscall` on the list at +8 of the template).
+const TEMPLATE_LIST_ADD_NODE_TAIL: u32 = 0x00a1_1db0;
+const TEMPLATE_LIST_POP_HEAD: u32 = 0x00ae_7f90;
+const TEMPLATE_LIST_POP_TAIL: u32 = 0x00ae_8010;
+/// The pool of unused `Tile::TileTemplateItem`s (ten words at `011f329c`,
+/// their count at `011f32dc`), and the constructor that builds a new item
+/// `(this, command, float, text, trait, line)` (no PDB name, next session).
+const ITEM_POOL: u32 = 0x011f_329c;
+const ITEM_POOL_COUNT: u32 = 0x011f_32dc;
+const ITEM_POOL_SIZE: u32 = 10;
+const TEMPLATE_ITEM_CONSTRUCT: u32 = 0x00a0_c220;
+/// The text a main template is made with (`01094d90`), the
+/// `Tile::TileTemplate` constructor `(this, name, storage)` and its
+/// destructor (Xbox PDB `Tile::TileTemplate::~TileTemplate`).
+const MAIN_TEMPLATE_NAME: u32 = 0x0109_4d90;
+const TEMPLATE_CONSTRUCT: u32 = 0x00a0_c0c0;
+const TEMPLATE_DESTROY: u32 = 0x00a0_c190;
+/// `BSSimpleList<Tile::TileTemplate *>::AddHead(&item)` (thiscall on the
+/// list head embedded in a `BuildStorage`).
+const SUB_TEMPLATE_LIST_ADD_HEAD: u32 = 0x00af_25b0;
+/// `NiFixedString::NiFixedString(char *)` (answers the counted handle), the
+/// handle of the empty string (the word at `0109b220`), and the import
+/// slot of `InterlockedDecrement` that releases a handle.
+const NI_FIXED_STRING_CREATE: u32 = 0x00a5_b690;
+const EMPTY_FIXED_STRING: u32 = 0x0109_b220;
+/// The vtable of `Tile::Extra` and the destructor of its base class
+/// `NiExtraData` (`thiscall`).
+const VTABLE_EXTRA: u32 = 0x0109_4cfc;
+const NI_EXTRA_DATA_DESTROY: u32 = 0x00a7_b300;
+/// The sound code `PlayTileSound` uses: the audio manager pointer
+/// (`011f6d98`), `BSAudio::GetSoundHandleByName(&out, name, flags)` and
+/// `BSSoundHandle::Play()` (Xbox PDB, `thiscall`).
+const AUDIO_MANAGER: u32 = 0x011f_6d98;
+const GET_SOUND_HANDLE_BY_NAME: u32 = 0x00ad_7550;
+const SOUND_HANDLE_PLAY: u32 = 0x00ad_8830;
+const TILE_SOUND_FLAGS: u32 = 0x121;
+/// `NiMatrix3::MakeYRotation(angle)` (Xbox PDB, `thiscall` on the matrix).
+const MATRIX_MAKE_Y_ROTATION: u32 = 0x0043_f850;
+/// The vtable of `Tile3D`, its destructor `~Tile3D` (`thiscall`), and the
+/// type names `TileText` and `Tile3D` answer.
+const VTABLE_TILE_3D: u32 = 0x0109_48ac;
+const TILE_3D_DESTROY: u32 = 0x00a2_0650;
+const TILE_TEXT_TYPE_NAME: u32 = 0x0109_48a0;
+const TILE_3D_TYPE_NAME: u32 = 0x0109_48d4;
+/// `memcmp` (CRT) and the two bytes `"&_"` it compares a name's start with.
+const MEMCMP: u32 = 0x00ec_4835;
+const USER_NAME_PREFIX: u32 = 0x0109_3f80;
+/// The `NiRTTI` record that `NiExtraData::GetRTTI` answers.
+const EXTRA_DATA_RTTI: u32 = 0x011f_4a80;
+
+// Session 4: constants of `Tile::Extra`'s deleting destructor to the hash
+// map code.
+
+/// `operator delete(block, size)` (`cdecl`, as `Tile::Extra` is deleted),
+/// `alloc(bytes)` and `free(block)` (`cdecl`, the bucket arrays and the
+/// copied keys of the hash maps; no PDB names).
+const NI_OPERATOR_DELETE: u32 = 0x00aa_1460;
+const ALLOC_BYTES: u32 = 0x00aa_1070;
+const FREE_BYTES: u32 = 0x00aa_10f0;
+/// Destructor of the `NiTPointerList` at +8 of a `Tile::TileTemplate` (no
+/// PDB name; code shared with the audio library by identical-code folding).
+const LIST_DESTROY: u32 = 0x00ae_8370;
+/// `std::string` steps (thiscall on the string): `_Inside(ptr)` (true when
+/// the pointer is into the string's own buffer) and `_Grow(size, trim)`
+/// (true when the buffer holds `size` characters); the runtime's thrower of
+/// `length_error` and of `out_of_range`; `memcpy_s`, `memmove`, `bsearch`
+/// and `tolower`.
+const STD_STRING_INSIDE: u32 = 0x0044_ab90;
+const STD_STRING_GROW: u32 = 0x0044_a8d0;
+const STD_LENGTH_ERROR: u32 = 0x00ec_30b0;
+const STD_OUT_OF_RANGE: u32 = 0x00ec_30e8;
+const MEMCPY_S: u32 = 0x00ec_7c66;
+const MEMMOVE: u32 = 0x00ec_7230;
+const BSEARCH: u32 = 0x00ec_716d;
+const TOLOWER: u32 = 0x00ec_67aa;
+/// Gives a node back to the free pool of a map's allocator `(allocator,
+/// node)` (no PDB name; the allocator is at +0xC of the map).
+const MAP_FREE_NODE: u32 = 0x0045_cee0;
+/// The vtables the hash-map destructors write while they unwind the class
+/// chain: `Tile::MenuStringMap` (`01094d9c`), `NiTStringTemplateMap<...>`
+/// (`01094ddc`), `NiTPointerMap<char const *, int>` (`01094dfc`),
+/// `NiTMapBase<... char const *, int>` (`01094e1c`) and the two levels of
+/// `NiTPointerMap<int, int>` (`01094e3c`, `01094e5c`).
+const VTABLE_MENU_STRING_MAP: u32 = 0x0109_4d9c;
+const VTABLE_STRING_TEMPLATE_MAP: u32 = 0x0109_4ddc;
+const VTABLE_POINTER_MAP: u32 = 0x0109_4dfc;
+const VTABLE_MAP_BASE: u32 = 0x0109_4e1c;
+const VTABLE_INT_POINTER_MAP: u32 = 0x0109_4e3c;
+const VTABLE_INT_MAP_BASE: u32 = 0x0109_4e5c;
+/// Slots of the hash maps' vtable that the shared map code calls: the hash
+/// of a key `(key)`, the key comparison `(a, b)`, the construction of a
+/// node's key and value `(node, key, value)` and the allocation of a node.
+const MAP_SLOT_HASH: u32 = 0x4;
+const MAP_SLOT_KEYS_EQUAL: u32 = 0x8;
+const MAP_SLOT_INIT_NODE: u32 = 0xc;
+const MAP_SLOT_NEW_NODE: u32 = 0x14;
+/// Slots of the vtable of a `BSSimpleArray`: allocate `(count)`, free
+/// `(block)` and reallocate `(block, count)`.
+const ARRAY_SLOT_ALLOCATE: u32 = 0x4;
+const ARRAY_SLOT_FREE: u32 = 0x8;
+const ARRAY_SLOT_REALLOCATE: u32 = 0xc;
+
+/// The characters of a `std::string` (0x1c bytes, `_DebugHeapAllocator`):
+/// the text is inline at +4 while the capacity (+0x18) is below 0x10, else
+/// the pointer at +4 holds it; the length is at +0x14.
+fn std_string_data(e: &Engine, string: u32) -> u32 {
+    if e.mem.u32(string + 0x18) >= 0x10 {
+        e.mem.u32(string + 4)
+    } else {
+        string + 4
+    }
+}
+
+/// The remainder of `value` by the bucket count at +4 of a hash map (the
+/// game divides by it unchecked).
+fn bucket_index(e: &Engine, map: u32, value: u32) -> u32 {
+    let buckets = e.mem.u32(map + 4);
+    value
+        .checked_rem(buckets)
+        .expect("hash map without buckets (division by zero in the game)")
+}
 
 /// `!(a < b)`: true when `a >= b` and when the two are unordered, as the
 /// FPU compare-and-branch sequences test it.
@@ -5298,6 +5487,1958 @@ fn run_action(e: &mut Engine, this: Ptr<TileValue>, action: u32, stack: Ptr, cha
     }
 }
 
+// ---------------------------------------------------------------------------
+// Session 3: `Tile::GetUnderscoreValue` .. `NiExtraData::GetRTTI`
+
+// Translated from 00a0a0b0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::GetUnderscoreValue` (Xbox PDB): the value of the user trait whose
+/// name is the text table's name for `name_id` followed by `number`
+/// (`sprintf("%s%d")`, at most 0x104 bytes), looked up with
+/// [`tile_text_to_trait`] and [`tile_get_value`]; null when there is none.
+pub fn tile_get_underscore_value(
+    e: &mut Engine,
+    this: Ptr<Tile>,
+    name_id: i32,
+    number: i32,
+) -> Ptr {
+    let name = fn_00a01a70(e, name_id);
+    e.with_stack(NAME_BUFFER_SIZE, |e, buffer| {
+        e.call(
+            SPRINTF_S,
+            &args![
+                buffer,
+                NAME_BUFFER_SIZE,
+                UNDERSCORE_NAME_FORMAT,
+                name,
+                number
+            ],
+        );
+        let trait_id = tile_text_to_trait(e, buffer);
+        tile_get_value(e, this, trait_id)
+    })
+}
+
+// Translated from 00a0a130 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::AddReaction` (Xbox PDB, `cdecl`): records in the map
+/// `ValueReactionList` that `owner` depends on `value`. A reaction node
+/// (owner, next) is made; when `value` has no list yet the node becomes
+/// its list, otherwise the node is added behind the last node of the list,
+/// unless that last node already names `owner` (then the node is freed).
+pub fn add_reaction(e: &mut Engine, value: Ptr<TileValue>, owner: Ptr<TileValue>) {
+    let node: Ptr<Reaction> = allocate(e, 8).cast();
+    e.set(node, Reaction::preactionValue, Ptr::NULL);
+    e.set(node, Reaction::pnext, Ptr::NULL);
+    e.set(node, Reaction::preactionValue, owner);
+    e.with_stack(4, |e, list| {
+        e.mem.set_u32(list.addr(), 0);
+        let found = e
+            .call(REACTION_MAP_FIND, &args![REACTION_MAP, value, list])
+            .u8();
+        if found == 0 {
+            e.call(REACTION_MAP_SET, &args![REACTION_MAP, value, node]);
+            return;
+        }
+        let mut last = e.mem.u32(list.addr());
+        let mut names_owner = e.mem.u32(last) == owner.addr();
+        while e.mem.u32(last + 4) != 0 {
+            last = e.mem.u32(last + 4);
+            names_owner = e.mem.u32(last) == owner.addr();
+        }
+        if names_owner {
+            deallocate(e, node.addr());
+        } else {
+            e.mem.set_u32(last + 4, node.addr());
+        }
+    });
+}
+
+// Translated from 00a0a220 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::ValueChangeEvent` (Xbox PDB, `cdecl`): recalculates, with
+/// `CalculateValue(false)`, every value that has a reaction on `value`.
+pub fn tile_value_change_event(e: &mut Engine, value: Ptr<TileValue>) {
+    e.with_stack(4, |e, list| {
+        e.mem.set_u32(list.addr(), 0);
+        let found = e
+            .call(REACTION_MAP_FIND, &args![REACTION_MAP, value, list])
+            .u8();
+        if found != 0 {
+            let mut reaction = e.mem.u32(list.addr());
+            while reaction != 0 {
+                let dependent = Ptr::new(e.mem.u32(reaction));
+                value_calculate_value(e, dependent, false);
+                reaction = e.mem.u32(reaction + 4);
+            }
+        }
+    });
+}
+
+// Translated from 00a0a270 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::Value::SetFloat` (Xbox PDB): stores `value` as the trait's float
+/// and drops its string; with `flag` the actions are cleared too. Then
+/// `CalculateValue` runs, told whether anything changed (the float differs
+/// or there was a string).
+pub fn value_set_float(e: &mut Engine, this: Ptr<TileValue>, value: f32, flag: bool) {
+    let old = e.get(this, TileValue::fValue);
+    let text = e.get(this, TileValue::strValue);
+    let unchanged = value == old && text.is_null();
+    let changed = !unchanged;
+    e.set(this, TileValue::fValue, value);
+    if !text.is_null() {
+        deallocate(e, text.addr());
+        e.set(this, TileValue::strValue, Ptr::NULL);
+    }
+    if flag {
+        value_clear_actions(e, this);
+    }
+    value_calculate_value(e, this, changed);
+}
+
+// Translated from 00a0a300 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::Value::SetString` (Xbox PDB): replaces the trait's string by a
+/// copy of `text` (none when `text` is null), zeroes the float and, with
+/// `flag`, clears the actions. Then `CalculateValue` runs, told whether
+/// the string changed (one is missing, or they differ).
+pub fn value_set_string(e: &mut Engine, this: Ptr<TileValue>, text: Ptr, flag: bool) {
+    let old = e.get(this, TileValue::strValue);
+    let changed = if old.is_null() != text.is_null() {
+        true
+    } else if !old.is_null() {
+        e.call(STRCMP, &args![old, text]).i32() != 0
+    } else {
+        false
+    };
+    if !old.is_null() {
+        deallocate(e, old.addr());
+        e.set(this, TileValue::strValue, Ptr::NULL);
+    }
+    if !text.is_null() {
+        let length = e.call(STRLEN, &args![text]).u32();
+        let copy = allocate(e, length + 1);
+        e.set(this, TileValue::strValue, copy);
+        e.call(STRCPY_S, &args![copy, length + 1, text]);
+    }
+    e.set(this, TileValue::fValue, 0.0);
+    if flag {
+        value_clear_actions(e, this);
+    }
+    value_calculate_value(e, this, changed);
+}
+
+/// Links `item` behind the last item of the template's list (a node from
+/// the list's allocator, then the tail link).
+fn template_push_item(e: &mut Engine, this: Ptr<TileTemplate>, item: Ptr<TileTemplateItem>) {
+    let list = this.at(TileTemplate::xList).addr();
+    let node = e.call(LIST_NEW_NODE, &args![list + 8]).u32();
+    e.mem.set_u32(node + 8, item.addr());
+    e.call(TEMPLATE_LIST_ADD_NODE_TAIL, &args![list, node]);
+}
+
+/// Takes the last item off the template's list and gives it back to the
+/// pool ([`fn_00a0b8d0`]).
+fn template_drop_last_item(e: &mut Engine, this: Ptr<TileTemplate>) {
+    let list = this.at(TileTemplate::xList).addr();
+    let last = e.call(TEMPLATE_LIST_POP_TAIL, &args![list]).ptr();
+    fn_00a0b8d0(e, last);
+}
+
+/// Reads a number from `text` with `sscanf("%f")` into `value` (left
+/// alone when the text holds none).
+fn scan_float(e: &mut Engine, text: Ptr, value: &mut f32) {
+    e.with_stack(4, |e, slot| {
+        e.mem.set_f32(slot.addr(), *value);
+        e.call(SSCANF, &args![text, FLOAT_SCAN_FORMAT, slot]);
+        *value = e.mem.f32(slot.addr());
+    });
+}
+
+// Translated from 00a0a410 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::TileTemplate::AddPair` (Xbox PDB): one word of the XML reader
+/// (`command` is a `Tile::enumTag`, or 0/1 for the start/end of an
+/// element; `text`; `line`) becomes a template item, or is folded into
+/// the items before it.
+///
+/// The item's value is the text table's number for `text` (unless `flag`),
+/// a user trait id for a name that starts with `_` or `&_`, else the
+/// number the text spells (items whose text is all digits, `-` and `.`).
+/// Then, looking at the last three items (`previous`), the pair is
+/// turned into: the definition of a template (a `name` after the marker
+/// value 999: finds or creates the sub-template, and the end marker 999
+/// closes it); a tile start (a `name` after an item that holds a tile-type
+/// number 901 to 908); a simple trait or action (`value` after a trait or
+/// action start of the same number); a trait link (`trait`, `src`, action
+/// start); or a new item of kind trait start/end, action start/end or
+/// tile end, which is added at the tail. Items that are folded are given
+/// back to the pool.
+pub fn template_add_pair(
+    e: &mut Engine,
+    this: Ptr<TileTemplate>,
+    command: i32,
+    text: Ptr,
+    line: i32,
+    flag: bool,
+) {
+    let mut value: f32 = e.global(NO_VALUE_FLOAT);
+    if !flag {
+        value = tile_text_to_trait(e, text) as f32;
+    }
+    let no_value = e.global::<f64>(NO_TRAIT_VALUE);
+    let first = e.mem.i8(text.addr());
+    if value as f64 == no_value
+        && (first == b'_' as i8 || (first == b'&' as i8 && e.mem.i8(text.addr() + 1) == b'_' as i8))
+    {
+        value = tile_add_user_trait(e, text, -1) as f32;
+    }
+    let trait_id = float_to_int(e, value);
+    let item = fn_00a0b950(e, command, value, text, trait_id, line);
+    let length = e.call(STRLEN, &args![text]).u32();
+    let mut numeric = true;
+    for index in 0..length {
+        let c = e.mem.i8(text.addr() + index);
+        if !(b'0' as i8..=b'9' as i8).contains(&c) && c != b'-' as i8 && c != b'.' as i8 {
+            numeric = false;
+            break;
+        }
+    }
+    if numeric {
+        if value as f64 == no_value {
+            scan_float(e, text, &mut value);
+        }
+        if value as f64 == e.global::<f64>(ZERO) {
+            scan_float(e, text, &mut value);
+        }
+        e.call(STRING_SET, &args![item.addr() + 8, EMPTY_NAME, 0u32]);
+        e.set(item, TileTemplateItem::fVal, value);
+        let number = float_to_int(e, value);
+        e.set(item, TileTemplateItem::u, number as u32);
+    }
+    // The last three items: `previous[0]` is the one before this pair.
+    let mut node = e.get(this.at(TileTemplate::xList), NiTPointerList::m_pkTail);
+    let mut previous = [0u32; 3];
+    for slot in previous.iter_mut() {
+        if node != 0 {
+            *slot = e.mem.u32(node + 8);
+            node = e.mem.u32(node + 4);
+        }
+    }
+    let [last, second, third] = previous;
+    let storage = e.get(this, TileTemplate::pParent);
+    let marker = e.global::<f64>(TEMPLATE_MARKER_VALUE);
+    let tile_type_first = e.global::<f64>(TILE_TYPE_FIRST_DOUBLE);
+    let tile_type_last = e.global::<f64>(TILE_TYPE_LAST_DOUBLE);
+    let command_of = |e: &Engine, item: u32| e.mem.i32(item);
+    let number_of = |e: &Engine, item: u32| e.mem.f32(item + 4);
+    let item_number = number_of(e, item.addr());
+    let item_trait = e.mem.i32(item.addr() + 0x10);
+    if command == TAG_NAME
+        && last != 0
+        && command_of(e, last) == 0
+        && number_of(e, last) as f64 == marker
+    {
+        // The start of a template definition: `<name="...">` after the
+        // marker.
+        if e.get(storage, BuildStorage::pCurrentTemplate).is_null() {
+            let found = fn_00a0af10(e, storage, text);
+            e.set(storage, BuildStorage::pCurrentTemplate, found);
+            if found.is_null() {
+                let made = fn_00a0ae70(e, storage, text);
+                e.set(storage, BuildStorage::pCurrentTemplate, made);
+            }
+        } else {
+            e.call(PRINT_ERROR, &args![MSG_NESTED_TEMPLATES]);
+        }
+        template_drop_last_item(e, this);
+        fn_00a0b8d0(e, item.cast());
+    } else if command == 1
+        && value as f64 == marker
+        && !e.get(storage, BuildStorage::pCurrentTemplate).is_null()
+    {
+        // The end of the template definition.
+        e.set(storage, BuildStorage::pCurrentTemplate, Ptr::NULL);
+        fn_00a0b8d0(e, item.cast());
+    } else if command == TAG_NAME
+        && last != 0
+        && command_of(e, last) == 0
+        && number_of(e, last) as f64 >= tile_type_first
+        && number_of(e, last) as f64 <= tile_type_last
+    {
+        // A tile type followed by its name: the tile start.
+        e.mem.set_i32(last, TI_TILE_START);
+        e.call(STRING_SET, &args![last + 8, text, 0u32]);
+        fn_00a0b8d0(e, item.cast());
+    } else if command == TAG_NAME {
+        e.set(item, TileTemplateItem::iCmd, TI_SIMPLE_TRAIT);
+        e.set(item, TileTemplateItem::u, TAG_NAME as u32);
+        template_push_item(e, this, item);
+    } else if command == 1
+        && last != 0
+        && command_of(e, last) == TAG_VALUE
+        && second != 0
+        && (command_of(e, second) == TI_TRAIT_START || command_of(e, second) == TI_ACTION_START)
+        && number_of(e, second) == value
+    {
+        // `value` after a trait or action start of the same number: the
+        // simple form.
+        let number = item_number as f64;
+        let kind = if (number >= e.global::<f64>(TRAIT_ID_FIRST_DOUBLE)
+            && number <= e.global::<f64>(TRAIT_ID_LAST_DOUBLE))
+            || item_trait >= FIRST_USER_TEXT_ID
+        {
+            TI_SIMPLE_TRAIT
+        } else if number >= e.global::<f64>(ACTION_ID_FIRST_DOUBLE)
+            && number <= e.global::<f64>(ACTION_ID_LAST_DOUBLE)
+        {
+            TI_SIMPLE_ACTION
+        } else {
+            TI_BAD
+        };
+        e.mem.set_i32(second, kind);
+        if kind == TI_BAD {
+            e.call(PRINT_ERROR, &args![MSG_BAD_TRAIT_OR_ACTION]);
+        }
+        let second_number = float_to_int(e, number_of(e, second));
+        e.mem.set_i32(second + 0x10, second_number);
+        let value_number = number_of(e, last);
+        e.mem.set_f32(second + 4, value_number);
+        e.call(STRING_ASSIGN, &args![second + 8, last + 8]);
+        template_drop_last_item(e, this);
+        fn_00a0b8d0(e, item.cast());
+    } else if command == 1
+        && last != 0
+        && command_of(e, last) == TAG_TRAIT
+        && second != 0
+        && command_of(e, second) == TAG_SRC
+        && third != 0
+        && command_of(e, third) == TI_ACTION_START
+        && number_of(e, third) == value
+    {
+        // `trait` and `src` after an action start: the trait link.
+        e.mem.set_i32(third, TI_TRAIT_LINK);
+        let third_number = float_to_int(e, number_of(e, third));
+        e.mem.set_i32(third + 0x10, third_number);
+        let link_number = number_of(e, last);
+        e.mem.set_f32(third + 4, link_number);
+        e.call(STRING_ASSIGN, &args![third + 8, second + 8]);
+        template_drop_last_item(e, this);
+        template_drop_last_item(e, this);
+        fn_00a0b8d0(e, item.cast());
+    } else {
+        let kind = e.mem.i32(item.addr());
+        if (TRAIT_ID_FIRST..=TRAIT_ID_LAST).contains(&item_trait)
+            || item_trait >= FIRST_USER_TEXT_ID
+        {
+            if kind == 0 {
+                e.mem.set_i32(item.addr(), TI_TRAIT_START);
+            } else if kind == 1 {
+                e.mem.set_i32(item.addr(), TI_TRAIT_END);
+            }
+        } else if (ACTION_ID_FIRST..=ACTION_ID_LAST).contains(&item_trait) {
+            if kind == 0 {
+                e.mem.set_i32(item.addr(), TI_ACTION_START);
+            } else if kind == 1 && last != 0 {
+                e.mem.set_i32(item.addr(), TI_ACTION_END);
+            }
+        } else if kind == 1
+            && item_number as f64 >= tile_type_first
+            && item_number as f64 <= tile_type_last
+        {
+            e.mem.set_i32(item.addr(), TI_TILE_END);
+        }
+        template_push_item(e, this, item);
+    }
+}
+
+// Translated from 00a0ab70 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::TileTemplate::Clear` (Xbox PDB): removes the items from the
+/// head of the list one by one, freeing the string of each and the item.
+pub fn template_clear(e: &mut Engine, this: Ptr<TileTemplate>) {
+    let list = this.at(TileTemplate::xList);
+    while e.get(list, NiTPointerList::m_uiCount) != 0 {
+        let item = e.call(TEMPLATE_LIST_POP_HEAD, &args![list]).u32();
+        if item != 0 {
+            e.call(STRING_SET, &args![item + 8, 0u32, 0u32]);
+            deallocate(e, item);
+        }
+    }
+}
+
+// Translated from 00a0abe0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::Extra::~Extra` (Xbox PDB): restores the vtable and, when the
+/// extra data still has a tile, points that tile's parent at the tile of
+/// the node's parent node and drops the tile's model reference (the C++
+/// exception frame is not translated). Clears the tile pointer and runs
+/// the destructor of the base class `NiExtraData`.
+pub fn extra_destructor(e: &mut Engine, this: Ptr<Extra>) {
+    e.mem.set_u32(this.addr(), VTABLE_EXTRA);
+    let tile = e.get(this, Extra::pTile);
+    if !tile.is_null() {
+        let node = e.get(this, Extra::pNode);
+        let parent_node = Ptr::new(e.mem.u32(node.addr() + 0x18));
+        let parent_tile = tile_get_tile_from_node(e, parent_node);
+        e.set(tile, Tile::pParent, parent_tile);
+        e.call(NI_POINTER_ASSIGN, &args![tile.addr() + 0x2c, 0u32]);
+    }
+    e.set(this, Extra::pTile, Ptr::NULL);
+    e.call(NI_EXTRA_DATA_DESTROY, &args![this]);
+}
+
+// Translated from 00a0ac80 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::BuildStorage::BuildStorage` (Xbox PDB): empties the sub-template
+/// list, makes the main template (0x14 bytes, [`TEMPLATE_CONSTRUCT`], named
+/// `01094d90`, owned by the storage), no current template, and sets
+/// `bDeleteTemplates`.
+pub fn build_storage_construct(e: &mut Engine, this: Ptr<BuildStorage>) -> Ptr<BuildStorage> {
+    e.mem.set_u32(this.addr() + 4, 0);
+    e.mem.set_u32(this.addr() + 8, 0);
+    let block = allocate(e, 0x14);
+    let template = if block.is_null() {
+        Ptr::NULL
+    } else {
+        e.call(TEMPLATE_CONSTRUCT, &args![block, MAIN_TEMPLATE_NAME, this])
+            .ptr()
+    };
+    e.set(this, BuildStorage::pTemplate, template);
+    e.set(this, BuildStorage::pCurrentTemplate, Ptr::NULL);
+    e.set(this, BuildStorage::bDeleteTemplates, true);
+    this
+}
+
+// Translated from 00a0ad40 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::BuildStorage::~BuildStorage` (Xbox PDB): destroys and frees the
+/// main template, clears the current template and, when `bDeleteTemplates`
+/// is set, destroys and frees every sub-template of the list; then empties
+/// the list (twice, as the compiler's cleanup runs the list destructor
+/// again; the exception frame is not translated).
+pub fn build_storage_destructor(e: &mut Engine, this: Ptr<BuildStorage>) {
+    let main = e.get(this, BuildStorage::pTemplate);
+    if !main.is_null() {
+        e.call(TEMPLATE_DESTROY, &args![main]);
+        deallocate(e, main.addr());
+    }
+    e.set(this, BuildStorage::pCurrentTemplate, Ptr::NULL);
+    let list = this.at(BuildStorage::xSubTemplates).addr();
+    if e.get(this, BuildStorage::bDeleteTemplates) {
+        let mut node = list;
+        while node != 0 {
+            let template = e.mem.u32(node);
+            if template != 0 {
+                e.call(TEMPLATE_DESTROY, &args![template]);
+                deallocate(e, template);
+            }
+            node = e.mem.u32(node + 4);
+        }
+    }
+    e.call(SIMPLE_LIST_REMOVE_ALL, &args![list]);
+    e.call(SIMPLE_LIST_REMOVE_ALL, &args![list]);
+}
+
+// Translated from 00a0ae70 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Makes a new sub-template named `name` (0x14 bytes, `thiscall` on
+/// [`TEMPLATE_CONSTRUCT`], owned by the storage), adds it to the storage's
+/// sub-template list and answers it.
+pub fn fn_00a0ae70(e: &mut Engine, this: Ptr<BuildStorage>, name: Ptr) -> Ptr<TileTemplate> {
+    let block = allocate(e, 0x14);
+    let template = if block.is_null() {
+        0
+    } else {
+        e.call(TEMPLATE_CONSTRUCT, &args![block, name, this]).u32()
+    };
+    let list = this.at(BuildStorage::xSubTemplates).addr();
+    e.with_stack(4, |e, slot| {
+        e.mem.set_u32(slot.addr(), template);
+        e.call(SUB_TEMPLATE_LIST_ADD_HEAD, &args![list, slot]);
+        Ptr::new(e.mem.u32(slot.addr()))
+    })
+}
+
+/// Drops the reference an `NiFixedString` handle holds (not for the empty
+/// string's handle).
+fn fixed_string_release(e: &mut Engine, handle: u32) {
+    if handle != e.global::<u32>(EMPTY_FIXED_STRING) {
+        e.call(INTERLOCKED_DECREMENT, &args![handle - 8]);
+    }
+}
+
+// Translated from 00a0af10 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The sub-template of the storage whose name equals `name`, or null. The
+/// name is turned into a fixed string (the empty string's handle when
+/// `name` is null) and compared with each template's name by handle, else
+/// as text. The scan stops at the first empty list entry.
+pub fn fn_00a0af10(e: &mut Engine, this: Ptr<BuildStorage>, name: Ptr) -> Ptr<TileTemplate> {
+    let target = if name.is_null() {
+        e.global::<u32>(EMPTY_FIXED_STRING)
+    } else {
+        e.call(NI_FIXED_STRING_CREATE, &args![name]).u32()
+    };
+    let mut node = this.at(BuildStorage::xSubTemplates).addr();
+    let mut found = 0;
+    while node != 0 && e.mem.u32(node) != 0 {
+        let template = e.mem.u32(node);
+        let other = e.mem.u32(template);
+        let same = if target == other {
+            true
+        } else if other == 0 || target == 0 {
+            false
+        } else {
+            e.call(STRCMP, &args![target, other]).i32() == 0
+        };
+        if same {
+            found = template;
+            break;
+        }
+        node = e.mem.u32(node + 4);
+    }
+    fixed_string_release(e, target);
+    Ptr::new(found)
+}
+
+/// The first child of a model node: element 0 of the child array (at
+/// +0xa0, its count is the 16-bit word at +0xa6), null when there is none.
+fn first_child(e: &Engine, model: Ptr) -> Ptr {
+    if model.is_null() || e.mem.u16(model.addr() + 0xa6) == 0 {
+        Ptr::NULL
+    } else {
+        Ptr::new(e.mem.u32(e.mem.u32(model.addr() + 0xa0)))
+    }
+}
+
+// Translated from 00a0b020 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::ForceTextureRelease` (Xbox PDB): an image tile (type `0x386`)
+/// whose model has a first child with a shader property (property type 3)
+/// has the texture of that property cleared and a texture update queued;
+/// then every child without a menu is asked (virtual slot +0x1c) to do
+/// the same.
+pub fn tile_force_texture_release(e: &mut Engine, this: Ptr<Tile>) {
+    let model = e.get(this, Tile::spModel);
+    if !model.is_null() {
+        let shape = first_child(e, model);
+        if tile_type(e, this) == TYPE_IMAGE && !shape.is_null() {
+            let property = e.call(NI_OBJECT_GET_PROPERTY, &args![shape, 3u32]).u32();
+            if property != 0 {
+                e.call(SET_TILE_TEXTURE, &args![property, 0u32]);
+                tile_add_needs_update(e, this, UPDATE_TEXTURE);
+            }
+        }
+    }
+    let mut node = e.get(this.at(Tile::xChildren), NiTPointerList::m_pkHead);
+    while node != 0 {
+        let child = Ptr::<Tile>::new(e.mem.u32(node + 8));
+        node = e.mem.u32(node);
+        if tile_get_menu(e, child).is_null() {
+            e.vcall(child.addr(), 0x1c, &[]);
+        }
+    }
+}
+
+// Translated from 00a0b110 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::PlayTileSound` (Xbox PDB): when the tile's menu has `1` in its
+/// word at +0x24 and trait `trait_id` holds a non-empty string, looks the
+/// string up as a sound name (flags `0x121`) in the audio manager and
+/// plays the handle it answers (a 12-byte `BSSoundHandle`; the C++
+/// exception frame is not translated).
+pub fn tile_play_tile_sound(e: &mut Engine, this: Ptr<Tile>, trait_id: i32) {
+    let name = tile_get_string(e, this, trait_id);
+    let menu = tile_get_menu(e, this);
+    if !menu.is_null()
+        && e.mem.u32(menu.addr() + 0x24) == 1
+        && !name.is_null()
+        && e.mem.i8(name.addr()) != 0
+    {
+        let audio = e.global::<u32>(AUDIO_MANAGER);
+        e.with_stack(12, |e, found| {
+            e.with_stack(12, |e, handle| {
+                e.mem.set_u32(handle.addr(), u32::MAX);
+                e.mem.set_u8(handle.addr() + 4, 0);
+                e.mem.set_u32(handle.addr() + 8, 0);
+                let source = e
+                    .call(
+                        GET_SOUND_HANDLE_BY_NAME,
+                        &args![audio, found, name, TILE_SOUND_FLAGS],
+                    )
+                    .u32();
+                let (id, flag, extra) = (
+                    e.mem.u32(source),
+                    e.mem.u8(source + 4),
+                    e.mem.u32(source + 8),
+                );
+                e.mem.set_u32(handle.addr(), id);
+                e.mem.set_u8(handle.addr() + 4, flag);
+                e.mem.set_u32(handle.addr() + 8, extra);
+                e.call(SOUND_HANDLE_PLAY, &args![handle, 0u32]);
+            });
+        });
+    }
+}
+
+// Translated from 00a0b1f0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::GetShaderProperty` (Xbox PDB): the shader property (property
+/// type 3) of the first child of the tile's model, or null.
+pub fn tile_get_shader_property(e: &mut Engine, this: Ptr<Tile>) -> Ptr {
+    let model = e.get(this, Tile::spModel);
+    let shape = first_child(e, model);
+    if shape.is_null() {
+        Ptr::NULL
+    } else {
+        e.call(NI_OBJECT_GET_PROPERTY, &args![shape, 3u32]).ptr()
+    }
+}
+
+// Translated from 00a0b280 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::SetAlphaAndColor` (Xbox PDB, virtual; `this` is not used): for
+/// each child of `model` that answers a geometry (virtual slot +0x18),
+/// stores `alpha` at +0x78 and the four words at `color` at +0x68 of its
+/// shader property (property type 3).
+pub fn tile_set_alpha_and_color(
+    e: &mut Engine,
+    _this: Ptr<Tile>,
+    model: Ptr,
+    alpha: f32,
+    color: Ptr,
+) {
+    if model.is_null() {
+        return;
+    }
+    let mut index = 0u32;
+    while index < e.mem.u16(model.addr() + 0xa6) as u32 {
+        let child = e.mem.u32(e.mem.u32(model.addr() + 0xa0) + index * 4);
+        let geometry = if child != 0 {
+            e.vcall(child, 0x18, &[]).u32()
+        } else {
+            0
+        };
+        if geometry != 0 {
+            let property = e.call(NI_OBJECT_GET_PROPERTY, &args![geometry, 3u32]).u32();
+            e.mem.set_f32(property + 0x78, alpha);
+            for word in 0..4 {
+                let value = e.mem.u32(color.addr() + word * 4);
+                e.mem.set_u32(property + 0x68 + word * 4, value);
+            }
+        }
+        index += 1;
+    }
+}
+
+/// The system colour scale the two colour walks use: trait `eSystemColor`
+/// of the tile, or `fallback` when the tile has none (0.0).
+fn system_color_or(e: &mut Engine, tile: Ptr<Tile>, fallback: f32) -> f32 {
+    let value = fn_00a011b0(e, tile, TRAIT_SYSTEM_COLOR);
+    if differs_from_zero(e, value) {
+        value
+    } else {
+        fallback
+    }
+}
+
+// Translated from 00a0b350 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Under `Tile::Lock`: takes the tile's system colour trait (0.0 means
+/// `inherited`, the value passed down), queues a colour update when it
+/// equals the system colour number `color`, and does the same for every
+/// child with the resulting colour. Called with `(color, inherited)`.
+pub fn fn_00a0b350(e: &mut Engine, this: Ptr<Tile>, color: i32, inherited: f32) {
+    lock(e);
+    let own = system_color_or(e, this, inherited);
+    if color as f64 == own as f64 {
+        tile_add_needs_update(e, this, UPDATE_COLOR);
+    }
+    let mut node = e.get(this.at(Tile::xChildren), NiTPointerList::m_pkHead);
+    while node != 0 {
+        let child = Ptr::<Tile>::new(e.mem.u32(node + 8));
+        node = e.mem.u32(node);
+        fn_00a0b350(e, child, color, own);
+    }
+    unlock(e);
+}
+
+// Translated from 00a0b420 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Under `Tile::Lock`: as [`fn_00a0b350`], but queues the colour update
+/// when the (truncated) system colour number is in the `list` of numbers
+/// (a chain of nodes, number at +0 and next at +4); called with
+/// `(list, inherited)`.
+pub fn fn_00a0b420(e: &mut Engine, this: Ptr<Tile>, list: Ptr, inherited: f32) {
+    lock(e);
+    let own = system_color_or(e, this, inherited);
+    let number = float_to_int(e, own);
+    let mut entry = list.addr();
+    while entry != 0 && e.mem.i32(entry) != number {
+        entry = e.mem.u32(entry + 4);
+    }
+    if entry != 0 {
+        tile_add_needs_update(e, this, UPDATE_COLOR);
+    }
+    let mut node = e.get(this.at(Tile::xChildren), NiTPointerList::m_pkHead);
+    while node != 0 {
+        let child = Ptr::<Tile>::new(e.mem.u32(node + 8));
+        node = e.mem.u32(node);
+        fn_00a0b420(e, child, list, own);
+    }
+    unlock(e);
+}
+
+// Translated from 00a0b520 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::RecursiveRotationUpdate` (Xbox PDB): for every child of the
+/// tile, gives it the rotation axis point (`(x + axis x) - x of the child`
+/// and the same for y; the child's x and y count the tile's when the tile
+/// has a locus) and the tile's angle. A child that has a locus and is an
+/// image tile (type `0x386`) also has its model's shapes turned: each
+/// shape (an object whose RTTI chain holds [`SHAPE_RTTI`]) gets the
+/// y-rotation matrix of the child's angle as its local rotation and as
+/// translation `(translation + axis) - rotation * axis`, with the
+/// translation built from the default one, the child's x, y and depth.
+/// Then the child's own children are updated.
+pub fn tile_recursive_rotation_update(e: &mut Engine, this: Ptr<Tile>) {
+    let mut node = e.get(this.at(Tile::xChildren), NiTPointerList::m_pkHead);
+    while node != 0 {
+        let child = Ptr::<Tile>::new(e.mem.u32(node + 8));
+        node = e.mem.u32(node);
+        if child.is_null() {
+            continue;
+        }
+        let x = fn_00a011b0(e, this, TRAIT_X);
+        let y = fn_00a011b0(e, this, TRAIT_Y);
+        let axis_x = fn_00a011b0(e, this, TRAIT_ROTATE_AXIS_X);
+        let axis_y = fn_00a011b0(e, this, TRAIT_ROTATE_AXIS_Y);
+        let mut child_x = fn_00a011b0(e, child, TRAIT_X);
+        let mut child_y = fn_00a011b0(e, child, TRAIT_Y);
+        if tile_is_true(e, this, TRAIT_LOCUS) {
+            child_x = (child_x as f64 + x as f64) as f32;
+            child_y = (child_y as f64 + y as f64) as f32;
+        }
+        let new_axis_x = ((x as f64 + axis_x as f64) - child_x as f64) as f32;
+        fn_00a012d0(e, child, TRAIT_ROTATE_AXIS_X, new_axis_x, true);
+        let new_axis_y = ((y as f64 + axis_y as f64) - child_y as f64) as f32;
+        fn_00a012d0(e, child, TRAIT_ROTATE_AXIS_Y, new_axis_y, true);
+        let angle = fn_00a011b0(e, this, TRAIT_ROTATE_ANGLE);
+        fn_00a012d0(e, child, TRAIT_ROTATE_ANGLE, angle, true);
+        if tile_is_true(e, child, TRAIT_LOCUS) && tile_type(e, child) == TYPE_IMAGE {
+            turn_model_shapes(e, child);
+        }
+        tile_recursive_rotation_update(e, child);
+    }
+}
+
+/// The shape part of [`tile_recursive_rotation_update`]: see there.
+fn turn_model_shapes(e: &mut Engine, child: Ptr<Tile>) {
+    let depth = fn_00a011b0(e, child, TRAIT_DEPTH);
+    let mut translation = default_translation(e);
+    let model = e.get(child, Tile::spModel);
+    set_translation(e, model.addr(), translation);
+    translation[0] = (fn_00a011b0(e, child, TRAIT_X) as f64 + translation[0] as f64) as f32;
+    translation[2] = (-fn_00a011b0(e, child, TRAIT_Y) as f64 + translation[2] as f64) as f32;
+    translation[1] = (depth as f64 * e.global::<f64>(DEPTH_SCALE) + translation[1] as f64) as f32;
+    let model = e.get(child, Tile::spModel).addr();
+    let mut index = 0u32;
+    while model != 0 && index < e.mem.u16(model + 0xa8) as u32 {
+        let object = e.mem.u32(e.mem.u32(model + 0xa0) + index * 4);
+        let shape = if object == 0 {
+            0
+        } else {
+            // The object's RTTI chain contains the record at 011f4a40.
+            let mut rtti = e.vcall(object, 8, &[]).u32();
+            while rtti != 0 && rtti != SHAPE_RTTI {
+                rtti = e.mem.u32(rtti + 4);
+            }
+            if rtti != 0 {
+                object
+            } else {
+                0
+            }
+        };
+        let axis_x = fn_00a011b0(e, child, TRAIT_ROTATE_AXIS_X);
+        let axis_z = -fn_00a011b0(e, child, TRAIT_ROTATE_AXIS_Y);
+        let angle = fn_00a011b0(e, child, TRAIT_ROTATE_ANGLE);
+        // Scratch: the matrix, then the axis, translation, rotated axis,
+        // their sum and the result (three floats each).
+        e.with_stack(0x24 + 5 * 12, |e, scratch| {
+            let matrix = scratch.addr();
+            let axis_at = matrix + 0x24;
+            let translation_at = axis_at + 12;
+            let rotated_at = translation_at + 12;
+            let sum_at = rotated_at + 12;
+            let result_at = sum_at + 12;
+            for (slot, value) in [axis_x, 0.0, axis_z].iter().enumerate() {
+                e.mem.set_f32(axis_at + slot as u32 * 4, *value);
+            }
+            for (slot, value) in translation.iter().enumerate() {
+                e.mem.set_f32(translation_at + slot as u32 * 4, *value);
+            }
+            e.call(MATRIX_MAKE_Y_ROTATION, &args![matrix, angle]);
+            if shape != 0 {
+                for slot in 0..9 {
+                    let value = e.mem.u32(matrix + slot * 4);
+                    e.mem.set_u32(shape + 0x34 + slot * 4, value);
+                }
+                let rotated = e
+                    .call(MATRIX_TIMES_POINT, &args![matrix, rotated_at, axis_at])
+                    .u32();
+                let sum = e
+                    .call(POINT_ADD, &args![translation_at, sum_at, axis_at])
+                    .u32();
+                let moved = e
+                    .call(POINT_SUBTRACT, &args![sum, result_at, rotated])
+                    .u32();
+                for slot in 0..3 {
+                    let value = e.mem.u32(moved + slot * 4);
+                    e.mem.set_u32(shape + 0x58 + slot * 4, value);
+                }
+            }
+        });
+        index += 1;
+    }
+}
+
+// Translated from 00a0b8d0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Gives a `Tile::TileTemplateItem` back: into the pool of unused items
+/// (ten words at `011f329c`, count at `011f32dc`) while it has room, else
+/// its string is freed and the item deleted.
+pub fn fn_00a0b8d0(e: &mut Engine, item: Ptr) {
+    let count: u32 = e.global(ITEM_POOL_COUNT);
+    if count < ITEM_POOL_SIZE {
+        e.set_global(ITEM_POOL + count * 4, item.addr());
+        e.set_global(ITEM_POOL_COUNT, count + 1);
+    } else if !item.is_null() {
+        e.call(STRING_SET, &args![item.addr() + 8, 0u32, 0u32]);
+        deallocate(e, item.addr());
+    }
+}
+
+// Translated from 00a0b950 (decompiled, FalloutNV.exe 1.4.0.525)
+/// A `Tile::TileTemplateItem` (command, `value`, a copy of `text`, trait
+/// number, line): the last one of the pool of unused items, filled in, or
+/// a new one (0x18 bytes) built by [`TEMPLATE_ITEM_CONSTRUCT`] when the
+/// pool is empty. `cdecl`.
+pub fn fn_00a0b950(
+    e: &mut Engine,
+    command: i32,
+    value: f32,
+    text: Ptr,
+    trait_id: i32,
+    line: i32,
+) -> Ptr<TileTemplateItem> {
+    let count: u32 = e.global(ITEM_POOL_COUNT);
+    if count == 0 {
+        let block = allocate(e, 0x18);
+        if block.is_null() {
+            return Ptr::NULL;
+        }
+        return e
+            .call(
+                TEMPLATE_ITEM_CONSTRUCT,
+                &args![block, command, value, text, trait_id, line],
+            )
+            .ptr();
+    }
+    e.set_global(ITEM_POOL_COUNT, count - 1);
+    let item: Ptr<TileTemplateItem> = Ptr::new(e.global::<u32>(ITEM_POOL + (count - 1) * 4));
+    e.set(item, TileTemplateItem::iCmd, command);
+    e.set(item, TileTemplateItem::fVal, value);
+    e.call(STRING_SET, &args![item.addr() + 8, text, 0u32]);
+    e.set(item, TileTemplateItem::u, trait_id as u32);
+    e.set(item, TileTemplateItem::iLine, line);
+    item
+}
+
+// Translated from 00a0ba50 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Empties the pool of unused template items: each one's string is freed
+/// and the item deleted.
+pub fn fn_00a0ba50(e: &mut Engine) {
+    loop {
+        let count: u32 = e.global(ITEM_POOL_COUNT);
+        e.set_global(ITEM_POOL_COUNT, count.wrapping_sub(1));
+        if count == 0 {
+            break;
+        }
+        let item: u32 = e.global(ITEM_POOL + (count - 1) * 4);
+        if item != 0 {
+            e.call(STRING_SET, &args![item + 8, 0u32, 0u32]);
+            deallocate(e, item);
+        }
+    }
+    e.set_global(ITEM_POOL_COUNT, 0u32);
+}
+
+// Translated from 00a0bae0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::SpecialBoundsCheck` (Xbox PDB, virtual; both words and `this`
+/// are unused): always true.
+pub fn tile_special_bounds_check(
+    _e: &mut Engine,
+    _this: Ptr<Tile>,
+    _unused_1: u32,
+    _unused_2: u32,
+) -> bool {
+    true
+}
+
+// Translated from 00a0baf0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// A tile method that only calls `Tile::Unlock` (`this` is not used).
+pub fn fn_00a0baf0(e: &mut Engine, _this: Ptr<Tile>) {
+    unlock(e);
+}
+
+// Translated from 00a0bb00 (decompiled, FalloutNV.exe 1.4.0.525)
+/// True for the spelling of a user-defined name: not empty and starting
+/// with `_`, or with the two bytes at `01093f80` (`"&_"`). `cdecl`.
+pub fn fn_00a0bb00(e: &mut Engine, name: Ptr) -> bool {
+    if name.is_null() || e.mem.i8(name.addr()) == 0 {
+        return false;
+    }
+    e.mem.i8(name.addr()) == b'_' as i8
+        || e.call(MEMCMP, &args![name, USER_NAME_PREFIX, 2u32]).i32() == 0
+}
+
+// Translated from 00a0bb50 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Frees the three strings of a `Tile::TextureAtlasEntry` (at +0x10, +8
+/// and +0), in that order.
+pub fn fn_00a0bb50(e: &mut Engine, this: Ptr) {
+    for offset in [0x10u32, 8, 0] {
+        e.call(STRING_SET, &args![this.addr() + offset, 0u32, 0u32]);
+    }
+}
+
+// Translated from 00a0bbd0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `TileText::GetType` (Xbox PDB): the type number of a text tile.
+pub fn tile_text_get_type(_e: &mut Engine, _this: Ptr<Tile>) -> u32 {
+    TYPE_TEXT
+}
+
+// Translated from 00a0bbe0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `TileText::GetTypeName` (Xbox PDB): the address of the type name text.
+pub fn tile_text_get_type_name(_e: &mut Engine, _this: Ptr<Tile>) -> u32 {
+    TILE_TEXT_TYPE_NAME
+}
+
+// Translated from 00a0bbf0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `TileText::_scalar_deleting_destructor_` (Xbox PDB): sets the text
+/// tile's vtable, releases the tile ([`tile_release`]) unless it has the
+/// released flag (0x2000), runs [`tile_destructor`] and, with bit 0 of
+/// `flags`, deletes the object (the C++ exception frame is not
+/// translated).
+pub fn tile_text_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr<Tile>,
+    flags: u32,
+) -> Ptr<Tile> {
+    e.mem.set_u32(this.addr(), VTABLE_TILE_TEXT);
+    if e.get(this, Tile::uiFlags) & FLAG_RELEASED == 0 {
+        tile_release(e, this);
+    }
+    tile_destructor(e, this);
+    if flags & 1 != 0 {
+        deallocate(e, this.addr());
+    }
+    this
+}
+
+// Translated from 00a0bc80 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile3D::Tile3D` (Xbox PDB name of the body; the map has none): runs the
+/// base tile constructor, sets the `Tile3D` vtable, empties the two arrays
+/// at +0x40 and +0x48 (data pointer, 16-bit capacity and 16-bit count,
+/// all 0), clears the model pointer at +0x2c and the words at +0x38 and
+/// +0x3c. The C++ exception frame is not translated.
+pub fn fn_00a0bc80(e: &mut Engine, this: Ptr<Tile>) -> Ptr<Tile> {
+    e.call(TILE_BASE_CONSTRUCT, &args![this]);
+    let base = this.addr();
+    e.mem.set_u32(base, VTABLE_TILE_3D);
+    for array in [0x40u32, 0x48] {
+        e.mem.set_u32(base + array, 0);
+        e.mem.set_u16(base + array + 4, 0);
+        e.mem.set_u16(base + array + 6, 0);
+    }
+    e.call(NI_POINTER_ASSIGN, &args![base + 0x2c, 0u32]);
+    e.mem.set_u32(base + 0x38, 0);
+    e.mem.set_u32(base + 0x3c, 0);
+    this
+}
+
+// Translated from 00a0bdc0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile3D::GetType` (Xbox PDB): the type number of a 3D tile.
+pub fn tile_3d_get_type(_e: &mut Engine, _this: Ptr<Tile>) -> u32 {
+    TYPE_3D
+}
+
+// Translated from 00a0bdd0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile3D::GetTypeName` (Xbox PDB): the address of the type name text.
+pub fn tile_3d_get_type_name(_e: &mut Engine, _this: Ptr<Tile>) -> u32 {
+    TILE_3D_TYPE_NAME
+}
+
+// Translated from 00a0bde0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile3D::_scalar_deleting_destructor_` (Xbox PDB): runs `~Tile3D` and,
+/// with bit 0 of `flags`, deletes the object.
+pub fn tile_3d_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr<Tile>,
+    flags: u32,
+) -> Ptr<Tile> {
+    e.call(TILE_3D_DESTROY, &args![this]);
+    if flags & 1 != 0 {
+        deallocate(e, this.addr());
+    }
+    this
+}
+
+// Translated from 00a0be10 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `XMLStorage::_scalar_deleting_destructor_` (Xbox PDB): frees the file
+/// data, clears the pointer and, with bit 0 of `flags`, deletes the object.
+pub fn xml_storage_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr<XmlStorage>,
+    flags: u32,
+) -> Ptr<XmlStorage> {
+    xml_storage_destructor(e, this);
+    if flags & 1 != 0 {
+        deallocate(e, this.addr());
+    }
+    this
+}
+
+// Translated from 00a0be70 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `XMLStorage::~XMLStorage` (Xbox PDB): frees the file data and clears
+/// the pointer.
+pub fn xml_storage_destructor(e: &mut Engine, this: Ptr<XmlStorage>) {
+    let data = e.get(this, XmlStorage::pXMLData);
+    if !data.is_null() {
+        deallocate(e, data.addr());
+    }
+    e.set(this, XmlStorage::pXMLData, Ptr::NULL);
+}
+
+// Translated from 00a0beb0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::TextureAtlasEntry::TextureAtlasEntry` (Xbox PDB name of the
+/// body; the map has none): three empty strings (data pointer, 16-bit
+/// capacity and count, all 0) at +0, +8 and +0x10 and four floats at
+/// +0x18 set to 0.0.
+pub fn fn_00a0beb0(e: &mut Engine, this: Ptr) -> Ptr {
+    let base = this.addr();
+    for string in [0u32, 8, 0x10] {
+        e.mem.set_u32(base + string, 0);
+        e.mem.set_u16(base + string + 4, 0);
+        e.mem.set_u16(base + string + 6, 0);
+    }
+    for float in 0..4 {
+        e.mem.set_f32(base + 0x18 + float * 4, 0.0);
+    }
+    this
+}
+
+// Translated from 00a0c000 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::FloatAction::QFloat` (Xbox PDB): the action's operand.
+pub fn float_action_q_float(e: &mut Engine, this: Ptr<ValueAction>) -> f32 {
+    e.get(this, ValueAction::fValue)
+}
+
+// Translated from 00a0c020 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::RefValueAction::QFloat` (Xbox PDB): the float of the trait the
+/// action reads, 0.0 when it reads none.
+pub fn ref_value_action_q_float(e: &mut Engine, this: Ptr<ValueAction>) -> f32 {
+    let referenced = e.get(this, ValueAction::pRefValue);
+    if referenced.is_null() {
+        0.0
+    } else {
+        e.get(referenced, TileValue::fValue)
+    }
+}
+
+// Translated from 00a0c060 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The trait an action reads (`pRefValue` at +0xc): slot +4 of
+/// `Tile::RefValueAction` (the map has no name for it).
+pub fn fn_00a0c060(e: &mut Engine, this: Ptr<ValueAction>) -> Ptr<TileValue> {
+    e.get(this, ValueAction::pRefValue)
+}
+
+// Translated from 00a0c080 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiExtraData::GetRTTI` (the map's name; the body answers the static
+/// `NiRTTI` record at `011f4a80`).
+pub fn ni_extra_data_get_rtti(_e: &mut Engine, _this: Ptr) -> u32 {
+    EXTRA_DATA_RTTI
+}
+
+// Translated from 00a0c090 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::Extra::_scalar_deleting_destructor_` (Xbox PDB): runs
+/// [`extra_destructor`] and, with bit 0 of `flags`, deletes the 0x14-byte
+/// object (`operator delete(block, size)`).
+pub fn extra_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr<Extra>,
+    flags: u32,
+) -> Ptr<Extra> {
+    extra_destructor(e, this);
+    if flags & 1 != 0 {
+        e.call(NI_OPERATOR_DELETE, &args![this, 0x14u32]);
+    }
+    this
+}
+
+// Translated from 00a0c0c0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::TileTemplate::TileTemplate` (the map has no name): the name starts
+/// as the empty fixed string and the item list as empty (head, tail and count
+/// 0); a `name` other than the empty handle is made into a fixed string
+/// (`NiFixedString(char *)`) and the previous handle released; the owner is
+/// `storage`. The C++ exception frame is not translated.
+pub fn template_construct(
+    e: &mut Engine,
+    this: Ptr<TileTemplate>,
+    name: u32,
+    storage: Ptr<BuildStorage>,
+) -> Ptr<TileTemplate> {
+    let empty = e.global::<u32>(EMPTY_FIXED_STRING);
+    e.set(this, TileTemplate::xName, empty);
+    let list = this.at(TileTemplate::xList);
+    e.set(list, NiTPointerList::m_uiCount, 0);
+    e.set(list, NiTPointerList::m_pkHead, 0);
+    e.set(list, NiTPointerList::m_pkTail, 0);
+    if e.get(this, TileTemplate::xName) != name {
+        let old = e.get(this, TileTemplate::xName);
+        let handle = e.call(NI_FIXED_STRING_CREATE, &args![name]).u32();
+        e.set(this, TileTemplate::xName, handle);
+        fixed_string_release(e, old);
+    }
+    e.set(this, TileTemplate::pParent, storage);
+    this
+}
+
+// Translated from 00a0c190 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::TileTemplate::~TileTemplate` (Xbox PDB): clears the items
+/// ([`template_clear`]), runs the destructor of the item list and drops the
+/// reference of the name (not for the empty string's handle). The C++
+/// exception frame is not translated.
+pub fn template_destructor(e: &mut Engine, this: Ptr<TileTemplate>) {
+    template_clear(e, this);
+    e.call(LIST_DESTROY, &args![this.addr() + 8]);
+    let name = e.get(this, TileTemplate::xName);
+    fixed_string_release(e, name);
+}
+
+// Translated from 00a0c220 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::TileTemplateItem::TileTemplateItem` (the body; the map has no
+/// name): an empty string at +8 (no buffer, capacity 0, length 0), then the
+/// command, the number, the text (assigned with limit `0x1f`), the trait
+/// number and the source line. The compiler folded the length clamps of
+/// the empty string (`0 > 0xffff` never holds). Answers `this`.
+pub fn fn_00a0c220(
+    e: &mut Engine,
+    this: Ptr<TileTemplateItem>,
+    command: i32,
+    number: f32,
+    text: Ptr,
+    trait_number: u32,
+    line: i32,
+) -> Ptr<TileTemplateItem> {
+    let string = this.at(TileTemplateItem::xStr);
+    e.set(string, BSStringT::pString, 0);
+    e.set(string, BSStringT::sLen, 0);
+    e.set(string, BSStringT::sMaxLen, 0);
+    e.set(this, TileTemplateItem::iCmd, command);
+    e.set(this, TileTemplateItem::fVal, number);
+    e.call(STRING_SET, &args![string, text, 0x1fu32]);
+    e.set(this, TileTemplateItem::u, trait_number);
+    e.set(this, TileTemplateItem::iLine, line);
+    this
+}
+
+// Translated from 00a0c300 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `std::string::rfind(const char *text, size_t pos, size_t length)` (the
+/// map has no name; `_DebugHeapAllocator` string, Visual C++ 2005): with an
+/// empty needle the answer is `pos` limited to the string's length; else the
+/// last position at or before `pos` (and at most `size - length`) where the
+/// needle's `length` characters match, or `npos` (the word at `010173f0`).
+pub fn fn_00a0c300(e: &mut Engine, this: Ptr, text: Ptr, pos: u32, length: u32) -> u32 {
+    let string = this.addr();
+    let size = e.mem.u32(string + 0x14);
+    if length == 0 {
+        return pos.min(size);
+    }
+    if length <= size {
+        let data = std_string_data(e, string);
+        let mut candidate = data + pos.min(size - length);
+        loop {
+            let first_equal = e.mem.u8(candidate) as i8 == e.mem.u8(text.addr()) as i8;
+            if first_equal && e.call(MEMCMP, &args![candidate, text, length]).i32() == 0 {
+                return candidate - data;
+            }
+            if candidate == data {
+                break;
+            }
+            candidate -= 1;
+        }
+    }
+    e.global::<u32>(STD_STRING_NPOS)
+}
+
+// Translated from 00a0c430 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `std::string::append(const char *text, size_t length)` (the map has no
+/// name): when `text` points into the string itself, appends the
+/// corresponding range ([`fn_00a0c570`] with the offset); else checks the
+/// new length (the length-error thrower when it would overflow), grows the
+/// buffer (`_Grow`), copies the characters with `memcpy_s`, sets the length
+/// and the terminating NUL. Answers `this`.
+pub fn fn_00a0c430(e: &mut Engine, this: Ptr, text: Ptr, length: u32) -> Ptr {
+    let string = this.addr();
+    if e.call(STD_STRING_INSIDE, &args![this, text]).bool() {
+        let offset = text.addr().wrapping_sub(std_string_data(e, string));
+        return fn_00a0c570(e, this, this, offset, length);
+    }
+    let size = e.mem.u32(string + 0x14);
+    let npos = e.global::<u32>(STD_STRING_NPOS);
+    if npos.wrapping_sub(size) <= length || size.wrapping_add(length) < size {
+        e.call(STD_LENGTH_ERROR, &[]);
+    }
+    if length != 0 {
+        let new_size = size.wrapping_add(length);
+        if e.call(STD_STRING_GROW, &args![this, new_size, false])
+            .bool()
+        {
+            let data = std_string_data(e, string);
+            let capacity = e.mem.u32(string + 0x18);
+            let size = e.mem.u32(string + 0x14);
+            e.call(
+                MEMCPY_S,
+                &args![data + size, capacity.wrapping_sub(size), text, length],
+            );
+            e.mem.set_u32(string + 0x14, new_size);
+            let data = std_string_data(e, string);
+            e.mem.set_u8(data + new_size, 0);
+        }
+    }
+    this
+}
+
+// Translated from 00a0c570 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `std::string::append(const string &other, size_t offset, size_t count)`
+/// (the map has no name): throws out-of-range when `offset` is beyond the
+/// other string, limits `count` to what remains, throws length-error when
+/// the result would overflow, grows the buffer and copies the characters
+/// with `memcpy_s`. Answers `this`.
+pub fn fn_00a0c570(e: &mut Engine, this: Ptr, other: Ptr, offset: u32, count: u32) -> Ptr {
+    let (string, other_string) = (this.addr(), other.addr());
+    let other_size = e.mem.u32(other_string + 0x14);
+    if other_size < offset {
+        e.call(STD_OUT_OF_RANGE, &[]);
+    }
+    let remaining = e.mem.u32(other_string + 0x14).wrapping_sub(offset);
+    let count = count.min(remaining);
+    let size = e.mem.u32(string + 0x14);
+    let npos = e.global::<u32>(STD_STRING_NPOS);
+    if npos.wrapping_sub(size) <= count || size.wrapping_add(count) < size {
+        e.call(STD_LENGTH_ERROR, &[]);
+    }
+    if count != 0 {
+        let new_size = size.wrapping_add(count);
+        if e.call(STD_STRING_GROW, &args![this, new_size, false])
+            .bool()
+        {
+            let source = std_string_data(e, other_string);
+            let data = std_string_data(e, string);
+            let capacity = e.mem.u32(string + 0x18);
+            let size = e.mem.u32(string + 0x14);
+            e.call(
+                MEMCPY_S,
+                &args![
+                    data + size,
+                    capacity.wrapping_sub(size),
+                    source + offset,
+                    count
+                ],
+            );
+            e.mem.set_u32(string + 0x14, new_size);
+            let data = std_string_data(e, string);
+            e.mem.set_u8(data + new_size, 0);
+        }
+    }
+    this
+}
+
+// Translated from 00a0c6c0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// A hash map's `SetAt(key, value)` (the map has no name; shared by the
+/// `int` to `int` map `xTraitExtraData` and the reaction map): the bucket
+/// of the key (vtable slot +4), then the chain is searched with the key
+/// comparison (slot +8); a match gets the new value, else a node is made
+/// (slot +0x14), filled (slot +0xc) and linked at the head of its bucket,
+/// and the count at +0xc grows.
+pub fn fn_00a0c6c0(e: &mut Engine, this: Ptr<NiTPointerMap>, key: u32, value: u32) {
+    let map = this.addr();
+    let index = e.vcall(map, MAP_SLOT_HASH, &args![key]).u32();
+    let mut node = e.mem.u32(e.mem.u32(map + 8) + index * 4);
+    while node != 0 {
+        let node_key = e.mem.u32(node + 4);
+        if e.vcall(map, MAP_SLOT_KEYS_EQUAL, &args![key, node_key])
+            .bool()
+        {
+            e.mem.set_u32(node + 8, value);
+            return;
+        }
+        node = e.mem.u32(node);
+    }
+    let node = e.vcall(map, MAP_SLOT_NEW_NODE, &[]).u32();
+    e.vcall(map, MAP_SLOT_INIT_NODE, &args![node, key, value]);
+    let slot = e.mem.u32(map + 8) + index * 4;
+    let old_head = e.mem.u32(slot);
+    e.mem.set_u32(node, old_head);
+    e.mem.set_u32(slot, node);
+    let count = e.mem.u32(map + 0xc);
+    e.mem.set_u32(map + 0xc, count + 1);
+}
+
+// Translated from 00a0c7a0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Empties a `BSSimpleList` (the map has no name): [`SIMPLE_LIST_REMOVE_ALL`].
+pub fn fn_00a0c7a0(e: &mut Engine, this: Ptr) {
+    e.call(SIMPLE_LIST_REMOVE_ALL, &args![this]);
+}
+
+// Translated from 00a0c7c0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `BSSimpleList<Tile::FadeControl *>::AddHead` (Xbox PDB): does nothing when
+/// the item (`*item`) is null; an empty list (first item null) takes it in
+/// the embedded node; otherwise a new 8-byte node is made that takes over
+/// the first item and the old link, becomes the second node, and the first
+/// node takes the new item.
+pub fn bs_simple_list_fade_control_add_head(e: &mut Engine, this: Ptr<BSSimpleList>, item: Ptr) {
+    let new_item = e.mem.u32(item.addr());
+    if new_item == 0 {
+        return;
+    }
+    if e.get(this, BSSimpleList::m_item) == 0 {
+        e.set(this, BSSimpleList::m_item, new_item);
+        return;
+    }
+    let node = allocate(e, 8).addr();
+    // The game would write through a null node if the allocator failed.
+    let first = e.get(this, BSSimpleList::m_item);
+    e.mem.set_u32(node, first);
+    e.mem.set_u32(node + 4, 0);
+    let next = e.get(this, BSSimpleList::m_pkNext);
+    e.mem.set_u32(node + 4, next);
+    e.set(this, BSSimpleList::m_pkNext, node);
+    e.set(this, BSSimpleList::m_item, new_item);
+}
+
+// Translated from 00a0c850 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The hash map iteration step `(map, &node, &key, &value)` (the map has no
+/// name): answers the key (+4) and value (+8) of `*node` and moves `*node`
+/// to the next node of its chain, else to the first node of the following
+/// non-empty bucket (the bucket of the key comes from vtable slot +4), else
+/// to null.
+pub fn fn_00a0c850(
+    e: &mut Engine,
+    this: Ptr<NiTPointerMap>,
+    node_slot: u32,
+    key_out: u32,
+    value_out: u32,
+) {
+    let map = this.addr();
+    let node = e.mem.u32(node_slot);
+    let key = e.mem.u32(node + 4);
+    e.mem.set_u32(key_out, key);
+    let value = e.mem.u32(node + 8);
+    e.mem.set_u32(value_out, value);
+    let next = e.mem.u32(node);
+    if next != 0 {
+        e.mem.set_u32(node_slot, next);
+        return;
+    }
+    let mut index = e
+        .vcall(map, MAP_SLOT_HASH, &args![key])
+        .u32()
+        .wrapping_add(1);
+    loop {
+        if index >= e.mem.u32(map + 4) {
+            e.mem.set_u32(node_slot, 0);
+            return;
+        }
+        let candidate = e.mem.u32(e.mem.u32(map + 8) + index * 4);
+        if candidate != 0 {
+            e.mem.set_u32(node_slot, candidate);
+            return;
+        }
+        index += 1;
+    }
+}
+
+// Translated from 00a0c900 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The text table's `SetAt(key, value)` (the map has no name; the same
+/// search as [`fn_00a0c6c0`]): a match keeps its key when the map copies its
+/// keys (byte at +0x10) and else takes the new key pointer, and gets the new
+/// value; a new node comes from the free pool ([`LIST_NEW_NODE`] on the
+/// allocator at +0xC) instead of the vtable.
+pub fn fn_00a0c900(e: &mut Engine, this: Ptr<NiTPointerMap>, key: u32, value: u32) {
+    let map = this.addr();
+    let index = e.vcall(map, MAP_SLOT_HASH, &args![key]).u32();
+    let mut node = e.mem.u32(e.mem.u32(map + 8) + index * 4);
+    while node != 0 {
+        let node_key = e.mem.u32(node + 4);
+        if e.vcall(map, MAP_SLOT_KEYS_EQUAL, &args![key, node_key])
+            .bool()
+        {
+            if e.mem.u8(map + 0x10) == 0 {
+                e.mem.set_u32(node + 4, key);
+            }
+            e.mem.set_u32(node + 8, value);
+            return;
+        }
+        node = e.mem.u32(node);
+    }
+    let node = e.call(LIST_NEW_NODE, &args![map + 0xc]).u32();
+    e.vcall(map, MAP_SLOT_INIT_NODE, &args![node, key, value]);
+    let slot = e.mem.u32(map + 8) + index * 4;
+    let old_head = e.mem.u32(slot);
+    e.mem.set_u32(node, old_head);
+    e.mem.set_u32(slot, node);
+    let count = e.mem.u32(map + 0xc);
+    e.mem.set_u32(map + 0xc, count + 1);
+}
+
+// Translated from 00a0c9f0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiTPointerList::AddHead(&item)` (no PDB name; the list's allocator is
+/// at +8): a node from the free pool ([`LIST_NEW_NODE`]) holding `*item`
+/// becomes the head, the previous head (if any) points back to it, else it
+/// is also the tail; the count at +8 grows.
+pub fn fn_00a0c9f0(e: &mut Engine, this: Ptr<NiTPointerList>, item: Ptr) {
+    let node = e.call(LIST_NEW_NODE, &args![this.addr() + 8]).u32();
+    let element = e.mem.u32(item.addr());
+    e.mem.set_u32(node + 8, element);
+    e.mem.set_u32(node + 4, 0);
+    let head = e.get(this, NiTPointerList::m_pkHead);
+    e.mem.set_u32(node, head);
+    if e.get(this, NiTPointerList::m_pkHead) == 0 {
+        e.set(this, NiTPointerList::m_pkTail, node);
+    } else {
+        let head = e.get(this, NiTPointerList::m_pkHead);
+        e.mem.set_u32(head + 4, node);
+    }
+    e.set(this, NiTPointerList::m_pkHead, node);
+    let count = e.get(this, NiTPointerList::m_uiCount);
+    e.set(this, NiTPointerList::m_uiCount, count + 1);
+}
+
+// Translated from 00a0ca70 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiTPointerList::AddAfter(node, &item)` (no PDB name): links a new node
+/// holding `*item` behind `node` (it becomes the tail when `node` was the
+/// last) and counts it. Answers the new node.
+pub fn fn_00a0ca70(e: &mut Engine, this: Ptr<NiTPointerList>, after: u32, item: Ptr) -> u32 {
+    let node = e.call(LIST_NEW_NODE, &args![this.addr() + 8]).u32();
+    let element = e.mem.u32(item.addr());
+    e.mem.set_u32(node + 8, element);
+    e.mem.set_u32(node + 4, after);
+    let following = e.mem.u32(after);
+    e.mem.set_u32(node, following);
+    if e.mem.u32(after) != 0 {
+        let following = e.mem.u32(after);
+        e.mem.set_u32(following + 4, node);
+    } else {
+        e.set(this, NiTPointerList::m_pkTail, node);
+    }
+    e.mem.set_u32(after, node);
+    let count = e.get(this, NiTPointerList::m_uiCount);
+    e.set(this, NiTPointerList::m_uiCount, count + 1);
+    node
+}
+
+// Translated from 00a0caf0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `BSSimpleArray<Tile::Value *, 8>::SortedInsert(&value, compare)` (the map
+/// has no name): a binary search for the place of `value` with the
+/// comparison function `compare(&value, &element)` (`cdecl`, answering -1, 0
+/// or 1), then the insert there ([`fn_00a0cd50`]). A match ends the search
+/// at its index. Any other answer from the comparison would make the game
+/// loop forever; here it stops with a panic.
+pub fn fn_00a0caf0(e: &mut Engine, this: Ptr<BSSimpleArray>, value: u32, compare: u32) {
+    let mut low: i32 = 0;
+    let mut high: i32 = e.get(this, BSSimpleArray::iSize) as i32 - 1;
+    while low <= high {
+        let middle = ((high - low) >> 1) + low;
+        let buffer = e.get(this, BSSimpleArray::pBuffer);
+        let answer = e
+            .call(
+                compare,
+                &args![value, buffer.wrapping_add_signed(middle * 4)],
+            )
+            .i32();
+        match answer {
+            -1 => high = middle - 1,
+            0 => {
+                low = middle;
+                high = -1;
+            }
+            1 => low = middle + 1,
+            other => panic!("comparison answered {other}: the game loops forever"),
+        }
+    }
+    fn_00a0cd50(e, this, low as u32, value);
+}
+
+// Translated from 00a0cb90 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `BSSimpleArray<Tile::Value *, 8>::SortedFind` (Xbox PDB): `bsearch` of
+/// the key in the buffer (4-byte elements, `compare` as the comparison);
+/// answers the element's index or -1 when there is none.
+pub fn bs_simple_array_tile_value_sorted_find(
+    e: &mut Engine,
+    this: Ptr<BSSimpleArray>,
+    key: u32,
+    compare: u32,
+) -> i32 {
+    let buffer = e.get(this, BSSimpleArray::pBuffer);
+    let size = e.get(this, BSSimpleArray::iSize);
+    let found = e
+        .call(BSEARCH, &args![key, buffer, size, 4u32, compare])
+        .u32();
+    if found == 0 {
+        -1
+    } else {
+        (found.wrapping_sub(buffer) >> 2) as i32
+    }
+}
+
+// Translated from 00a0cbe0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `BSSimpleList<Tile::FadeControl *>::Remove` (Xbox PDB): does nothing for
+/// a null item or an empty list; else finds the first node holding `*item`.
+/// If it is the embedded first node, the second node's item and link move
+/// into it (the second node is destroyed and freed), or the item is cleared
+/// when there is no second node; any other node is unlinked, destroyed
+/// ([`SIMPLE_LIST_REMOVE_ALL`] on it) and freed. The folded `AND 1` before
+/// each free is always set.
+pub fn bs_simple_list_fade_control_remove(e: &mut Engine, this: Ptr<BSSimpleList>, item: Ptr) {
+    let wanted = e.mem.u32(item.addr());
+    if wanted == 0 {
+        return;
+    }
+    let list = this.addr();
+    if e.get(this, BSSimpleList::m_pkNext) == 0 && e.get(this, BSSimpleList::m_item) == 0 {
+        return;
+    }
+    let mut node = list;
+    let mut previous = list;
+    while node != 0 && e.mem.u32(node) != wanted {
+        previous = node;
+        node = e.mem.u32(node + 4);
+    }
+    if node == 0 {
+        return;
+    }
+    if node == list {
+        let second = e.get(this, BSSimpleList::m_pkNext);
+        if second == 0 {
+            e.set(this, BSSimpleList::m_item, 0);
+        } else {
+            let after_second = e.mem.u32(second + 4);
+            e.set(this, BSSimpleList::m_pkNext, after_second);
+            let second_item = e.mem.u32(second);
+            e.set(this, BSSimpleList::m_item, second_item);
+            e.mem.set_u32(second + 4, 0);
+            e.call(SIMPLE_LIST_REMOVE_ALL, &args![second]);
+            deallocate(e, second);
+        }
+    } else {
+        let following = e.mem.u32(node + 4);
+        e.mem.set_u32(previous + 4, following);
+        e.mem.set_u32(node + 4, 0);
+        e.call(SIMPLE_LIST_REMOVE_ALL, &args![node]);
+        deallocate(e, node);
+    }
+}
+
+// Translated from 00a0cd50 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `BSSimpleArray<T *>::Insert(index, &item)` (the map has no name): at the
+/// end it appends ([`fn_00a0cf00`]); a full array gets a new buffer (the
+/// capacity doubles up to 8 and then grows by 8; the vtable's allocate
+/// slot), the elements before and after the index are copied around the gap
+/// ([`fn_00a0cf60`]) and the old buffer is freed (slot +8); with room the
+/// tail is moved up by one. Then the size grows and `*item` goes to the
+/// index. The compiler's empty loops are left out.
+pub fn fn_00a0cd50(e: &mut Engine, this: Ptr<BSSimpleArray>, index: u32, item: u32) {
+    let array = this.addr();
+    let size = e.get(this, BSSimpleArray::iSize);
+    if index == size {
+        fn_00a0cf00(e, this, item);
+        return;
+    }
+    let capacity = e.get(this, BSSimpleArray::iReservedSize);
+    if size == capacity {
+        let new_capacity = if capacity > 8 {
+            capacity + 8
+        } else {
+            capacity << 1
+        };
+        let new_buffer = e
+            .vcall(array, ARRAY_SLOT_ALLOCATE, &args![new_capacity])
+            .u32();
+        let buffer = e.get(this, BSSimpleArray::pBuffer);
+        fn_00a0cf60(e, array, new_buffer, buffer, index);
+        fn_00a0cf60(
+            e,
+            array,
+            new_buffer + index * 4 + 4,
+            buffer + index * 4,
+            size - index,
+        );
+        let buffer = e.get(this, BSSimpleArray::pBuffer);
+        e.vcall(array, ARRAY_SLOT_FREE, &args![buffer]);
+        e.set(this, BSSimpleArray::pBuffer, 0);
+        e.set(this, BSSimpleArray::pBuffer, new_buffer);
+        e.set(this, BSSimpleArray::iReservedSize, new_capacity);
+    } else {
+        let buffer = e.get(this, BSSimpleArray::pBuffer);
+        fn_00a0cf60(
+            e,
+            array,
+            buffer + index * 4 + 4,
+            buffer + index * 4,
+            size - index,
+        );
+    }
+    let size = e.get(this, BSSimpleArray::iSize);
+    e.set(this, BSSimpleArray::iSize, size + 1);
+    let buffer = e.get(this, BSSimpleArray::pBuffer);
+    let element = e.mem.u32(item);
+    e.mem.set_u32(buffer + index * 4, element);
+}
+
+// Translated from 00a0cf00 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `BSSimpleArray<T *>::Add(&item)` (the map has no name): makes room for
+/// one more element ([`fn_00a0d000`]) and stores `*item` there. Answers the
+/// index. The compiler's empty loop is left out.
+pub fn fn_00a0cf00(e: &mut Engine, this: Ptr<BSSimpleArray>, item: u32) -> u32 {
+    let index = fn_00a0d000(e, this);
+    let buffer = e.get(this, BSSimpleArray::pBuffer);
+    let element = e.mem.u32(item);
+    e.mem.set_u32(buffer + index * 4, element);
+    index
+}
+
+// Translated from 00a0cf60 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Copies `count` four-byte elements from `source` to `destination` (the map
+/// has no name; `thiscall` but `this` is not read, it is the array the
+/// caller works on): forwards when the destination is below the source,
+/// backwards when above, one `memmove` of 4 bytes per element; nothing when
+/// the two are equal or `count` is 0.
+pub fn fn_00a0cf60(e: &mut Engine, _this: u32, destination: u32, source: u32, count: u32) {
+    if count == 0 {
+        return;
+    }
+    if destination < source {
+        for index in 0..count {
+            e.call(
+                MEMMOVE,
+                &args![destination + index * 4, source + index * 4, 4u32],
+            );
+        }
+    } else if destination > source {
+        for index in (0..count).rev() {
+            e.call(
+                MEMMOVE,
+                &args![destination + index * 4, source + index * 4, 4u32],
+            );
+        }
+    }
+}
+
+// Translated from 00a0d000 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Makes room for one more element of a `BSSimpleArray` (the map has no
+/// name): a full array without a capacity gets 4 elements (allocate slot),
+/// a full one with a capacity grows ([`fn_00a0d0c0`]: doubled up to 8, then
+/// by 8). Counts the element and answers its index.
+pub fn fn_00a0d000(e: &mut Engine, this: Ptr<BSSimpleArray>) -> u32 {
+    let array = this.addr();
+    let size = e.get(this, BSSimpleArray::iSize);
+    let capacity = e.get(this, BSSimpleArray::iReservedSize);
+    if size == capacity {
+        if capacity == 0 {
+            let buffer = e.vcall(array, ARRAY_SLOT_ALLOCATE, &args![4u32]).u32();
+            e.set(this, BSSimpleArray::pBuffer, buffer);
+            e.set(this, BSSimpleArray::iReservedSize, 4);
+        } else {
+            let new_capacity = if capacity > 8 {
+                capacity + 8
+            } else {
+                capacity << 1
+            };
+            fn_00a0d0c0(e, this, new_capacity, size);
+            e.set(this, BSSimpleArray::iReservedSize, new_capacity);
+        }
+    }
+    let size = e.get(this, BSSimpleArray::iSize) + 1;
+    e.set(this, BSSimpleArray::iSize, size);
+    size - 1
+}
+
+// Translated from 00a0d0c0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Gives a `BSSimpleArray` a buffer of `new_capacity` elements (the map has
+/// no name): without a buffer, a new one (allocate slot) and the capacity is
+/// set; when `count` equals the capacity, the buffer is reallocated (slot
+/// +0xC); else a new buffer is allocated, the `count` elements are copied
+/// ([`fn_00a0cf60`]) and the old buffer is freed (slot +8). The capacity
+/// field of a grown array is set by the caller.
+pub fn fn_00a0d0c0(e: &mut Engine, this: Ptr<BSSimpleArray>, new_capacity: u32, count: u32) {
+    let array = this.addr();
+    let buffer = e.get(this, BSSimpleArray::pBuffer);
+    if buffer == 0 {
+        let fresh = e
+            .vcall(array, ARRAY_SLOT_ALLOCATE, &args![new_capacity])
+            .u32();
+        e.set(this, BSSimpleArray::pBuffer, fresh);
+        e.set(this, BSSimpleArray::iReservedSize, new_capacity);
+    } else if count == e.get(this, BSSimpleArray::iReservedSize) {
+        let moved = e
+            .vcall(array, ARRAY_SLOT_REALLOCATE, &args![buffer, new_capacity])
+            .u32();
+        e.set(this, BSSimpleArray::pBuffer, moved);
+    } else {
+        let fresh = e
+            .vcall(array, ARRAY_SLOT_ALLOCATE, &args![new_capacity])
+            .u32();
+        fn_00a0cf60(e, array, fresh, buffer, count);
+        let old = e.get(this, BSSimpleArray::pBuffer);
+        e.vcall(array, ARRAY_SLOT_FREE, &args![old]);
+        e.set(this, BSSimpleArray::pBuffer, 0);
+        e.set(this, BSSimpleArray::pBuffer, fresh);
+    }
+}
+
+// Translated from 00a0d180 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::MenuStringMap::IsKeysEqual` (Xbox PDB): the two keys are equal
+/// ignoring case (`_stricmp` is 0).
+pub fn menu_string_map_is_keys_equal(e: &mut Engine, _this: Ptr, a: Ptr, b: Ptr) -> bool {
+    e.call(STRICMP, &args![a, b]).i32() == 0
+}
+
+// Translated from 00a0d1b0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::MenuStringMap::KeyToHashIndex` (Xbox PDB): `hash = hash * 33 +
+/// tolower(c)` over the characters (as signed bytes), reduced by the
+/// bucket count at +4.
+pub fn menu_string_map_key_to_hash_index(e: &mut Engine, this: Ptr, key: Ptr) -> u32 {
+    let mut hash: u32 = 0;
+    let mut at = key.addr();
+    while e.mem.u8(at) as i8 != 0 {
+        let character = e.mem.u8(at) as i8 as i32;
+        let lower = e.call(TOLOWER, &args![character]).u32() as u8 as i8;
+        hash = hash.wrapping_mul(33).wrapping_add(lower as i32 as u32);
+        at += 1;
+    }
+    bucket_index(e, this.addr(), hash)
+}
+
+// Translated from 00a0d220 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `Tile::MenuStringMap::_scalar_deleting_destructor_` (Xbox PDB): sets the
+/// class's vtable, runs the destructor of the string map
+/// ([`ni_t_string_template_map_destructor`]) and, with bit 0 of `flags`,
+/// frees the object.
+pub fn menu_string_map_scalar_deleting_destructor(e: &mut Engine, this: Ptr, flags: u32) -> Ptr {
+    e.mem.set_u32(this.addr(), VTABLE_MENU_STRING_MAP);
+    ni_t_string_template_map_destructor(e, this);
+    if flags & 1 != 0 {
+        deallocate(e, this.addr());
+    }
+    this
+}
+
+// Translated from 00a0d260 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The hash of an integer key (the map has no name): the key reduced by the
+/// bucket count at +4.
+pub fn fn_00a0d260(e: &mut Engine, this: Ptr, key: u32) -> u32 {
+    bucket_index(e, this.addr(), key)
+}
+
+// Translated from 00a0d280 (decompiled, FalloutNV.exe 1.4.0.525)
+/// A map's node allocation (vtable slot +0x14; the map has no name): a node
+/// from the free pool of the allocator at +0xC ([`LIST_NEW_NODE`]).
+pub fn fn_00a0d280(e: &mut Engine, this: Ptr) -> u32 {
+    e.call(LIST_NEW_NODE, &args![this.addr() + 0xc]).u32()
+}
+
+// Translated from 00a0d2a0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiTStringTemplateMap<NiTPointerMap<char const *, int>, int>::
+/// ~NiTStringTemplateMap` (Xbox PDB): with the copy-keys byte (+0x10) set,
+/// frees the key of every node of every bucket; then the destructors of the
+/// two base levels run ([`MAP_REMOVE_ALL`] under the vtable of each level)
+/// and the bucket array is freed. The C++ exception frame is not
+/// translated.
+pub fn ni_t_string_template_map_destructor(e: &mut Engine, this: Ptr) {
+    let map = this.addr();
+    e.mem.set_u32(map, VTABLE_STRING_TEMPLATE_MAP);
+    if e.mem.u8(map + 0x10) != 0 {
+        let mut bucket = 0;
+        while bucket < e.mem.u32(map + 4) {
+            let mut node = e.mem.u32(e.mem.u32(map + 8) + bucket * 4);
+            while node != 0 {
+                let following = e.mem.u32(node);
+                let key = e.mem.u32(node + 4);
+                e.call(FREE_BYTES, &args![key]);
+                node = following;
+            }
+            bucket += 1;
+        }
+    }
+    fn_00a0d3c0(e, this);
+}
+
+// Translated from 00a0d390 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The destructor of the map's base class `NiTMapBase<NiTPointerAllocator<
+/// unsigned int>, char const *, int>` (the map has no name): sets the base
+/// vtable, empties the map ([`MAP_REMOVE_ALL`]) and frees the bucket array.
+pub fn fn_00a0d390(e: &mut Engine, this: Ptr) {
+    e.mem.set_u32(this.addr(), VTABLE_MAP_BASE);
+    e.call(MAP_REMOVE_ALL, &args![this]);
+    let buckets = e.mem.u32(this.addr() + 8);
+    e.call(FREE_BYTES, &args![buckets]);
+}
+
+// Translated from 00a0d3c0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The destructor of `NiTPointerMap<char const *, int>` (the map has no
+/// name): empties the map under its own vtable, then runs the base
+/// destructor ([`fn_00a0d390`]). The C++ exception frame is not translated.
+pub fn fn_00a0d3c0(e: &mut Engine, this: Ptr) {
+    e.mem.set_u32(this.addr(), VTABLE_POINTER_MAP);
+    e.call(MAP_REMOVE_ALL, &args![this]);
+    fn_00a0d390(e, this);
+}
+
+// Translated from 00a0d440 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The hash of a string key, case sensitive (the map has no name): `hash =
+/// hash * 33 + c` over the characters (as signed bytes), reduced by the
+/// bucket count at +4.
+pub fn fn_00a0d440(e: &mut Engine, this: Ptr, key: Ptr) -> u32 {
+    let mut hash: u32 = 0;
+    let mut at = key.addr();
+    while e.mem.u8(at) as i8 != 0 {
+        hash = hash
+            .wrapping_mul(33)
+            .wrapping_add(e.mem.u8(at) as i8 as i32 as u32);
+        at += 1;
+    }
+    bucket_index(e, this.addr(), hash)
+}
+
+// Translated from 00a0d4a0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// A map node's key release (the map has no name): when the map copies its
+/// keys (byte at +0x10), frees the key of `node` (+4).
+pub fn fn_00a0d4a0(e: &mut Engine, this: Ptr, node: u32) {
+    if e.mem.u8(this.addr() + 0x10) != 0 {
+        let key = e.mem.u32(node + 4);
+        e.call(FREE_BYTES, &args![key]);
+    }
+}
+
+// Translated from 00a0d4d0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiTMapBase<NiTPointerAllocator<unsigned int>, char const *, int>::
+/// _scalar_deleting_destructor_` (Xbox PDB): the base destructor
+/// ([`fn_00a0d390`]) and, with bit 0 of `flags`, frees the object.
+pub fn ni_t_map_base_char_p_int_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr,
+    flags: u32,
+) -> Ptr {
+    fn_00a0d390(e, this);
+    if flags & 1 != 0 {
+        deallocate(e, this.addr());
+    }
+    this
+}
+
+// Translated from 00a0d520 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiTPointerMap<char const *, int>::_scalar_deleting_destructor_` (Xbox
+/// PDB): [`fn_00a0d3c0`] and, with bit 0 of `flags`, frees the object. The
+/// C++ exception frame is not translated.
+pub fn ni_t_pointer_map_char_p_int_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr,
+    flags: u32,
+) -> Ptr {
+    fn_00a0d3c0(e, this);
+    if flags & 1 != 0 {
+        deallocate(e, this.addr());
+    }
+    this
+}
+
+// Translated from 00a0d5c0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiTStringTemplateMap<NiTPointerMap<char const *, int>, int>::
+/// _scalar_deleting_destructor_` (Xbox PDB): the destructor
+/// ([`ni_t_string_template_map_destructor`]) and, with bit 0 of `flags`,
+/// frees the object.
+pub fn ni_t_string_template_map_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr,
+    flags: u32,
+) -> Ptr {
+    ni_t_string_template_map_destructor(e, this);
+    if flags & 1 != 0 {
+        deallocate(e, this.addr());
+    }
+    this
+}
+
+// Translated from 00a0d5f0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Constructor of the map base class `NiTMapBase<..., char const *, int>`
+/// (the map has no name): sets the base vtable and the bucket count, no
+/// items, allocates `4 * buckets` bytes for the buckets and clears them.
+/// Answers `this`.
+pub fn fn_00a0d5f0(e: &mut Engine, this: Ptr, bucket_count: u32) -> Ptr {
+    let map = this.addr();
+    e.mem.set_u32(map, VTABLE_MAP_BASE);
+    e.mem.set_u32(map + 4, bucket_count);
+    e.mem.set_u32(map + 0xc, 0);
+    let buckets = e.call(ALLOC_BYTES, &args![e.mem.u32(map + 4) << 2]).u32();
+    e.mem.set_u32(map + 8, buckets);
+    let size = e.mem.u32(map + 4) << 2;
+    let buckets = e.mem.u32(map + 8);
+    e.call(MEMSET, &args![buckets, 0u32, size]);
+    this
+}
+
+// Translated from 00a0d670 (decompiled, FalloutNV.exe 1.4.0.525)
+/// `NiTPointerMap<int, int>::_scalar_deleting_destructor_` (Xbox PDB):
+/// empties the map under the vtable of each of its two levels
+/// ([`MAP_REMOVE_ALL`]), frees the bucket array and, with bit 0 of `flags`,
+/// frees the object. The C++ exception frame is not translated.
+pub fn ni_t_pointer_map_int_int_scalar_deleting_destructor(
+    e: &mut Engine,
+    this: Ptr,
+    flags: u32,
+) -> Ptr {
+    let map = this.addr();
+    e.mem.set_u32(map, VTABLE_INT_POINTER_MAP);
+    e.call(MAP_REMOVE_ALL, &args![this]);
+    e.mem.set_u32(map, VTABLE_INT_MAP_BASE);
+    e.call(MAP_REMOVE_ALL, &args![this]);
+    let buckets = e.mem.u32(map + 8);
+    e.call(FREE_BYTES, &args![buckets]);
+    if flags & 1 != 0 {
+        deallocate(e, map);
+    }
+    this
+}
+
+// Translated from 00a0d710 (decompiled, FalloutNV.exe 1.4.0.525)
+/// Constructor of the map base class of `NiTPointerMap<int, int>` (the map
+/// has no name): the same as [`fn_00a0d5f0`] with the vtable `01094e5c`.
+pub fn fn_00a0d710(e: &mut Engine, this: Ptr, bucket_count: u32) -> Ptr {
+    let map = this.addr();
+    e.mem.set_u32(map, VTABLE_INT_MAP_BASE);
+    e.mem.set_u32(map + 4, bucket_count);
+    e.mem.set_u32(map + 0xc, 0);
+    let buckets = e.call(ALLOC_BYTES, &args![e.mem.u32(map + 4) << 2]).u32();
+    e.mem.set_u32(map + 8, buckets);
+    let size = e.mem.u32(map + 4) << 2;
+    let buckets = e.mem.u32(map + 8);
+    e.call(MEMSET, &args![buckets, 0u32, size]);
+    this
+}
+
+// Translated from 00a0d790 (decompiled, FalloutNV.exe 1.4.0.525)
+/// The destructor of the map base class of `NiTPointerMap<int, int>` (the
+/// map has no name): sets the base vtable, empties the map
+/// ([`MAP_REMOVE_ALL`]) and frees the bucket array.
+pub fn fn_00a0d790(e: &mut Engine, this: Ptr) {
+    e.mem.set_u32(this.addr(), VTABLE_INT_MAP_BASE);
+    e.call(MAP_REMOVE_ALL, &args![this]);
+    let buckets = e.mem.u32(this.addr() + 8);
+    e.call(FREE_BYTES, &args![buckets]);
+}
+
+// Translated from 00a0d7c0 (decompiled, FalloutNV.exe 1.4.0.525)
+/// A map node's release (the map has no name): clears the node's value (+8)
+/// and gives the node back to the free pool of the allocator at +0xC of the
+/// map ([`MAP_FREE_NODE`]).
+pub fn fn_00a0d7c0(e: &mut Engine, this: Ptr, node: u32) {
+    e.mem.set_u32(node + 8, 0);
+    e.call(MAP_FREE_NODE, &args![this.addr() + 0xc, node]);
+}
+
 /// This unit's translated functions, by exe address.
 pub fn funcs() -> Vec<(u32, AbiFn)> {
     vec![
@@ -5411,6 +7552,164 @@ pub fn funcs() -> Vec<(u32, AbiFn)> {
         entry!(0x00a09200, value_clear_actions(Ptr<TileValue>)),
         entry!(0x00a09330, value_destructor(Ptr<TileValue>)),
         entry!(0x00a09410, value_calculate_value(Ptr<TileValue>, bool)),
+        entry!(
+            0x00a0a0b0,
+            tile_get_underscore_value(Ptr<Tile>, i32, i32) -> Ptr
+        ),
+        entry!(0x00a0a130, add_reaction(Ptr<TileValue>, Ptr<TileValue>)),
+        entry!(0x00a0a220, tile_value_change_event(Ptr<TileValue>)),
+        entry!(0x00a0a270, value_set_float(Ptr<TileValue>, f32, bool)),
+        entry!(0x00a0a300, value_set_string(Ptr<TileValue>, Ptr, bool)),
+        entry!(
+            0x00a0a410,
+            template_add_pair(Ptr<TileTemplate>, i32, Ptr, i32, bool)
+        ),
+        entry!(0x00a0ab70, template_clear(Ptr<TileTemplate>)),
+        entry!(0x00a0abe0, extra_destructor(Ptr<Extra>)),
+        entry!(
+            0x00a0ac80,
+            build_storage_construct(Ptr<BuildStorage>) -> Ptr<BuildStorage>
+        ),
+        entry!(0x00a0ad40, build_storage_destructor(Ptr<BuildStorage>)),
+        entry!(
+            0x00a0ae70,
+            fn_00a0ae70(Ptr<BuildStorage>, Ptr) -> Ptr<TileTemplate>
+        ),
+        entry!(
+            0x00a0af10,
+            fn_00a0af10(Ptr<BuildStorage>, Ptr) -> Ptr<TileTemplate>
+        ),
+        entry!(0x00a0b020, tile_force_texture_release(Ptr<Tile>)),
+        entry!(0x00a0b110, tile_play_tile_sound(Ptr<Tile>, i32)),
+        entry!(0x00a0b1f0, tile_get_shader_property(Ptr<Tile>) -> Ptr),
+        entry!(
+            0x00a0b280,
+            tile_set_alpha_and_color(Ptr<Tile>, Ptr, f32, Ptr)
+        ),
+        entry!(0x00a0b350, fn_00a0b350(Ptr<Tile>, i32, f32)),
+        entry!(0x00a0b420, fn_00a0b420(Ptr<Tile>, Ptr, f32)),
+        entry!(0x00a0b520, tile_recursive_rotation_update(Ptr<Tile>)),
+        entry!(0x00a0b8d0, fn_00a0b8d0(Ptr)),
+        entry!(
+            0x00a0b950,
+            fn_00a0b950(i32, f32, Ptr, i32, i32) -> Ptr<TileTemplateItem>
+        ),
+        entry!(0x00a0ba50, fn_00a0ba50()),
+        entry!(
+            0x00a0bae0,
+            tile_special_bounds_check(Ptr<Tile>, u32, u32) -> bool
+        ),
+        entry!(0x00a0baf0, fn_00a0baf0(Ptr<Tile>)),
+        entry!(0x00a0bb00, fn_00a0bb00(Ptr) -> bool),
+        entry!(0x00a0bb50, fn_00a0bb50(Ptr)),
+        entry!(0x00a0bbd0, tile_text_get_type(Ptr<Tile>) -> u32),
+        entry!(0x00a0bbe0, tile_text_get_type_name(Ptr<Tile>) -> u32),
+        entry!(
+            0x00a0bbf0,
+            tile_text_scalar_deleting_destructor(Ptr<Tile>, u32) -> Ptr<Tile>
+        ),
+        entry!(0x00a0bc80, fn_00a0bc80(Ptr<Tile>) -> Ptr<Tile>),
+        entry!(0x00a0bdc0, tile_3d_get_type(Ptr<Tile>) -> u32),
+        entry!(0x00a0bdd0, tile_3d_get_type_name(Ptr<Tile>) -> u32),
+        entry!(
+            0x00a0bde0,
+            tile_3d_scalar_deleting_destructor(Ptr<Tile>, u32) -> Ptr<Tile>
+        ),
+        entry!(
+            0x00a0be10,
+            xml_storage_scalar_deleting_destructor(Ptr<XmlStorage>, u32) -> Ptr<XmlStorage>
+        ),
+        entry!(0x00a0be70, xml_storage_destructor(Ptr<XmlStorage>)),
+        entry!(0x00a0beb0, fn_00a0beb0(Ptr) -> Ptr),
+        entry!(0x00a0c000, float_action_q_float(Ptr<ValueAction>) -> f32),
+        entry!(
+            0x00a0c020,
+            ref_value_action_q_float(Ptr<ValueAction>) -> f32
+        ),
+        entry!(0x00a0c060, fn_00a0c060(Ptr<ValueAction>) -> Ptr<TileValue>),
+        entry!(0x00a0c080, ni_extra_data_get_rtti(Ptr) -> u32),
+        entry!(
+            0x00a0c090,
+            extra_scalar_deleting_destructor(Ptr<Extra>, u32) -> Ptr<Extra>
+        ),
+        entry!(
+            0x00a0c0c0,
+            template_construct(Ptr<TileTemplate>, u32, Ptr<BuildStorage>) -> Ptr<TileTemplate>
+        ),
+        entry!(0x00a0c190, template_destructor(Ptr<TileTemplate>)),
+        entry!(
+            0x00a0c220,
+            fn_00a0c220(Ptr<TileTemplateItem>, i32, f32, Ptr, u32, i32) -> Ptr<TileTemplateItem>
+        ),
+        entry!(0x00a0c300, fn_00a0c300(Ptr, Ptr, u32, u32) -> u32),
+        entry!(0x00a0c430, fn_00a0c430(Ptr, Ptr, u32) -> Ptr),
+        entry!(0x00a0c570, fn_00a0c570(Ptr, Ptr, u32, u32) -> Ptr),
+        entry!(0x00a0c6c0, fn_00a0c6c0(Ptr<NiTPointerMap>, u32, u32)),
+        entry!(0x00a0c7a0, fn_00a0c7a0(Ptr)),
+        entry!(
+            0x00a0c7c0,
+            bs_simple_list_fade_control_add_head(Ptr<BSSimpleList>, Ptr)
+        ),
+        entry!(0x00a0c850, fn_00a0c850(Ptr<NiTPointerMap>, u32, u32, u32)),
+        entry!(0x00a0c900, fn_00a0c900(Ptr<NiTPointerMap>, u32, u32)),
+        entry!(0x00a0c9f0, fn_00a0c9f0(Ptr<NiTPointerList>, Ptr)),
+        entry!(
+            0x00a0ca70,
+            fn_00a0ca70(Ptr<NiTPointerList>, u32, Ptr) -> u32
+        ),
+        entry!(0x00a0caf0, fn_00a0caf0(Ptr<BSSimpleArray>, u32, u32)),
+        entry!(
+            0x00a0cb90,
+            bs_simple_array_tile_value_sorted_find(Ptr<BSSimpleArray>, u32, u32) -> i32
+        ),
+        entry!(
+            0x00a0cbe0,
+            bs_simple_list_fade_control_remove(Ptr<BSSimpleList>, Ptr)
+        ),
+        entry!(0x00a0cd50, fn_00a0cd50(Ptr<BSSimpleArray>, u32, u32)),
+        entry!(0x00a0cf00, fn_00a0cf00(Ptr<BSSimpleArray>, u32) -> u32),
+        entry!(0x00a0cf60, fn_00a0cf60(u32, u32, u32, u32)),
+        entry!(0x00a0d000, fn_00a0d000(Ptr<BSSimpleArray>) -> u32),
+        entry!(0x00a0d0c0, fn_00a0d0c0(Ptr<BSSimpleArray>, u32, u32)),
+        entry!(
+            0x00a0d180,
+            menu_string_map_is_keys_equal(Ptr, Ptr, Ptr) -> bool
+        ),
+        entry!(
+            0x00a0d1b0,
+            menu_string_map_key_to_hash_index(Ptr, Ptr) -> u32
+        ),
+        entry!(
+            0x00a0d220,
+            menu_string_map_scalar_deleting_destructor(Ptr, u32) -> Ptr
+        ),
+        entry!(0x00a0d260, fn_00a0d260(Ptr, u32) -> u32),
+        entry!(0x00a0d280, fn_00a0d280(Ptr) -> u32),
+        entry!(0x00a0d2a0, ni_t_string_template_map_destructor(Ptr)),
+        entry!(0x00a0d390, fn_00a0d390(Ptr)),
+        entry!(0x00a0d3c0, fn_00a0d3c0(Ptr)),
+        entry!(0x00a0d440, fn_00a0d440(Ptr, Ptr) -> u32),
+        entry!(0x00a0d4a0, fn_00a0d4a0(Ptr, u32)),
+        entry!(
+            0x00a0d4d0,
+            ni_t_map_base_char_p_int_scalar_deleting_destructor(Ptr, u32) -> Ptr
+        ),
+        entry!(
+            0x00a0d520,
+            ni_t_pointer_map_char_p_int_scalar_deleting_destructor(Ptr, u32) -> Ptr
+        ),
+        entry!(
+            0x00a0d5c0,
+            ni_t_string_template_map_scalar_deleting_destructor(Ptr, u32) -> Ptr
+        ),
+        entry!(0x00a0d5f0, fn_00a0d5f0(Ptr, u32) -> Ptr),
+        entry!(
+            0x00a0d670,
+            ni_t_pointer_map_int_int_scalar_deleting_destructor(Ptr, u32) -> Ptr
+        ),
+        entry!(0x00a0d710, fn_00a0d710(Ptr, u32) -> Ptr),
+        entry!(0x00a0d790, fn_00a0d790(Ptr)),
+        entry!(0x00a0d7c0, fn_00a0d7c0(Ptr, u32)),
     ]
 }
 
@@ -5536,6 +7835,33 @@ mod tests {
         TEXTURE_ATLAS_ENTRY_CONSTRUCT,
         FILE_FINDER_GET_FILE,
         STRTOK,
+        SSCANF,
+        TEMPLATE_LIST_ADD_NODE_TAIL,
+        TEMPLATE_LIST_POP_HEAD,
+        TEMPLATE_LIST_POP_TAIL,
+        TEMPLATE_ITEM_CONSTRUCT,
+        TEMPLATE_CONSTRUCT,
+        TEMPLATE_DESTROY,
+        SUB_TEMPLATE_LIST_ADD_HEAD,
+        NI_FIXED_STRING_CREATE,
+        NI_EXTRA_DATA_DESTROY,
+        GET_SOUND_HANDLE_BY_NAME,
+        SOUND_HANDLE_PLAY,
+        MATRIX_MAKE_Y_ROTATION,
+        TILE_3D_DESTROY,
+        NI_OPERATOR_DELETE,
+        LIST_DESTROY,
+        STD_STRING_INSIDE,
+        STD_STRING_GROW,
+        STD_LENGTH_ERROR,
+        STD_OUT_OF_RANGE,
+        MEMCPY_S,
+        MEMMOVE,
+        BSEARCH,
+        TOLOWER,
+        MAP_FREE_NODE,
+        ALLOC_BYTES,
+        FREE_BYTES,
     ];
 
     /// An engine with do-nothing doubles for everything outside this file,
@@ -11438,5 +13764,2445 @@ mod tests {
         e.set(value, TileValue::fValue, 2.0);
         value_calculate_value(&mut e, value, false);
         assert_eq!(e.get(value, TileValue::fValue), 3.0);
+    }
+
+    // --- Session 3 ----------------------------------------------------------
+
+    /// A tile whose values can calculate (constants, float stack and math
+    /// doubles) and whose `PostParse` calls are logged.
+    fn calculating_tile(e: &mut Engine) -> (Ptr<Tile>, TileLog) {
+        provide_constants(e);
+        install_float_stack(e);
+        install_double_math(e);
+        updating_tile(e, TYPE_RECT)
+    }
+
+    #[test]
+    fn the_underscore_value_is_found_by_the_numbered_name() {
+        let mut e = tile_engine();
+        e.call_log = Some(vec![]);
+        install_value_array_doubles(&mut e);
+        e.register(TEXT_TABLE_NEXT, |e, a| {
+            let node = e.mem.u32(a[1]);
+            let (key, value, next) = (e.mem.u32(node + 4), e.mem.u32(node + 8), e.mem.u32(node));
+            e.mem.set_u32(a[2], key);
+            e.mem.set_u32(a[3], value);
+            e.mem.set_u32(a[1], next);
+            Ret::default()
+        });
+        let key = cstring(&mut e, "_Slot");
+        let node = table_node(&mut e, 0, key, 7);
+        let buckets = e.mem.alloc(8);
+        e.mem.set_u32(buckets, node);
+        e.set_global(TEXT_TABLE_BUCKET_COUNT, 1u32);
+        e.set_global(TEXT_TABLE_BUCKETS, buckets);
+        e.register(SPRINTF_S, |e, a| {
+            assert_eq!((a[1], a[2]), (NAME_BUFFER_SIZE, UNDERSCORE_NAME_FORMAT));
+            let text = format!("{}{}", string_at(e, a[3]), a[4] as i32);
+            e.mem.set_cstr(a[0], text.as_bytes());
+            Ret::default()
+        });
+        e.register(TEXT_TABLE_FIND, |e, a| {
+            if e.mem.cstr(a[1]) == b"_Slot3" {
+                e.mem.set_i32(a[2], 10003);
+                1u32.into_ret()
+            } else {
+                0u32.into_ret()
+            }
+        });
+        let tile = typed_tile(&mut e, TYPE_RECT);
+        let value = give_trait(&mut e, tile, 10003, 2.5);
+        assert_eq!(tile_get_underscore_value(&mut e, tile, 7, 3), value.cast());
+        // No such numbered name: no value.
+        assert!(tile_get_underscore_value(&mut e, tile, 7, 4).is_null());
+        assert_lock_balanced(&e);
+    }
+
+    /// What the reaction map double was asked to store: (map, key, list).
+    type StoredReactions = Rc<RefCell<Vec<(u32, u32, u32)>>>;
+
+    /// Doubles for the reaction map: it reports the list `head` for every
+    /// key and records what is stored.
+    fn install_reaction_map(e: &mut Engine) -> (Rc<Cell<u32>>, StoredReactions) {
+        let head = Rc::new(Cell::new(0u32));
+        let seen = head.clone();
+        e.register_double(REACTION_MAP_FIND, move |e, a| {
+            if seen.get() == 0 {
+                0u32.into_ret()
+            } else {
+                e.mem.set_u32(a[2], seen.get());
+                1u32.into_ret()
+            }
+        });
+        let stored = Rc::new(RefCell::new(vec![]));
+        let (record, list) = (stored.clone(), head.clone());
+        e.register_double(REACTION_MAP_SET, move |_, a| {
+            record.borrow_mut().push((a[0], a[1], a[2]));
+            list.set(a[2]);
+            Ret::default()
+        });
+        (head, stored)
+    }
+
+    #[test]
+    fn a_reaction_goes_behind_the_last_one_unless_that_names_the_owner() {
+        let mut e = tile_engine();
+        let (_, stored) = install_reaction_map(&mut e);
+        let value: Ptr<TileValue> = Ptr::new(e.mem.alloc(0x14));
+        let owner: Ptr<TileValue> = Ptr::new(e.mem.alloc(0x14));
+        let other: Ptr<TileValue> = Ptr::new(e.mem.alloc(0x14));
+        // A value without a list gets a one-node list in the map.
+        add_reaction(&mut e, value, owner);
+        let first = stored.borrow()[0].2;
+        assert_eq!(stored.borrow()[0], (REACTION_MAP, value.addr(), first));
+        assert_eq!((e.mem.u32(first), e.mem.u32(first + 4)), (owner.addr(), 0));
+        assert_eq!(e.mem.block_size(first), Some(8));
+        // Another owner goes at the end; the same owner twice does not.
+        add_reaction(&mut e, value, other);
+        let second = e.mem.u32(first + 4);
+        assert_eq!(e.mem.u32(second), other.addr());
+        add_reaction(&mut e, value, other);
+        assert_eq!(e.mem.u32(second + 4), 0);
+        // Only the last node counts: `owner` is first, so it is added again.
+        add_reaction(&mut e, value, owner);
+        let third = e.mem.u32(second + 4);
+        assert_eq!((e.mem.u32(third), e.mem.u32(third + 4)), (owner.addr(), 0));
+        assert_eq!(stored.borrow().len(), 1);
+    }
+
+    #[test]
+    fn a_value_change_recalculates_the_values_that_react() {
+        let mut e = tile_engine();
+        let (tile, log) = calculating_tile(&mut e);
+        let (head, _) = install_reaction_map(&mut e);
+        let changed = value_with(&mut e, tile, TRAIT_X, 1.0, &[(VA_COPY, 5.0)]);
+        let also = value_with(&mut e, tile, TRAIT_Y, 1.0, &[(VA_COPY, 7.0)]);
+        let source = value_with(&mut e, tile, TRAIT_ALPHA, 0.0, &[]);
+        // Nothing reacts: nothing is recalculated.
+        tile_value_change_event(&mut e, source);
+        assert_eq!(e.get(changed, TileValue::fValue), 1.0);
+        head.set(reaction_list(&mut e, &[changed.addr(), also.addr()]));
+        tile_value_change_event(&mut e, source);
+        assert_eq!(e.get(changed, TileValue::fValue), 5.0);
+        assert_eq!(e.get(also, TileValue::fValue), 7.0);
+        assert_eq!(
+            *log.post_parses.borrow(),
+            vec![(TRAIT_X, 5.0, 0), (TRAIT_Y, 7.0, 0)]
+        );
+    }
+
+    #[test]
+    fn setting_a_float_replaces_the_string_and_recalculates() {
+        let mut e = tile_engine();
+        let (tile, log) = calculating_tile(&mut e);
+        let value = value_with(&mut e, tile, TRAIT_X, 1.0, &[(VA_ADD, 1.0)]);
+        let text = cstring(&mut e, "s");
+        e.set(value, TileValue::strValue, Ptr::new(text));
+        value_set_float(&mut e, value, 3.0, false);
+        // The action still ran on the new float.
+        assert_eq!(e.get(value, TileValue::fValue), 4.0);
+        assert!(e.get(value, TileValue::strValue).is_null());
+        assert_eq!(e.mem.block_size(text), None);
+        assert_eq!(*log.post_parses.borrow(), vec![(TRAIT_X, 4.0, 0)]);
+        // The same float again changes nothing.
+        let plain = value_with(&mut e, tile, TRAIT_Y, 2.0, &[]);
+        log.post_parses.borrow_mut().clear();
+        value_set_float(&mut e, plain, 2.0, false);
+        assert!(log.post_parses.borrow().is_empty());
+        // A different float is reported.
+        value_set_float(&mut e, plain, 2.5, false);
+        assert_eq!(*log.post_parses.borrow(), vec![(TRAIT_Y, 2.5, 0)]);
+        // With the flag the actions are cleared and not run.
+        let action = e.get(value, TileValue::pActionListA).addr();
+        value_set_float(&mut e, value, 9.0, true);
+        assert_eq!(e.get(value, TileValue::fValue), 9.0);
+        assert!(e.get(value, TileValue::pActionListA).is_null());
+        assert_eq!(e.mem.block_size(action), None);
+    }
+
+    #[test]
+    fn setting_a_string_copies_it_and_zeroes_the_float() {
+        let mut e = tile_engine();
+        install_strcmp(&mut e);
+        let (tile, log) = calculating_tile(&mut e);
+        let value = value_with(&mut e, tile, TRAIT_X, 6.0, &[(VA_ADD, 1.0)]);
+        let first = cstring(&mut e, "abc");
+        value_set_string(&mut e, value, Ptr::new(first), false);
+        let copy = e.get(value, TileValue::strValue);
+        assert_ne!(copy.addr(), first);
+        assert_eq!(string_at(&e, copy.addr()), "abc");
+        // The float was zeroed and the action added to it.
+        assert_eq!(e.get(value, TileValue::fValue), 1.0);
+        assert_eq!(log.post_parses.borrow().len(), 1);
+        assert_eq!(log.post_parses.borrow()[0], (TRAIT_X, 1.0, copy.addr()));
+        // The same text again is no change: the old copy is replaced, and
+        // the string is not reported again (the action still adds to 0).
+        let same = cstring(&mut e, "abc");
+        log.post_parses.borrow_mut().clear();
+        value_set_string(&mut e, value, Ptr::new(same), false);
+        assert_eq!(
+            string_at(&e, e.get(value, TileValue::strValue).addr()),
+            "abc"
+        );
+        // A null text drops the string.
+        let old = e.get(value, TileValue::strValue).addr();
+        value_set_string(&mut e, value, Ptr::NULL, true);
+        assert!(e.get(value, TileValue::strValue).is_null());
+        assert_eq!(e.mem.block_size(old), None);
+        assert!(e.get(value, TileValue::pActionListA).is_null());
+        assert_eq!(e.get(value, TileValue::fValue), 0.0);
+    }
+
+    /// The list, string and item doubles `AddPair` needs, the constants it
+    /// compares with, and a template owned by a storage.
+    fn pair_engine() -> (Engine, Ptr<TileTemplate>, Ptr<BuildStorage>) {
+        let mut e = tile_engine();
+        install_strcmp(&mut e);
+        for page in [0x0101_1000, 0x0107_3000, 0x0109_b000] {
+            e.map(page, 0x1000);
+        }
+        for (address, value) in [
+            (TEMPLATE_MARKER_VALUE, 999.0f64),
+            (TILE_TYPE_FIRST_DOUBLE, 901.0),
+            (TILE_TYPE_LAST_DOUBLE, 908.0),
+            (TRAIT_ID_FIRST_DOUBLE, 4001.0),
+            (TRAIT_ID_LAST_DOUBLE, 4125.0),
+            (ACTION_ID_FIRST_DOUBLE, 2000.0),
+            (ACTION_ID_LAST_DOUBLE, 2025.0),
+            (NO_TRAIT_VALUE, -2147483648.0),
+        ] {
+            e.set_global(address, value);
+        }
+        e.set_global(NO_VALUE_FLOAT, -2147483648.0f32);
+        e.register(STRING_SET, |e, a| {
+            e.mem.set_u32(a[0], a[1]);
+            Ret::default()
+        });
+        e.register(STRING_ASSIGN, |e, a| {
+            let text = e.mem.u32(a[1]);
+            e.mem.set_u32(a[0], text);
+            Ret::default()
+        });
+        e.register(LIST_NEW_NODE, |e, _| e.mem.alloc(12).into_ret());
+        e.register(TEMPLATE_LIST_ADD_NODE_TAIL, |e, a| {
+            let (list, node) = (a[0], a[1]);
+            let tail = e.mem.u32(list + 4);
+            e.mem.set_u32(node, 0);
+            e.mem.set_u32(node + 4, tail);
+            if tail == 0 {
+                e.mem.set_u32(list, node);
+            } else {
+                e.mem.set_u32(tail, node);
+            }
+            e.mem.set_u32(list + 4, node);
+            let count = e.mem.u32(list + 8);
+            e.mem.set_u32(list + 8, count + 1);
+            Ret::default()
+        });
+        e.register(TEMPLATE_LIST_POP_TAIL, |e, a| {
+            let list = a[0];
+            let tail = e.mem.u32(list + 4);
+            let previous = e.mem.u32(tail + 4);
+            e.mem.set_u32(list + 4, previous);
+            if previous == 0 {
+                e.mem.set_u32(list, 0);
+            } else {
+                e.mem.set_u32(previous, 0);
+            }
+            let count = e.mem.u32(list + 8);
+            e.mem.set_u32(list + 8, count - 1);
+            e.mem.u32(tail + 8).into_ret()
+        });
+        e.register(TEMPLATE_LIST_POP_HEAD, |e, a| {
+            let list = a[0];
+            let head = e.mem.u32(list);
+            let next = e.mem.u32(head);
+            e.mem.set_u32(list, next);
+            if next == 0 {
+                e.mem.set_u32(list + 4, 0);
+            } else {
+                e.mem.set_u32(next + 4, 0);
+            }
+            let count = e.mem.u32(list + 8);
+            e.mem.set_u32(list + 8, count - 1);
+            e.mem.u32(head + 8).into_ret()
+        });
+        e.register(TEMPLATE_ITEM_CONSTRUCT, |e, a| {
+            e.mem.set_u32(a[0], a[1]);
+            e.mem.set_u32(a[0] + 4, a[2]);
+            e.mem.set_u32(a[0] + 8, a[3]);
+            e.mem.set_u32(a[0] + 0x10, a[4]);
+            e.mem.set_u32(a[0] + 0x14, a[5]);
+            a[0].into_ret()
+        });
+        e.register(SSCANF, |e, a| match string_at(e, a[0]).parse::<f32>() {
+            Ok(number) => {
+                e.mem.set_f32(a[2], number);
+                1u32.into_ret()
+            }
+            Err(_) => 0u32.into_ret(),
+        });
+        e.register(TEXT_TABLE_FIND, |e, a| {
+            let id = match e.mem.cstr(a[1]).as_slice() {
+                b"alpha" => TRAIT_ALPHA,
+                b"act" => 2001,
+                b"bad" => 3000,
+                b"_user" => 10005,
+                _ => return 0u32.into_ret(),
+            };
+            e.mem.set_i32(a[2], id);
+            1u32.into_ret()
+        });
+        // A fixed string handle: the text behind a reference count.
+        e.register(NI_FIXED_STRING_CREATE, |e, a| {
+            let text = e.mem.cstr(a[0]);
+            let block = e.mem.alloc(8 + text.len() as u32 + 1);
+            e.mem.set_u32(block, 1);
+            e.mem.set_cstr(block + 8, &text);
+            (block + 8).into_ret()
+        });
+        e.register(TEMPLATE_CONSTRUCT, |e, a| {
+            // The name is kept as text here.
+            e.mem.set_u32(a[0], a[1]);
+            e.mem.set_u32(a[0] + 4, a[2]);
+            a[0].into_ret()
+        });
+        e.register(SUB_TEMPLATE_LIST_ADD_HEAD, |e, a| {
+            let (list, template) = (a[0], e.mem.u32(a[1]));
+            let old_item = e.mem.u32(list);
+            if old_item != 0 {
+                let node = e.mem.alloc(8);
+                let old_next = e.mem.u32(list + 4);
+                e.mem.set_u32(node, old_item);
+                e.mem.set_u32(node + 4, old_next);
+                e.mem.set_u32(list + 4, node);
+            }
+            e.mem.set_u32(list, template);
+            Ret::default()
+        });
+        let empty = e.mem.alloc(8);
+        e.set_global(EMPTY_FIXED_STRING, empty);
+        let storage: Ptr<BuildStorage> = e.new_object();
+        let template: Ptr<TileTemplate> = e.new_object();
+        e.set(template, TileTemplate::pParent, storage);
+        e.set(storage, BuildStorage::pTemplate, template);
+        (e, template, storage)
+    }
+
+    /// The items of a template, oldest first: (command, number, text,
+    /// trait number).
+    fn template_items(e: &Engine, template: Ptr<TileTemplate>) -> Vec<(i32, f32, String, i32)> {
+        let mut items = vec![];
+        let mut node = e.get(template.at(TileTemplate::xList), NiTPointerList::m_pkHead);
+        while node != 0 {
+            let item = e.mem.u32(node + 8);
+            let text = e.mem.u32(item + 8);
+            items.push((
+                e.mem.i32(item),
+                e.mem.f32(item + 4),
+                if text == 0 {
+                    String::new()
+                } else {
+                    string_at(e, text)
+                },
+                e.mem.i32(item + 0x10),
+            ));
+            node = e.mem.u32(node);
+        }
+        items
+    }
+
+    fn add_pair_text(
+        e: &mut Engine,
+        template: Ptr<TileTemplate>,
+        command: i32,
+        text: &str,
+        flag: bool,
+    ) {
+        let text = cstring(e, text);
+        template_add_pair(e, template, command, Ptr::new(text), 5, flag);
+    }
+
+    #[test]
+    fn a_trait_element_becomes_a_start_item_a_simple_trait_and_an_end() {
+        let (mut e, template, _) = pair_engine();
+        add_pair_text(&mut e, template, 0, "alpha", false);
+        assert_eq!(
+            template_items(&e, template),
+            vec![(TI_TRAIT_START, 4009.0, "alpha".into(), 4009)]
+        );
+        // `<alpha>5</alpha>`: the text is a number, the end folds it in.
+        add_pair_text(&mut e, template, TAG_VALUE, "5", true);
+        let items = template_items(&e, template);
+        assert_eq!(items[1], (TAG_VALUE, 5.0, "".into(), 5));
+        e.call_log = Some(vec![]);
+        add_pair_text(&mut e, template, 1, "alpha", false);
+        assert_eq!(
+            template_items(&e, template),
+            vec![(TI_SIMPLE_TRAIT, 5.0, "".into(), 4009)]
+        );
+        // Two items went back to the pool (the text item and the end).
+        assert_eq!(e.global::<u32>(ITEM_POOL_COUNT), 2);
+        // A trait end without a value item is an item of its own.
+        let (mut e, template, _) = pair_engine();
+        add_pair_text(&mut e, template, 0, "alpha", false);
+        add_pair_text(&mut e, template, 1, "alpha", false);
+        let kinds: Vec<i32> = template_items(&e, template).iter().map(|i| i.0).collect();
+        assert_eq!(kinds, vec![TI_TRAIT_START, TI_TRAIT_END]);
+    }
+
+    #[test]
+    fn an_action_element_becomes_a_simple_action_or_a_bad_item() {
+        let (mut e, template, _) = pair_engine();
+        add_pair_text(&mut e, template, 0, "act", false);
+        add_pair_text(&mut e, template, TAG_VALUE, "3", true);
+        add_pair_text(&mut e, template, 1, "act", false);
+        assert_eq!(
+            template_items(&e, template),
+            vec![(TI_SIMPLE_ACTION, 3.0, "".into(), 2001)]
+        );
+        // A number outside both ranges is a bad item, with an error.
+        let (mut e, template, _) = pair_engine();
+        let item = |e: &mut Engine, command, number, text: &str, argument| {
+            add_item(e, template, command, number, text, argument);
+        };
+        item(&mut e, TI_TRAIT_START, 3000.0, "bad", 3000);
+        item(&mut e, TAG_VALUE, 1.0, "", 0);
+        e.call_log = Some(vec![]);
+        add_pair_text(&mut e, template, 1, "bad", false);
+        assert_eq!(template_items(&e, template)[0].0, TI_BAD);
+        assert_eq!(
+            calls_to(&e, PRINT_ERROR),
+            vec![vec![MSG_BAD_TRAIT_OR_ACTION]]
+        );
+        // A user trait number from 10000 on is a simple trait.
+        let (mut e, template, _) = pair_engine();
+        let item = |e: &mut Engine, command, number, text: &str, argument| {
+            add_item(e, template, command, number, text, argument);
+        };
+        item(&mut e, TI_ACTION_START, 10005.0, "_user", 10005);
+        item(&mut e, TAG_VALUE, 1.0, "", 0);
+        add_pair_text(&mut e, template, 1, "_user", true);
+        assert_eq!(template_items(&e, template)[0].0, TI_SIMPLE_TRAIT);
+    }
+
+    #[test]
+    fn a_name_after_the_marker_finds_or_makes_a_template() {
+        let (mut e, template, storage) = pair_engine();
+        add_item(&mut e, template, 0, 999.0, "", 0);
+        e.call_log = Some(vec![]);
+        add_pair_text(&mut e, template, TAG_NAME, "MyTemplate", true);
+        let made = e.get(storage, BuildStorage::pCurrentTemplate);
+        assert!(!made.is_null());
+        assert_eq!(string_at(&e, e.mem.u32(made.addr())), "MyTemplate");
+        assert_eq!(e.mem.u32(made.addr() + 4), storage.addr());
+        assert_eq!(calls_to(&e, TEMPLATE_CONSTRUCT).len(), 1);
+        // The marker item is gone and both items are back in the pool.
+        assert!(template_items(&e, template).is_empty());
+        assert_eq!(e.global::<u32>(ITEM_POOL_COUNT), 2);
+        // The closing marker ends the definition.
+        add_pair_text(&mut e, template, 1, "999", true);
+        assert!(e.get(storage, BuildStorage::pCurrentTemplate).is_null());
+        assert!(template_items(&e, template).is_empty());
+        // The same name again finds the template.
+        add_item(&mut e, template, 0, 999.0, "", 0);
+        add_pair_text(&mut e, template, TAG_NAME, "MyTemplate", true);
+        assert_eq!(e.get(storage, BuildStorage::pCurrentTemplate), made);
+        assert_eq!(calls_to(&e, TEMPLATE_CONSTRUCT).len(), 1);
+        // A definition inside a definition is an error.
+        add_item(&mut e, template, 0, 999.0, "", 0);
+        add_pair_text(&mut e, template, TAG_NAME, "Inner", true);
+        assert_eq!(calls_to(&e, PRINT_ERROR), vec![vec![MSG_NESTED_TEMPLATES]]);
+        assert_eq!(e.get(storage, BuildStorage::pCurrentTemplate), made);
+        assert!(template_items(&e, template).is_empty());
+        // A 999 end marker without a definition is an ordinary number item.
+        e.set(storage, BuildStorage::pCurrentTemplate, Ptr::NULL);
+        add_pair_text(&mut e, template, 1, "999", true);
+        assert_eq!(template_items(&e, template).len(), 1);
+    }
+
+    #[test]
+    fn a_name_after_a_tile_type_starts_the_tile() {
+        let (mut e, template, _) = pair_engine();
+        add_pair_text(&mut e, template, 0, "903", true);
+        assert_eq!(template_items(&e, template)[0], (0, 903.0, "".into(), 903));
+        add_pair_text(&mut e, template, TAG_NAME, "tile1", true);
+        assert_eq!(
+            template_items(&e, template),
+            vec![(TI_TILE_START, 903.0, "tile1".into(), 903)]
+        );
+        // The end of the tile.
+        add_pair_text(&mut e, template, 1, "903", true);
+        assert_eq!(template_items(&e, template)[1].0, TI_TILE_END);
+        // A name on its own is a simple trait item for the name word.
+        let (mut e, template, _) = pair_engine();
+        add_pair_text(&mut e, template, TAG_NAME, "x", true);
+        let items = template_items(&e, template);
+        assert_eq!((items[0].0, items[0].2.as_str()), (TI_SIMPLE_TRAIT, "x"));
+        assert_eq!(items[0].3, TAG_NAME);
+    }
+
+    #[test]
+    fn a_trait_and_a_source_after_an_action_make_a_trait_link() {
+        let (mut e, template, _) = pair_engine();
+        add_item(&mut e, template, TI_ACTION_START, 2001.0, "", 2001);
+        add_item(&mut e, template, TAG_SRC, 5.0, "src", 0);
+        add_item(&mut e, template, TAG_TRAIT, 7.0, "tr", 0);
+        add_pair_text(&mut e, template, 1, "act", false);
+        assert_eq!(
+            template_items(&e, template),
+            vec![(TI_TRAIT_LINK, 7.0, "src".into(), 2001)]
+        );
+        assert_eq!(e.global::<u32>(ITEM_POOL_COUNT), 3);
+    }
+
+    #[test]
+    fn user_names_and_action_ends_are_numbered() {
+        let (mut e, template, _) = pair_engine();
+        e.register(TEXT_TABLE_FIND, |e, a| {
+            e.mem.set_i32(a[2], 10005);
+            1u32.into_ret()
+        });
+        add_pair_text(&mut e, template, 0, "_user", true);
+        assert_eq!(
+            template_items(&e, template),
+            vec![(TI_TRAIT_START, 10005.0, "_user".into(), 10005)]
+        );
+        let (mut e, template, _) = pair_engine();
+        add_pair_text(&mut e, template, 0, "act", false);
+        add_pair_text(&mut e, template, 1, "act", false);
+        let kinds: Vec<i32> = template_items(&e, template).iter().map(|i| i.0).collect();
+        assert_eq!(kinds, vec![TI_ACTION_START, TI_ACTION_END]);
+    }
+
+    #[test]
+    fn clearing_a_template_frees_its_items_and_their_strings() {
+        let (mut e, template, _) = pair_engine();
+        let first = add_item(&mut e, template, 0, 1.0, "a", 0);
+        let second = add_item(&mut e, template, 1, 2.0, "b", 0);
+        e.call_log = Some(vec![]);
+        template_clear(&mut e, template);
+        assert_eq!(
+            calls_to(&e, STRING_SET),
+            vec![vec![first.addr() + 8, 0, 0], vec![second.addr() + 8, 0, 0]]
+        );
+        assert_eq!(e.mem.block_size(first.addr()), None);
+        assert_eq!(e.mem.block_size(second.addr()), None);
+        assert_eq!(
+            e.get(template.at(TileTemplate::xList), NiTPointerList::m_uiCount),
+            0
+        );
+        // An empty template does nothing.
+        e.call_log = Some(vec![]);
+        template_clear(&mut e, template);
+        assert!(e.call_log.as_ref().unwrap().is_empty());
+    }
+
+    /// Doubles for the extra data of a node: `extra` answers for `node`.
+    fn extra_for(e: &mut Engine, node: u32, extra: u32) {
+        e.register_double(NI_OBJECT_GET_EXTRA_DATA, move |_, a| {
+            if a[0] == node {
+                extra.into_ret()
+            } else {
+                0u32.into_ret()
+            }
+        });
+    }
+
+    #[test]
+    fn destroying_extra_data_hands_the_tile_to_the_parent_nodes_tile() {
+        let mut e = tile_engine();
+        let tile = typed_tile(&mut e, TYPE_RECT);
+        let parent_tile = typed_tile(&mut e, TYPE_RECT);
+        // The node's parent node has extra data that names `parent_tile`.
+        let parent_node = e.mem.alloc(0x40);
+        let parent_extra = e.mem.alloc(0x14);
+        e.mem.set_u32(parent_extra + 4, 1);
+        e.mem.set_u32(parent_extra + 0xc, parent_tile.addr());
+        extra_for(&mut e, parent_node, parent_extra);
+        let node = e.mem.alloc(0x40);
+        e.mem.set_u32(node + 0x18, parent_node);
+        let this: Ptr<Extra> = e.new_object();
+        e.set(this, Extra::pTile, tile);
+        e.set(this, Extra::pNode, Ptr::new(node));
+        e.call_log = Some(vec![]);
+        extra_destructor(&mut e, this);
+        assert_eq!(e.mem.u32(this.addr()), VTABLE_EXTRA);
+        assert_eq!(e.get(tile, Tile::pParent), parent_tile);
+        assert_eq!(
+            calls_to(&e, NI_POINTER_ASSIGN),
+            vec![vec![tile.addr() + 0x2c, 0]]
+        );
+        assert!(e.get(this, Extra::pTile).is_null());
+        assert_eq!(calls_to(&e, NI_EXTRA_DATA_DESTROY), vec![vec![this.addr()]]);
+        // Without a tile only the base destructor runs.
+        e.call_log = Some(vec![]);
+        extra_destructor(&mut e, this);
+        assert!(calls_to(&e, NI_POINTER_ASSIGN).is_empty());
+        assert_eq!(calls_to(&e, NI_EXTRA_DATA_DESTROY).len(), 1);
+    }
+
+    #[test]
+    fn a_build_storage_starts_with_a_main_template() {
+        let mut e = tile_engine();
+        e.register(TEMPLATE_CONSTRUCT, |_, a| a[0].into_ret());
+        let storage: Ptr<BuildStorage> = e.new_object();
+        e.mem.set_u32(storage.addr() + 4, 0x1234);
+        e.mem.set_u32(storage.addr() + 8, 0x5678);
+        e.call_log = Some(vec![]);
+        assert_eq!(build_storage_construct(&mut e, storage), storage);
+        let template = e.get(storage, BuildStorage::pTemplate);
+        assert!(e.mem.block_size(template.addr()).is_some());
+        assert_eq!(
+            calls_to(&e, TEMPLATE_CONSTRUCT),
+            vec![vec![template.addr(), MAIN_TEMPLATE_NAME, storage.addr()]]
+        );
+        assert_eq!(e.mem.u32(storage.addr() + 4), 0);
+        assert_eq!(e.mem.u32(storage.addr() + 8), 0);
+        assert!(e.get(storage, BuildStorage::pCurrentTemplate).is_null());
+        assert!(e.get(storage, BuildStorage::bDeleteTemplates));
+    }
+
+    #[test]
+    fn a_build_storage_destroys_its_templates() {
+        let mut e = tile_engine();
+        let storage: Ptr<BuildStorage> = e.new_object();
+        let main = e.mem.alloc(0x14);
+        let first = e.mem.alloc(0x14);
+        let second = e.mem.alloc(0x14);
+        e.set(storage, BuildStorage::pTemplate, Ptr::new(main));
+        e.set(storage, BuildStorage::pCurrentTemplate, Ptr::new(first));
+        // The embedded node holds `first`, one more node holds `second`.
+        let node = e.mem.alloc(8);
+        e.mem.set_u32(node, second);
+        e.mem.set_u32(storage.addr() + 4, first);
+        e.mem.set_u32(storage.addr() + 8, node);
+        e.set(storage, BuildStorage::bDeleteTemplates, true);
+        e.call_log = Some(vec![]);
+        build_storage_destructor(&mut e, storage);
+        assert_eq!(
+            calls_to(&e, TEMPLATE_DESTROY),
+            vec![vec![main], vec![first], vec![second]]
+        );
+        assert_eq!(e.mem.block_size(main), None);
+        assert_eq!(e.mem.block_size(first), None);
+        assert_eq!(e.mem.block_size(second), None);
+        assert!(e.get(storage, BuildStorage::pCurrentTemplate).is_null());
+        assert_eq!(
+            calls_to(&e, SIMPLE_LIST_REMOVE_ALL),
+            vec![vec![storage.addr() + 4]; 2]
+        );
+        // Without the flag the sub-templates are left alone, and a storage
+        // without a main template destroys nothing.
+        let other: Ptr<BuildStorage> = e.new_object();
+        let kept = e.mem.alloc(0x14);
+        e.mem.set_u32(other.addr() + 4, kept);
+        e.call_log = Some(vec![]);
+        build_storage_destructor(&mut e, other);
+        assert!(calls_to(&e, TEMPLATE_DESTROY).is_empty());
+        assert!(e.mem.block_size(kept).is_some());
+    }
+
+    #[test]
+    fn a_sub_template_is_made_and_listed() {
+        let (mut e, _, storage) = pair_engine();
+        let name = cstring(&mut e, "Menu");
+        e.call_log = Some(vec![]);
+        let made = fn_00a0ae70(&mut e, storage, Ptr::new(name));
+        assert!(e.mem.block_size(made.addr()).is_some());
+        assert_eq!(
+            calls_to(&e, TEMPLATE_CONSTRUCT),
+            vec![vec![made.addr(), name, storage.addr()]]
+        );
+        // The first node of the list now holds it.
+        assert_eq!(e.mem.u32(storage.addr() + 4), made.addr());
+    }
+
+    #[test]
+    fn a_sub_template_is_found_by_its_name() {
+        let (mut e, _, storage) = pair_engine();
+        let (one, two) = (cstring(&mut e, "One"), cstring(&mut e, "Two"));
+        let first = fn_00a0ae70(&mut e, storage, Ptr::new(one));
+        let second = fn_00a0ae70(&mut e, storage, Ptr::new(two));
+        e.call_log = Some(vec![]);
+        let lookup = |e: &mut Engine, text: &str| {
+            let name = cstring(e, text);
+            fn_00a0af10(e, storage, Ptr::new(name))
+        };
+        assert_eq!(lookup(&mut e, "One"), first);
+        assert_eq!(lookup(&mut e, "Two"), second);
+        assert!(lookup(&mut e, "Three").is_null());
+        // Each lookup released the handle it made.
+        assert_eq!(calls_to(&e, INTERLOCKED_DECREMENT).len(), 3);
+        // A null name is the empty string's handle, which is not released.
+        e.call_log = Some(vec![]);
+        assert!(fn_00a0af10(&mut e, storage, Ptr::NULL).is_null());
+        assert!(calls_to(&e, INTERLOCKED_DECREMENT).is_empty());
+    }
+
+    /// A model with one child (shape) and a property answering for type 3.
+    fn model_with_shape(e: &mut Engine) -> (u32, u32, u32) {
+        let model = e.mem.alloc(0xb0);
+        let shape = e.mem.alloc(0x40);
+        let children = e.mem.alloc(8);
+        e.mem.set_u32(children, shape);
+        e.mem.set_u32(model + 0xa0, children);
+        e.mem.set_u16(model + 0xa6, 1);
+        let property = e.mem.alloc(0x80);
+        e.register_double(NI_OBJECT_GET_PROPERTY, move |_, a| {
+            assert_eq!((a[0], a[1]), (shape, 3));
+            property.into_ret()
+        });
+        (model, shape, property)
+    }
+
+    /// A child tile of `kind` whose virtual slot +0x1c records its calls.
+    fn releasing_tile(e: &mut Engine, kind: u32, log: &Rc<RefCell<Vec<u32>>>) -> Ptr<Tile> {
+        let vtable = e.mem.alloc(0x40);
+        let base = 0x7300_0000 + vtable;
+        e.mem.set_u32(vtable + 0xc, base + 0xc);
+        e.mem.set_u32(vtable + 0x1c, base + 0x1c);
+        e.register_double(base + 0xc, move |_, _| kind.into_ret());
+        let seen = log.clone();
+        e.register_double(base + 0x1c, move |_, a| {
+            seen.borrow_mut().push(a[0]);
+            Ret::default()
+        });
+        let tile: Ptr<Tile> = e.new_object();
+        e.mem.set_u32(tile.addr(), vtable);
+        tile
+    }
+
+    #[test]
+    fn forcing_a_texture_release_clears_the_texture_and_asks_the_children() {
+        let mut e = tile_engine();
+        let released = Rc::new(RefCell::new(vec![]));
+        let tile = releasing_tile(&mut e, TYPE_IMAGE, &released);
+        let (model, _, property) = model_with_shape(&mut e);
+        e.set(tile, Tile::spModel, Ptr::new(model));
+        // One ordinary child and one that belongs to a menu.
+        let plain = releasing_tile(&mut e, TYPE_RECT, &released);
+        let (menu_tile, _) = make_menu_tile(&mut e, 1);
+        add_child(&mut e, tile, plain);
+        add_child(&mut e, tile, menu_tile);
+        e.call_log = Some(vec![]);
+        tile_force_texture_release(&mut e, tile);
+        assert_eq!(calls_to(&e, SET_TILE_TEXTURE), vec![vec![property, 0]]);
+        assert_eq!(e.get(tile, Tile::uiFlags), UPDATE_TEXTURE | FLAG_DIRTY);
+        assert_eq!(*released.borrow(), vec![plain.addr()]);
+        // A tile that is not an image tile keeps its texture.
+        let rect = releasing_tile(&mut e, TYPE_RECT, &released);
+        e.set(rect, Tile::spModel, Ptr::new(model));
+        e.call_log = Some(vec![]);
+        tile_force_texture_release(&mut e, rect);
+        assert!(calls_to(&e, SET_TILE_TEXTURE).is_empty());
+        // No model: no texture work.
+        let bare = releasing_tile(&mut e, TYPE_IMAGE, &released);
+        tile_force_texture_release(&mut e, bare);
+        assert!(calls_to(&e, SET_TILE_TEXTURE).is_empty());
+    }
+
+    #[test]
+    fn a_tile_sound_plays_when_the_menu_wants_it() {
+        let mut e = tile_engine();
+        e.map(0x011f_6000, 0x1000);
+        install_value_array_doubles(&mut e);
+        let (menu_tile, menu) = make_menu_tile(&mut e, 1);
+        let child = typed_tile(&mut e, TYPE_RECT);
+        add_child(&mut e, menu_tile, child);
+        // The menu tile's parent is the root, whose parent is none.
+        let root = typed_tile(&mut e, TYPE_RECT);
+        e.set(menu_tile, Tile::pParent, root);
+        let name = cstring(&mut e, "UIMenuOK");
+        let value = give_trait(&mut e, child, TRAIT_STRING, 0.0);
+        e.set(value, TileValue::strValue, Ptr::new(name));
+        e.set_global(AUDIO_MANAGER, 0x4444_0000u32);
+        let source = e.mem.alloc(12);
+        e.mem.set_u32(source, 77);
+        e.mem.set_u8(source + 4, 1);
+        e.mem.set_u32(source + 8, 99);
+        e.register_double(GET_SOUND_HANDLE_BY_NAME, move |_, _| source.into_ret());
+        let played = Rc::new(RefCell::new(vec![]));
+        let seen = played.clone();
+        e.register_double(SOUND_HANDLE_PLAY, move |e, a| {
+            seen.borrow_mut().push((
+                e.mem.u32(a[0]),
+                e.mem.u8(a[0] + 4),
+                e.mem.u32(a[0] + 8),
+                a[1],
+            ));
+            Ret::default()
+        });
+        // The menu does not ask for sounds yet (its word at +0x24 is 0).
+        tile_play_tile_sound(&mut e, child, TRAIT_STRING);
+        assert!(played.borrow().is_empty());
+        e.mem.set_u32(menu.addr() + 0x24, 1);
+        e.call_log = Some(vec![]);
+        tile_play_tile_sound(&mut e, child, TRAIT_STRING);
+        assert_eq!(*played.borrow(), vec![(77, 1, 99, 0)]);
+        let lookup = &calls_to(&e, GET_SOUND_HANDLE_BY_NAME)[0];
+        assert_eq!(
+            (lookup[0], lookup[2], lookup[3]),
+            (0x4444_0000, name, 0x121)
+        );
+        // An empty or missing name plays nothing.
+        e.mem.set_u8(name, 0);
+        tile_play_tile_sound(&mut e, child, TRAIT_STRING);
+        tile_play_tile_sound(&mut e, child, TRAIT_ID);
+        assert_eq!(played.borrow().len(), 1);
+    }
+
+    #[test]
+    fn the_shader_property_is_the_first_childs() {
+        let mut e = tile_engine();
+        let tile = typed_tile(&mut e, TYPE_IMAGE);
+        assert!(tile_get_shader_property(&mut e, tile).is_null());
+        let (model, _, property) = model_with_shape(&mut e);
+        e.set(tile, Tile::spModel, Ptr::new(model));
+        assert_eq!(tile_get_shader_property(&mut e, tile).addr(), property);
+        // A model without children has none.
+        e.mem.set_u16(model + 0xa6, 0);
+        assert!(tile_get_shader_property(&mut e, tile).is_null());
+    }
+
+    #[test]
+    fn alpha_and_color_go_to_the_shader_property_of_each_geometry() {
+        let mut e = tile_engine();
+        let tile = typed_tile(&mut e, TYPE_IMAGE);
+        let model = e.mem.alloc(0xb0);
+        let children = e.mem.alloc(16);
+        // Child 0 is no geometry, child 1 is missing, child 2 is a geometry.
+        let property = e.mem.alloc(0x80);
+        let mut vtables = vec![];
+        for answer in [0u32, 1] {
+            let vtable = e.mem.alloc(0x40);
+            let function = 0x7400_0000 + vtable;
+            e.mem.set_u32(vtable + 0x18, function);
+            e.register_double(function, move |_, a| {
+                if answer == 0 {
+                    0u32.into_ret()
+                } else {
+                    a[0].into_ret()
+                }
+            });
+            let object = e.mem.alloc(0x40);
+            e.mem.set_u32(object, vtable);
+            vtables.push(object);
+        }
+        e.mem.set_u32(children, vtables[0]);
+        e.mem.set_u32(children + 4, 0);
+        e.mem.set_u32(children + 8, vtables[1]);
+        e.mem.set_u32(model + 0xa0, children);
+        e.mem.set_u16(model + 0xa6, 3);
+        let geometry = vtables[1];
+        e.register_double(NI_OBJECT_GET_PROPERTY, move |_, a| {
+            assert_eq!((a[0], a[1]), (geometry, 3));
+            property.into_ret()
+        });
+        let color = e.mem.alloc(16);
+        for (slot, value) in [0.1f32, 0.2, 0.3, 0.4].iter().enumerate() {
+            e.mem.set_f32(color + 4 * slot as u32, *value);
+        }
+        tile_set_alpha_and_color(&mut e, tile, Ptr::new(model), 0.5, Ptr::new(color));
+        assert_eq!(e.mem.f32(property + 0x78), 0.5);
+        assert_eq!(
+            [0, 4, 8, 12].map(|offset| e.mem.f32(property + 0x68 + offset)),
+            [0.1, 0.2, 0.3, 0.4]
+        );
+        // No model: nothing happens.
+        tile_set_alpha_and_color(&mut e, tile, Ptr::NULL, 0.9, Ptr::new(color));
+        assert_eq!(e.mem.f32(property + 0x78), 0.5);
+    }
+
+    /// Gives a tile the system colour trait and the update spy.
+    fn tile_with_color(e: &mut Engine, color: f32) -> Ptr<Tile> {
+        let tile = typed_tile(e, TYPE_RECT);
+        give_trait(e, tile, TRAIT_SYSTEM_COLOR, color);
+        tile
+    }
+
+    #[test]
+    fn the_color_walk_updates_the_tiles_that_use_the_color() {
+        let mut e = tile_engine();
+        e.call_log = Some(vec![]);
+        install_value_array_doubles(&mut e);
+        let parent = tile_with_color(&mut e, 3.0);
+        // A child without the trait inherits 3.0; one with another colour
+        // does not use it.
+        let inheriting = typed_tile(&mut e, TYPE_RECT);
+        let other = tile_with_color(&mut e, 4.0);
+        add_child(&mut e, parent, inheriting);
+        add_child(&mut e, parent, other);
+        fn_00a0b350(&mut e, parent, 3, 0.0);
+        assert_eq!(e.get(parent, Tile::uiFlags), UPDATE_COLOR | FLAG_DIRTY);
+        assert_eq!(e.get(inheriting, Tile::uiFlags), UPDATE_COLOR | FLAG_DIRTY);
+        assert_eq!(e.get(other, Tile::uiFlags), 0);
+        assert_lock_balanced(&e);
+    }
+
+    #[test]
+    fn the_color_list_walk_updates_the_tiles_whose_color_is_listed() {
+        let mut e = tile_engine();
+        e.call_log = Some(vec![]);
+        install_value_array_doubles(&mut e);
+        let parent = tile_with_color(&mut e, 3.9);
+        let inheriting = typed_tile(&mut e, TYPE_RECT);
+        let other = tile_with_color(&mut e, 8.0);
+        add_child(&mut e, parent, inheriting);
+        add_child(&mut e, parent, other);
+        // The list holds 2 and 3: 3.9 is truncated to 3.
+        let second = e.mem.alloc(8);
+        e.mem.set_i32(second, 3);
+        let first = e.mem.alloc(8);
+        e.mem.set_i32(first, 2);
+        e.mem.set_u32(first + 4, second);
+        fn_00a0b420(&mut e, parent, Ptr::new(first), 0.0);
+        assert_eq!(e.get(parent, Tile::uiFlags), UPDATE_COLOR | FLAG_DIRTY);
+        assert_eq!(e.get(inheriting, Tile::uiFlags), UPDATE_COLOR | FLAG_DIRTY);
+        assert_eq!(e.get(other, Tile::uiFlags), 0);
+        assert_lock_balanced(&e);
+    }
+
+    #[test]
+    fn rotation_gives_the_children_the_axis_and_the_angle() {
+        let mut e = tile_engine();
+        install_value_array_doubles(&mut e);
+        let sets = Rc::new(RefCell::new(vec![]));
+        let seen = sets.clone();
+        e.register_double(VALUE_SET_FLOAT, move |e, a| {
+            seen.borrow_mut()
+                .push((e.mem.i32(a[0]), f32::from_bits(a[1]), a[2]));
+            Ret::default()
+        });
+        let parent = typed_tile(&mut e, TYPE_RECT);
+        for (id, value) in [
+            (TRAIT_X, 10.0),
+            (TRAIT_Y, 20.0),
+            (TRAIT_ROTATE_AXIS_X, 3.0),
+            (TRAIT_ROTATE_AXIS_Y, 4.0),
+            (TRAIT_ROTATE_ANGLE, 0.5),
+            (TRAIT_LOCUS, 1.0),
+        ] {
+            give_trait(&mut e, parent, id, value);
+        }
+        let child = typed_tile(&mut e, TYPE_RECT);
+        give_trait(&mut e, child, TRAIT_X, 1.0);
+        give_trait(&mut e, child, TRAIT_Y, 2.0);
+        add_child(&mut e, parent, child);
+        // A child entry without a tile is skipped.
+        push_list(&mut e, parent.at(Tile::xChildren), 0);
+        tile_recursive_rotation_update(&mut e, parent);
+        // The parent has a locus, so the child's position counts the
+        // parent's: (10 + 3) - (1 + 10) and (20 + 4) - (2 + 20).
+        assert_eq!(
+            *sets.borrow(),
+            vec![
+                (TRAIT_ROTATE_AXIS_X, 2.0, 1),
+                (TRAIT_ROTATE_AXIS_Y, 2.0, 1),
+                (TRAIT_ROTATE_ANGLE, 0.5, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn rotation_turns_the_shapes_of_a_located_image_tile() {
+        let mut e = tile_engine();
+        provide_constants(&mut e);
+        install_value_array_doubles(&mut e);
+        e.register(VALUE_SET_FLOAT, |_, _| Ret::default());
+        for (address, value) in [
+            (DEFAULT_TRANSLATION, 1.0f32),
+            (DEFAULT_TRANSLATION + 4, 2.0),
+            (DEFAULT_TRANSLATION + 8, 3.0),
+        ] {
+            e.set_global(address, value);
+        }
+        e.set_global(DEPTH_SCALE, -0.5f64);
+        // The matrix routine writes the identity with the angle in slot 0.
+        e.register(MATRIX_MAKE_Y_ROTATION, |e, a| {
+            for slot in 0..9u32 {
+                e.mem
+                    .set_f32(a[0] + slot * 4, if slot % 4 == 0 { 1.0 } else { 0.0 });
+            }
+            e.mem.set_u32(a[0], a[1]);
+            Ret::default()
+        });
+        e.register(MATRIX_TIMES_POINT, |e, a| {
+            for axis in 0..3u32 {
+                let value = e.mem.f32(a[2] + axis * 4) * 2.0;
+                e.mem.set_f32(a[1] + axis * 4, value);
+            }
+            a[1].into_ret()
+        });
+        e.register(POINT_ADD, |e, a| {
+            for axis in 0..3u32 {
+                let value = e.mem.f32(a[0] + axis * 4) + e.mem.f32(a[2] + axis * 4);
+                e.mem.set_f32(a[1] + axis * 4, value);
+            }
+            a[1].into_ret()
+        });
+        e.register(POINT_SUBTRACT, |e, a| {
+            for axis in 0..3u32 {
+                let value = e.mem.f32(a[0] + axis * 4) - e.mem.f32(a[2] + axis * 4);
+                e.mem.set_f32(a[1] + axis * 4, value);
+            }
+            a[1].into_ret()
+        });
+        let parent = typed_tile(&mut e, TYPE_RECT);
+        let child = typed_tile(&mut e, TYPE_IMAGE);
+        for (id, value) in [
+            (TRAIT_X, 10.0),
+            (TRAIT_Y, 20.0),
+            (TRAIT_DEPTH, 4.0),
+            (TRAIT_ROTATE_AXIS_X, 5.0),
+            (TRAIT_ROTATE_AXIS_Y, 6.0),
+            (TRAIT_ROTATE_ANGLE, 1.5),
+            (TRAIT_LOCUS, 1.0),
+        ] {
+            give_trait(&mut e, child, id, value);
+        }
+        add_child(&mut e, parent, child);
+        // The model has two children: a shape (its RTTI chain holds the
+        // shape record) and another object.
+        let model = e.mem.alloc(0xb0);
+        let array = e.mem.alloc(8);
+        e.set(child, Tile::spModel, Ptr::new(model));
+        e.mem.set_u32(model + 0xa0, array);
+        e.mem.set_u16(model + 0xa8, 2);
+        let mut objects = vec![];
+        for in_chain in [true, false] {
+            let record = e.mem.alloc(8);
+            let rtti = if in_chain { SHAPE_RTTI } else { 0 };
+            e.mem.set_u32(record + 4, rtti);
+            let vtable = e.mem.alloc(0x10);
+            let function = 0x7500_0000 + vtable;
+            e.mem.set_u32(vtable + 8, function);
+            e.register_double(function, move |_, _| record.into_ret());
+            let object = e.mem.alloc(0x80);
+            e.mem.set_u32(object, vtable);
+            objects.push(object);
+        }
+        e.mem.set_u32(array, objects[0]);
+        e.mem.set_u32(array + 4, objects[1]);
+        tile_recursive_rotation_update(&mut e, parent);
+        let shape = objects[0];
+        // The local rotation is the matrix the routine wrote (angle bits in
+        // slot 0).
+        assert_eq!(e.mem.u32(shape + 0x34), 1.5f32.to_bits());
+        // Translation: default + (x, depth * -0.5, -y) = (11, 0, -17); axis
+        // (axis x, 0, -axis y) = (5, 0, -6); the doubles rotate by doubling:
+        // (translation + axis) - 2 * axis = (6, 0, -11).
+        let moved = [0x58, 0x5c, 0x60].map(|offset| e.mem.f32(shape + offset));
+        assert_eq!(moved, [6.0, 0.0, -11.0]);
+        // The other object is untouched; the model keeps the default
+        // translation.
+        assert_eq!(e.mem.u32(objects[1] + 0x34), 0);
+        assert_eq!(
+            [0x58, 0x5c, 0x60].map(|offset| e.mem.f32(model + offset)),
+            [1.0, 2.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn the_item_pool_takes_ten_items_and_deletes_the_rest() {
+        let mut e = tile_engine();
+        e.call_log = Some(vec![]);
+        let mut items = vec![];
+        for _ in 0..11 {
+            let item = e.mem.alloc(0x18);
+            items.push(item);
+            fn_00a0b8d0(&mut e, Ptr::new(item));
+        }
+        assert_eq!(e.global::<u32>(ITEM_POOL_COUNT), 10);
+        for (slot, item) in items.iter().take(10).enumerate() {
+            assert_eq!(e.global::<u32>(ITEM_POOL + slot as u32 * 4), *item);
+            assert_eq!(e.mem.block_size(*item), Some(0x18));
+        }
+        // The eleventh had its string freed and was deleted.
+        assert_eq!(e.mem.block_size(items[10]), None);
+        assert_eq!(calls_to(&e, STRING_SET), vec![vec![items[10] + 8, 0, 0]]);
+        // A null item with a full pool is ignored.
+        fn_00a0b8d0(&mut e, Ptr::NULL);
+        assert_eq!(calls_to(&e, STRING_SET).len(), 1);
+    }
+
+    #[test]
+    fn a_template_item_comes_from_the_pool_or_the_constructor() {
+        let mut e = tile_engine();
+        e.register(TEMPLATE_ITEM_CONSTRUCT, |_, a| a[0].into_ret());
+        let text = cstring(&mut e, "t");
+        e.call_log = Some(vec![]);
+        // An empty pool: a new 0x18-byte item is built.
+        let built = fn_00a0b950(&mut e, 4, 2.5, Ptr::new(text), 9, 33);
+        assert_eq!(e.mem.block_size(built.addr()), Some(0x18));
+        assert_eq!(
+            calls_to(&e, TEMPLATE_ITEM_CONSTRUCT),
+            vec![vec![built.addr(), 4, 2.5f32.to_bits(), text, 9, 33]]
+        );
+        // The pool's last item is refilled.
+        let first = e.mem.alloc(0x18);
+        let second = e.mem.alloc(0x18);
+        fn_00a0b8d0(&mut e, Ptr::new(first));
+        fn_00a0b8d0(&mut e, Ptr::new(second));
+        e.call_log = Some(vec![]);
+        let item = fn_00a0b950(&mut e, 5, 1.5, Ptr::new(text), 7, 8);
+        assert_eq!(item.addr(), second);
+        assert_eq!(e.global::<u32>(ITEM_POOL_COUNT), 1);
+        assert_eq!(
+            (
+                e.get(item, TileTemplateItem::iCmd),
+                e.get(item, TileTemplateItem::fVal),
+                e.get(item, TileTemplateItem::u),
+                e.get(item, TileTemplateItem::iLine)
+            ),
+            (5, 1.5, 7, 8)
+        );
+        assert_eq!(calls_to(&e, STRING_SET), vec![vec![second + 8, text, 0]]);
+        assert!(calls_to(&e, TEMPLATE_ITEM_CONSTRUCT).is_empty());
+    }
+
+    #[test]
+    fn emptying_the_item_pool_deletes_every_item() {
+        let mut e = tile_engine();
+        let items: Vec<u32> = (0..3).map(|_| e.mem.alloc(0x18)).collect();
+        for item in &items {
+            fn_00a0b8d0(&mut e, Ptr::new(*item));
+        }
+        // A null entry in the pool is skipped.
+        fn_00a0b8d0(&mut e, Ptr::NULL);
+        e.call_log = Some(vec![]);
+        fn_00a0ba50(&mut e);
+        assert_eq!(e.global::<u32>(ITEM_POOL_COUNT), 0);
+        for item in &items {
+            assert_eq!(e.mem.block_size(*item), None);
+        }
+        assert_eq!(calls_to(&e, STRING_SET).len(), 3);
+        // Empty already: nothing to do.
+        e.call_log = Some(vec![]);
+        fn_00a0ba50(&mut e);
+        assert!(e.call_log.as_ref().unwrap().is_empty());
+        assert_eq!(e.global::<u32>(ITEM_POOL_COUNT), 0);
+    }
+
+    #[test]
+    fn the_special_bounds_check_is_always_true() {
+        let mut e = tile_engine();
+        let tile = typed_tile(&mut e, TYPE_RECT);
+        assert!(tile_special_bounds_check(&mut e, tile, 1, 2));
+        assert!(e.call(0x00a0_bae0, &args![tile, 0u32, 0u32]).bool());
+    }
+
+    #[test]
+    fn the_tile_method_at_00a0baf0_only_unlocks() {
+        let mut e = tile_engine();
+        let tile = typed_tile(&mut e, TYPE_RECT);
+        e.call_log = Some(vec![]);
+        fn_00a0baf0(&mut e, tile);
+        assert_eq!(calls_to(&e, TILE_UNLOCK).len(), 1);
+        assert_eq!(e.call_log.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_user_name_starts_with_an_underscore_or_the_prefix() {
+        let mut e = tile_engine();
+        e.map(0x0109_3000, 0x1000);
+        e.mem.write(USER_NAME_PREFIX, b"&_");
+        let check = |e: &mut Engine, text: &str| {
+            let name = cstring(e, text);
+            fn_00a0bb00(e, Ptr::new(name))
+        };
+        assert!(check(&mut e, "_name"));
+        assert!(check(&mut e, "&_name"));
+        assert!(!check(&mut e, "name"));
+        assert!(!check(&mut e, "&name"));
+        assert!(!check(&mut e, ""));
+        assert!(!fn_00a0bb00(&mut e, Ptr::NULL));
+    }
+
+    #[test]
+    fn a_texture_atlas_entry_frees_its_three_strings() {
+        let mut e = tile_engine();
+        let entry = e.mem.alloc(0x28);
+        e.call_log = Some(vec![]);
+        fn_00a0bb50(&mut e, Ptr::new(entry));
+        assert_eq!(
+            calls_to(&e, STRING_SET),
+            vec![
+                vec![entry + 0x10, 0, 0],
+                vec![entry + 8, 0, 0],
+                vec![entry, 0, 0]
+            ]
+        );
+    }
+
+    #[test]
+    fn a_text_tile_answers_its_type_and_name() {
+        let mut e = tile_engine();
+        let tile = typed_tile(&mut e, TYPE_TEXT);
+        assert_eq!(tile_text_get_type(&mut e, tile), TYPE_TEXT);
+        assert_eq!(tile_text_get_type_name(&mut e, tile), 0x0109_48a0);
+        assert_eq!(e.call(0x00a0_bbd0, &args![tile]).u32(), 0x387);
+    }
+
+    #[test]
+    fn deleting_a_text_tile_releases_it_unless_it_was_released() {
+        let mut e = tile_engine();
+        let tile: Ptr<Tile> = e.new_object();
+        e.set(tile, Tile::uiFlags, FLAG_RELEASED);
+        e.call_log = Some(vec![]);
+        // Released already: only the tile destructor runs, and the object
+        // is deleted with bit 0 of the flags.
+        assert_eq!(tile_text_scalar_deleting_destructor(&mut e, tile, 1), tile);
+        assert_eq!(e.mem.block_size(tile.addr()), None);
+        assert_eq!(calls_to(&e, INTERFACE_TILE_IS_BEING_DELETED).len(), 1);
+        // Not released: the release step runs first (it takes the lock).
+        let other: Ptr<Tile> = e.new_object();
+        e.call_log = Some(vec![]);
+        tile_text_scalar_deleting_destructor(&mut e, other, 0);
+        assert_eq!(e.mem.block_size(other.addr()), Some(0x38));
+        assert!(!calls_to(&e, TILE_LOCK).is_empty());
+        assert_eq!(e.mem.u32(other.addr()), VTABLE_TILE);
+    }
+
+    #[test]
+    fn a_3d_tile_starts_empty() {
+        let mut e = tile_engine();
+        let tile: Ptr<Tile> = Ptr::new(e.mem.alloc(0x50));
+        for offset in (0x38..0x50).step_by(4) {
+            e.mem.set_u32(tile.addr() + offset, 0xdead_beef);
+        }
+        e.call_log = Some(vec![]);
+        assert_eq!(fn_00a0bc80(&mut e, tile), tile);
+        assert_eq!(e.mem.u32(tile.addr()), VTABLE_TILE_3D);
+        for offset in [0x38, 0x3c, 0x40, 0x44, 0x48, 0x4c] {
+            assert_eq!(e.mem.u32(tile.addr() + offset), 0, "{offset:#x}");
+        }
+        assert_eq!(calls_to(&e, TILE_BASE_CONSTRUCT), vec![vec![tile.addr()]]);
+        assert_eq!(
+            calls_to(&e, NI_POINTER_ASSIGN),
+            vec![vec![tile.addr() + 0x2c, 0]]
+        );
+    }
+
+    #[test]
+    fn a_3d_tile_answers_its_type_and_name() {
+        let mut e = tile_engine();
+        let tile = typed_tile(&mut e, TYPE_3D);
+        assert_eq!(tile_3d_get_type(&mut e, tile), TYPE_3D);
+        assert_eq!(tile_3d_get_type_name(&mut e, tile), 0x0109_48d4);
+    }
+
+    #[test]
+    fn deleting_a_3d_tile_runs_its_destructor_and_frees_it() {
+        let mut e = tile_engine();
+        let tile: Ptr<Tile> = e.new_object();
+        e.call_log = Some(vec![]);
+        tile_3d_scalar_deleting_destructor(&mut e, tile, 0);
+        assert_eq!(e.mem.block_size(tile.addr()), Some(0x38));
+        assert_eq!(calls_to(&e, TILE_3D_DESTROY), vec![vec![tile.addr()]]);
+        assert_eq!(tile_3d_scalar_deleting_destructor(&mut e, tile, 1), tile);
+        assert_eq!(e.mem.block_size(tile.addr()), None);
+    }
+
+    #[test]
+    fn deleting_an_xml_storage_frees_its_data() {
+        let mut e = tile_engine();
+        let storage: Ptr<XmlStorage> = e.new_object();
+        let data = e.mem.alloc(16);
+        e.set(storage, XmlStorage::pXMLData, Ptr::new(data));
+        xml_storage_scalar_deleting_destructor(&mut e, storage, 0);
+        assert_eq!(e.mem.block_size(data), None);
+        assert!(e.get(storage, XmlStorage::pXMLData).is_null());
+        assert_eq!(e.mem.block_size(storage.addr()), Some(8));
+        // With bit 0 the object goes too; no data is fine.
+        xml_storage_scalar_deleting_destructor(&mut e, storage, 1);
+        assert_eq!(e.mem.block_size(storage.addr()), None);
+    }
+
+    #[test]
+    fn destroying_an_xml_storage_frees_the_data_only() {
+        let mut e = tile_engine();
+        let storage: Ptr<XmlStorage> = e.new_object();
+        let data = e.mem.alloc(16);
+        e.set(storage, XmlStorage::pXMLData, Ptr::new(data));
+        xml_storage_destructor(&mut e, storage);
+        assert_eq!(e.mem.block_size(data), None);
+        assert!(e.get(storage, XmlStorage::pXMLData).is_null());
+        assert_eq!(e.mem.block_size(storage.addr()), Some(8));
+        xml_storage_destructor(&mut e, storage);
+    }
+
+    #[test]
+    fn a_texture_atlas_entry_is_zeroed() {
+        let mut e = tile_engine();
+        let entry = e.mem.alloc(0x28);
+        for offset in (0..0x28).step_by(4) {
+            e.mem.set_u32(entry + offset, 0xdead_beef);
+        }
+        assert_eq!(fn_00a0beb0(&mut e, Ptr::new(entry)).addr(), entry);
+        for offset in (0..0x28).step_by(4) {
+            assert_eq!(e.mem.u32(entry + offset), 0, "{offset:#x}");
+        }
+    }
+
+    #[test]
+    fn the_actions_answer_their_operand() {
+        let mut e = tile_engine();
+        let action: Ptr<ValueAction> = e.new_object();
+        e.set(action, ValueAction::fValue, 2.5);
+        assert_eq!(float_action_q_float(&mut e, action), 2.5);
+        // A reference action reads the other trait's float.
+        let referenced: Ptr<TileValue> = e.new_object();
+        e.set(referenced, TileValue::fValue, 7.0);
+        let reference: Ptr<ValueAction> = e.new_object();
+        assert_eq!(ref_value_action_q_float(&mut e, reference), 0.0);
+        e.set(reference, ValueAction::pRefValue, referenced);
+        assert_eq!(ref_value_action_q_float(&mut e, reference), 7.0);
+        assert_eq!(fn_00a0c060(&mut e, reference), referenced);
+    }
+
+    #[test]
+    fn the_extra_data_class_answers_its_rtti_record() {
+        let mut e = tile_engine();
+        assert_eq!(ni_extra_data_get_rtti(&mut e, Ptr::NULL), 0x011f_4a80);
+    }
+
+    // -----------------------------------------------------------------
+    // Session 4: `Tile::Extra` deleting destructor to the map code.
+
+    const MAP_VTABLE: u32 = 0x0600_5000;
+    const ARRAY_VTABLE: u32 = 0x0600_6000;
+    const ARRAY_ALLOCATE_DOUBLE: u32 = 0x0600_6104;
+    const ARRAY_FREE_DOUBLE: u32 = 0x0600_6108;
+    const ARRAY_REALLOCATE_DOUBLE: u32 = 0x0600_610c;
+    const COMPARE_DOUBLE: u32 = 0x0600_6200;
+
+    /// A tile engine for this batch: the pages of the globals, the string
+    /// and memory helpers of the runtime as small Rust doubles.
+    fn batch4_engine() -> Engine {
+        let mut e = tile_engine();
+        for page in [0x0109_b000, 0x0101_7000] {
+            e.map(page, 0x1000);
+        }
+        e.set_global(STD_STRING_NPOS, u32::MAX);
+        e.register(MEMMOVE, |e, a| {
+            let data = e.mem.bytes(a[1], a[2]);
+            e.mem.write(a[0], &data);
+            a[0].into_ret()
+        });
+        e.register(MEMCMP, |e, a| {
+            let (left, right) = (e.mem.bytes(a[0], a[2]), e.mem.bytes(a[1], a[2]));
+            (left.cmp(&right) as i32).into_ret()
+        });
+        e.register(MEMSET, |e, a| {
+            e.mem.write(a[0], &vec![a[1] as u8; a[2] as usize]);
+            a[0].into_ret()
+        });
+        e.register(STRICMP, |e, a| {
+            let left = e.mem.cstr(a[0]).to_ascii_lowercase();
+            let right = e.mem.cstr(a[1]).to_ascii_lowercase();
+            (left.cmp(&right) as i32).into_ret()
+        });
+        e.register(TOLOWER, |_, a| (a[0] as u8).to_ascii_lowercase().into_ret());
+        e.register(ALLOC_BYTES, |e, a| e.mem.alloc(a[0]).into_ret());
+        e.register(LIST_NEW_NODE, |e, _| zeroed_block(e, 12).into_ret());
+        e
+    }
+
+    /// A heap block of `size` zero bytes.
+    fn zeroed_block(e: &mut Engine, size: u32) -> u32 {
+        let block = e.mem.alloc(size.max(1));
+        e.mem.write(block, &vec![0; size.max(1) as usize]);
+        block
+    }
+
+    /// A `std::string` (0x1c bytes) holding `text`: inline when `capacity`
+    /// is below 0x10, else in a heap buffer.
+    fn make_std_string(e: &mut Engine, text: &str, capacity: u32) -> u32 {
+        let string = zeroed_block(e, 0x1c);
+        if capacity >= 0x10 {
+            let buffer = zeroed_block(e, capacity + 1);
+            e.mem.write(buffer, text.as_bytes());
+            e.mem.set_u32(string + 4, buffer);
+        } else {
+            e.mem.write(string + 4, text.as_bytes());
+        }
+        e.mem.set_u32(string + 0x14, text.len() as u32);
+        e.mem.set_u32(string + 0x18, capacity);
+        string
+    }
+
+    fn std_string_text(e: &Engine, string: u32) -> String {
+        let data = std_string_data(e, string);
+        String::from_utf8(e.mem.cstr(data)).unwrap()
+    }
+
+    /// The runtime doubles the `std::string` appends call.
+    fn install_append_doubles(e: &mut Engine) {
+        e.register(STD_STRING_INSIDE, |e, a| {
+            let data = std_string_data(e, a[0]);
+            let size = e.mem.u32(a[0] + 0x14);
+            (a[1] >= data && a[1] <= data + size).into_ret()
+        });
+        e.register(STD_STRING_GROW, |e, a| {
+            (a[1] <= e.mem.u32(a[0] + 0x18)).into_ret()
+        });
+        e.register(MEMCPY_S, |e, a| {
+            assert!(a[1] >= a[3], "destination too small");
+            let data = e.mem.bytes(a[2], a[3]);
+            e.mem.write(a[0], &data);
+            0u32.into_ret()
+        });
+    }
+
+    #[test]
+    fn extra_scalar_deleting_destructor_deletes_with_bit_zero() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let extra: Ptr<Extra> = e.new_object();
+        assert_eq!(extra_scalar_deleting_destructor(&mut e, extra, 0), extra);
+        assert_eq!(e.mem.u32(extra.addr()), VTABLE_EXTRA);
+        assert!(calls_to(&e, NI_EXTRA_DATA_DESTROY).len() == 1);
+        assert!(calls_to(&e, NI_OPERATOR_DELETE).is_empty());
+        extra_scalar_deleting_destructor(&mut e, extra, 3);
+        assert_eq!(
+            calls_to(&e, NI_OPERATOR_DELETE),
+            vec![vec![extra.addr(), 0x14]]
+        );
+    }
+
+    /// A fixed string handle: the text behind a reference count of 1.
+    fn install_fixed_strings(e: &mut Engine, empty: u32) {
+        e.set_global(EMPTY_FIXED_STRING, empty);
+        e.register(NI_FIXED_STRING_CREATE, |e, a| {
+            let text = e.mem.cstr(a[0]);
+            let block = e.mem.alloc(8 + text.len() as u32 + 1);
+            e.mem.set_u32(block, 1);
+            e.mem.set_cstr(block + 8, &text);
+            (block + 8).into_ret()
+        });
+    }
+
+    #[test]
+    fn template_construct_names_the_template_and_empties_its_list() {
+        let mut e = batch4_engine();
+        install_fixed_strings(&mut e, 0x0600_7008);
+        e.call_log = Some(vec![]);
+        let template: Ptr<TileTemplate> = e.new_object();
+        let storage: Ptr<BuildStorage> = e.new_object();
+        let list = template.at(TileTemplate::xList);
+        // Leftovers in the list fields are overwritten.
+        e.set(list, NiTPointerList::m_pkHead, 0x1234);
+        e.set(list, NiTPointerList::m_pkTail, 0x1234);
+        e.set(list, NiTPointerList::m_uiCount, 7);
+        let name = cstring(&mut e, "Prefab");
+        assert_eq!(
+            template_construct(&mut e, template, name, storage),
+            template
+        );
+        let handle = e.get(template, TileTemplate::xName);
+        assert_ne!(handle, 0x0600_7008);
+        assert_eq!(string_at(&e, handle), "Prefab");
+        assert_eq!(e.get(template, TileTemplate::pParent), storage);
+        assert_eq!(e.get(list, NiTPointerList::m_pkHead), 0);
+        assert_eq!(e.get(list, NiTPointerList::m_pkTail), 0);
+        assert_eq!(e.get(list, NiTPointerList::m_uiCount), 0);
+        assert_eq!(calls_to(&e, NI_FIXED_STRING_CREATE), vec![vec![name]]);
+        // The previous handle was the empty string's: nothing is released.
+        assert!(calls_to(&e, INTERLOCKED_DECREMENT).is_empty());
+        // The name that is the empty handle itself is kept without a lookup.
+        let again: Ptr<TileTemplate> = e.new_object();
+        template_construct(&mut e, again, 0x0600_7008, storage);
+        assert_eq!(e.get(again, TileTemplate::xName), 0x0600_7008);
+        assert_eq!(calls_to(&e, NI_FIXED_STRING_CREATE).len(), 1);
+    }
+
+    #[test]
+    fn template_destructor_clears_the_list_and_releases_the_name() {
+        let mut e = batch4_engine();
+        install_fixed_strings(&mut e, 0x0600_7008);
+        e.call_log = Some(vec![]);
+        let template: Ptr<TileTemplate> = e.new_object();
+        let storage: Ptr<BuildStorage> = e.new_object();
+        let name = cstring(&mut e, "Prefab");
+        template_construct(&mut e, template, name, storage);
+        let handle = e.get(template, TileTemplate::xName);
+        // A second owner of the name keeps the text alive.
+        e.mem.set_u32(handle - 8, 2);
+        template_destructor(&mut e, template);
+        assert_eq!(e.mem.u32(handle - 8), 1);
+        assert_eq!(calls_to(&e, LIST_DESTROY), vec![vec![template.addr() + 8]]);
+        assert_eq!(calls_to(&e, INTERLOCKED_DECREMENT), vec![vec![handle - 8]]);
+        // The empty string's handle is not released.
+        let plain: Ptr<TileTemplate> = e.new_object();
+        e.set(plain, TileTemplate::xName, 0x0600_7008);
+        template_destructor(&mut e, plain);
+        assert_eq!(calls_to(&e, INTERLOCKED_DECREMENT).len(), 1);
+    }
+
+    #[test]
+    fn template_item_construct_fills_the_item() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let item: Ptr<TileTemplateItem> = e.new_object();
+        let string = item.at(TileTemplateItem::xStr);
+        e.set(string, BSStringT::pString, 0x1111);
+        e.set(string, BSStringT::sLen, 9);
+        e.set(string, BSStringT::sMaxLen, 9);
+        let text = cstring(&mut e, "hello");
+        let built = fn_00a0c220(&mut e, item, -1, 2.5, Ptr::new(text), 4001, 42);
+        assert_eq!(built, item);
+        assert_eq!(e.get(item, TileTemplateItem::iCmd), -1);
+        assert_eq!(e.get(item, TileTemplateItem::fVal), 2.5);
+        assert_eq!(e.get(item, TileTemplateItem::u), 4001);
+        assert_eq!(e.get(item, TileTemplateItem::iLine), 42);
+        // The empty string was made before the text was assigned (the
+        // assignment is a double here).
+        assert_eq!(e.get(string, BSStringT::pString), 0);
+        assert_eq!(e.get(string, BSStringT::sLen), 0);
+        assert_eq!(e.get(string, BSStringT::sMaxLen), 0);
+        assert_eq!(
+            calls_to(&e, STRING_SET),
+            vec![vec![item.addr() + 8, text, 0x1f]]
+        );
+    }
+
+    #[test]
+    fn string_rfind_finds_the_last_match_at_or_before_the_position() {
+        let mut e = batch4_engine();
+        let heap = make_std_string(&mut e, "abcabcabc-abc", 0x20);
+        let needle = cstring(&mut e, "abc");
+        let find = |e: &mut Engine, pos| fn_00a0c300(e, Ptr::new(heap), Ptr::new(needle), pos, 3);
+        assert_eq!(find(&mut e, 100), 10);
+        assert_eq!(find(&mut e, 10), 10);
+        assert_eq!(find(&mut e, 9), 6);
+        assert_eq!(find(&mut e, 5), 3);
+        assert_eq!(find(&mut e, 0), 0);
+        // No match: npos.
+        let other = cstring(&mut e, "xyz");
+        assert_eq!(
+            fn_00a0c300(&mut e, Ptr::new(heap), Ptr::new(other), 100, 3),
+            u32::MAX
+        );
+        // An empty needle answers the position limited to the length.
+        assert_eq!(
+            fn_00a0c300(&mut e, Ptr::new(heap), Ptr::new(needle), 4, 0),
+            4
+        );
+        assert_eq!(
+            fn_00a0c300(&mut e, Ptr::new(heap), Ptr::new(needle), 99, 0),
+            13
+        );
+        // A needle longer than the string.
+        let long = cstring(&mut e, "abcabcabc-abcd");
+        assert_eq!(
+            fn_00a0c300(&mut e, Ptr::new(heap), Ptr::new(long), 99, 14),
+            u32::MAX
+        );
+        // A string held inline.
+        let inline = make_std_string(&mut e, "hello", 15);
+        let tail = cstring(&mut e, "lo");
+        assert_eq!(
+            fn_00a0c300(&mut e, Ptr::new(inline), Ptr::new(tail), 99, 2),
+            3
+        );
+    }
+
+    #[test]
+    fn string_append_text_copies_grows_and_terminates() {
+        let mut e = batch4_engine();
+        install_append_doubles(&mut e);
+        e.call_log = Some(vec![]);
+        let string = make_std_string(&mut e, "abc", 0x20);
+        let more = cstring(&mut e, "def!");
+        assert_eq!(
+            fn_00a0c430(&mut e, Ptr::new(string), Ptr::new(more), 3),
+            Ptr::new(string)
+        );
+        assert_eq!(std_string_text(&e, string), "abcdef");
+        assert_eq!(e.mem.u32(string + 0x14), 6);
+        assert_eq!(calls_to(&e, STD_STRING_GROW), vec![vec![string, 6, 0]]);
+        // Nothing to append: no growth.
+        fn_00a0c430(&mut e, Ptr::new(string), Ptr::new(more), 0);
+        assert_eq!(calls_to(&e, STD_STRING_GROW).len(), 1);
+        // Text from the string itself is appended by range.
+        let inner = std_string_data(&e, string) + 2;
+        fn_00a0c430(&mut e, Ptr::new(string), Ptr::new(inner), 3);
+        assert_eq!(std_string_text(&e, string), "abcdefcde");
+        // A failed growth leaves the string alone.
+        let small = make_std_string(&mut e, "ab", 2);
+        fn_00a0c430(&mut e, Ptr::new(small), Ptr::new(more), 4);
+        assert_eq!(std_string_text(&e, small), "ab");
+        assert_eq!(e.mem.u32(small + 0x14), 2);
+    }
+
+    #[test]
+    fn string_append_text_throws_length_error_when_too_long() {
+        let mut e = batch4_engine();
+        install_append_doubles(&mut e);
+        e.register(STD_STRING_GROW, |_, _| false.into_ret());
+        e.call_log = Some(vec![]);
+        let string = make_std_string(&mut e, "abc", 0x20);
+        let more = cstring(&mut e, "x");
+        fn_00a0c430(&mut e, Ptr::new(string), Ptr::new(more), u32::MAX - 2);
+        assert_eq!(calls_to(&e, STD_LENGTH_ERROR).len(), 1);
+        fn_00a0c430(&mut e, Ptr::new(string), Ptr::new(more), 1);
+        assert_eq!(calls_to(&e, STD_LENGTH_ERROR).len(), 1);
+    }
+
+    #[test]
+    fn string_append_range_limits_the_count_and_checks_the_offset() {
+        let mut e = batch4_engine();
+        install_append_doubles(&mut e);
+        e.call_log = Some(vec![]);
+        let string = make_std_string(&mut e, "ab", 0x20);
+        let other = make_std_string(&mut e, "xyz123", 0x20);
+        fn_00a0c570(&mut e, Ptr::new(string), Ptr::new(other), 2, 3);
+        assert_eq!(std_string_text(&e, string), "abz12");
+        // The count is limited to what remains.
+        fn_00a0c570(&mut e, Ptr::new(string), Ptr::new(other), 4, 10);
+        assert_eq!(std_string_text(&e, string), "abz1223");
+        assert_eq!(e.mem.u32(string + 0x14), 7);
+        assert!(calls_to(&e, STD_OUT_OF_RANGE).is_empty());
+        // An offset beyond the other string throws out-of-range.
+        e.register(STD_STRING_GROW, |_, _| false.into_ret());
+        fn_00a0c570(&mut e, Ptr::new(string), Ptr::new(other), 7, 1);
+        assert_eq!(calls_to(&e, STD_OUT_OF_RANGE).len(), 1);
+        // A result that cannot be counted throws length-error.
+        e.mem.set_u32(string + 0x14, u32::MAX - 2);
+        fn_00a0c570(&mut e, Ptr::new(string), Ptr::new(other), 0, 3);
+        assert_eq!(calls_to(&e, STD_LENGTH_ERROR).len(), 1);
+    }
+
+    /// The vtable of a test hash map: the hash is the key modulo the bucket
+    /// count, keys are equal when their low bytes are, the node's key and
+    /// value are written, and a node is a zeroed 12-byte block.
+    fn install_map_vtable(e: &mut Engine) {
+        e.put_vtable(
+            MAP_VTABLE,
+            &[0, 0x0600_5104, 0x0600_5108, 0x0600_510c, 0, 0x0600_5114],
+        );
+        e.register(0x0600_5104, |e, a| {
+            let buckets = e.mem.u32(a[0] + 4);
+            (a[1] % buckets).into_ret()
+        });
+        e.register(0x0600_5108, |_, a| {
+            ((a[1] & 0xff) == (a[2] & 0xff)).into_ret()
+        });
+        e.register(0x0600_510c, |e, a| {
+            e.mem.set_u32(a[1] + 4, a[2]);
+            e.mem.set_u32(a[1] + 8, a[3]);
+            Ret::default()
+        });
+        e.register(0x0600_5114, |e, _| zeroed_block(e, 12).into_ret());
+    }
+
+    /// A hash map object: vtable, bucket count, empty buckets, no items.
+    fn make_map(e: &mut Engine, buckets: u32, copy_keys: bool) -> Ptr<NiTPointerMap> {
+        let map = zeroed_block(e, 0x14);
+        let table = zeroed_block(e, buckets * 4);
+        e.mem.set_u32(map, MAP_VTABLE);
+        e.mem.set_u32(map + 4, buckets);
+        e.mem.set_u32(map + 8, table);
+        e.mem.set_u8(map + 0x10, copy_keys as u8);
+        Ptr::new(map)
+    }
+
+    /// The `(key, value)` pairs of a bucket's chain, first node first.
+    fn bucket_chain(e: &Engine, map: Ptr<NiTPointerMap>, bucket: u32) -> Vec<(u32, u32)> {
+        let table = e.get(map, NiTPointerMap::m_ppkHashTable);
+        let mut node = e.mem.u32(table + bucket * 4);
+        let mut pairs = vec![];
+        while node != 0 {
+            pairs.push((e.mem.u32(node + 4), e.mem.u32(node + 8)));
+            node = e.mem.u32(node);
+        }
+        pairs
+    }
+
+    #[test]
+    fn map_set_inserts_at_the_bucket_head_or_updates() {
+        let mut e = batch4_engine();
+        install_map_vtable(&mut e);
+        let map = make_map(&mut e, 4, false);
+        fn_00a0c6c0(&mut e, map, 5, 50);
+        fn_00a0c6c0(&mut e, map, 9, 90);
+        fn_00a0c6c0(&mut e, map, 2, 20);
+        assert_eq!(bucket_chain(&e, map, 1), vec![(9, 90), (5, 50)]);
+        assert_eq!(bucket_chain(&e, map, 2), vec![(2, 20)]);
+        assert_eq!(e.get(map, NiTPointerMap::m_uiCount), 3);
+        // The same key (by the map's comparison) only gets the new value.
+        fn_00a0c6c0(&mut e, map, 5, 55);
+        assert_eq!(bucket_chain(&e, map, 1), vec![(9, 90), (5, 55)]);
+        assert_eq!(e.get(map, NiTPointerMap::m_uiCount), 3);
+    }
+
+    #[test]
+    fn map_set_with_key_copy_flag_keeps_or_replaces_the_key() {
+        let mut e = batch4_engine();
+        install_map_vtable(&mut e);
+        e.call_log = Some(vec![]);
+        let replacing = make_map(&mut e, 4, false);
+        fn_00a0c900(&mut e, replacing, 5, 50);
+        assert_eq!(calls_to(&e, LIST_NEW_NODE).len(), 1);
+        // Key 0x105 equals key 5 in the test comparison and has its bucket.
+        fn_00a0c900(&mut e, replacing, 0x105, 51);
+        assert_eq!(bucket_chain(&e, replacing, 1), vec![(0x105, 51)]);
+        assert_eq!(e.get(replacing, NiTPointerMap::m_uiCount), 1);
+        let keeping = make_map(&mut e, 4, true);
+        fn_00a0c900(&mut e, keeping, 5, 50);
+        fn_00a0c900(&mut e, keeping, 0x105, 51);
+        assert_eq!(bucket_chain(&e, keeping, 1), vec![(5, 51)]);
+        // Two keys of one bucket chain up at the head.
+        fn_00a0c900(&mut e, keeping, 9, 90);
+        assert_eq!(bucket_chain(&e, keeping, 1), vec![(9, 90), (5, 51)]);
+        assert_eq!(e.get(keeping, NiTPointerMap::m_uiCount), 2);
+    }
+
+    #[test]
+    fn map_iteration_walks_chains_then_buckets() {
+        let mut e = batch4_engine();
+        install_map_vtable(&mut e);
+        let map = make_map(&mut e, 4, false);
+        for (key, value) in [(1, 10), (5, 50), (2, 20), (3, 30)] {
+            fn_00a0c6c0(&mut e, map, key, value);
+        }
+        let table = e.get(map, NiTPointerMap::m_ppkHashTable);
+        let slot = e.mem.alloc(12);
+        let (key_out, value_out) = (slot + 4, slot + 8);
+        e.mem.set_u32(slot, e.mem.u32(table + 4));
+        let mut seen = vec![];
+        while e.mem.u32(slot) != 0 {
+            fn_00a0c850(&mut e, map, slot, key_out, value_out);
+            seen.push((e.mem.u32(key_out), e.mem.u32(value_out)));
+        }
+        assert_eq!(seen, vec![(5, 50), (1, 10), (2, 20), (3, 30)]);
+    }
+
+    #[test]
+    fn simple_list_empty_call_goes_to_the_shared_clear() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        fn_00a0c7a0(&mut e, Ptr::new(0x4321));
+        assert_eq!(calls_to(&e, SIMPLE_LIST_REMOVE_ALL), vec![vec![0x4321]]);
+    }
+
+    /// A `BSSimpleList` head holding `items` (the first in the embedded
+    /// node, the others in heap nodes).
+    fn make_simple_list(e: &mut Engine, items: &[u32]) -> Ptr<BSSimpleList> {
+        let head = zeroed_block(e, 8);
+        let mut tail = head;
+        for (index, item) in items.iter().enumerate() {
+            let node = if index == 0 { head } else { zeroed_block(e, 8) };
+            e.mem.set_u32(node, *item);
+            if index > 0 {
+                e.mem.set_u32(tail + 4, node);
+            }
+            tail = node;
+        }
+        Ptr::new(head)
+    }
+
+    fn simple_list_items(e: &Engine, list: Ptr<BSSimpleList>) -> Vec<u32> {
+        let mut node = list.addr();
+        let mut items = vec![];
+        while node != 0 {
+            items.push(e.mem.u32(node));
+            node = e.mem.u32(node + 4);
+        }
+        items
+    }
+
+    #[test]
+    fn fade_list_add_head_keeps_the_embedded_node_first() {
+        let mut e = batch4_engine();
+        let list = make_simple_list(&mut e, &[]);
+        let slot = e.mem.alloc(4);
+        // A null item is ignored.
+        e.mem.set_u32(slot, 0);
+        bs_simple_list_fade_control_add_head(&mut e, list, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, list), vec![0]);
+        // An empty list takes the item in its embedded node.
+        e.mem.set_u32(slot, 0xa1);
+        bs_simple_list_fade_control_add_head(&mut e, list, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, list), vec![0xa1]);
+        // Later items go first, the old first item moves to a new node.
+        e.mem.set_u32(slot, 0xa2);
+        bs_simple_list_fade_control_add_head(&mut e, list, Ptr::new(slot));
+        e.mem.set_u32(slot, 0xa3);
+        bs_simple_list_fade_control_add_head(&mut e, list, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, list), vec![0xa3, 0xa2, 0xa1]);
+    }
+
+    #[test]
+    fn fade_list_remove_unlinks_destroys_and_frees() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let list = make_simple_list(&mut e, &[1, 2, 3]);
+        let slot = e.mem.alloc(4);
+        let second = e.get(list, BSSimpleList::m_pkNext);
+        let third = e.mem.u32(second + 4);
+        // A middle node is unlinked, destroyed and freed.
+        e.mem.set_u32(slot, 2);
+        bs_simple_list_fade_control_remove(&mut e, list, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, list), vec![1, 3]);
+        assert_eq!(calls_to(&e, SIMPLE_LIST_REMOVE_ALL), vec![vec![second]]);
+        assert_eq!(
+            calls_to(&e, MEMORY_DEALLOCATE),
+            vec![vec![MEMORY_MANAGER, second]]
+        );
+        // The embedded first node takes over the second node.
+        e.mem.set_u32(slot, 1);
+        bs_simple_list_fade_control_remove(&mut e, list, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, list), vec![3]);
+        assert_eq!(calls_to(&e, SIMPLE_LIST_REMOVE_ALL)[1], vec![third]);
+        // The last item is only cleared.
+        e.mem.set_u32(slot, 3);
+        bs_simple_list_fade_control_remove(&mut e, list, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, list), vec![0]);
+        assert_eq!(calls_to(&e, SIMPLE_LIST_REMOVE_ALL).len(), 2);
+        // A null item, an item that is not there and an empty list do nothing.
+        e.mem.set_u32(slot, 0);
+        bs_simple_list_fade_control_remove(&mut e, list, Ptr::new(slot));
+        e.mem.set_u32(slot, 9);
+        bs_simple_list_fade_control_remove(&mut e, list, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, list), vec![0]);
+        let other = make_simple_list(&mut e, &[1, 2]);
+        bs_simple_list_fade_control_remove(&mut e, other, Ptr::new(slot));
+        assert_eq!(simple_list_items(&e, other), vec![1, 2]);
+        assert_eq!(calls_to(&e, SIMPLE_LIST_REMOVE_ALL).len(), 2);
+    }
+
+    /// The elements of a doubly linked `NiTPointerList`, head first.
+    fn pointer_list_elements(e: &Engine, list: Ptr<NiTPointerList>) -> Vec<u32> {
+        let mut node = e.get(list, NiTPointerList::m_pkHead);
+        let mut items = vec![];
+        let mut previous = 0;
+        while node != 0 {
+            assert_eq!(e.mem.u32(node + 4), previous, "back link");
+            items.push(e.mem.u32(node + 8));
+            previous = node;
+            node = e.mem.u32(node);
+        }
+        assert_eq!(e.get(list, NiTPointerList::m_pkTail), previous, "tail");
+        assert_eq!(e.get(list, NiTPointerList::m_uiCount), items.len() as u32);
+        items
+    }
+
+    #[test]
+    fn pointer_list_add_head_links_a_new_first_node() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let list: Ptr<NiTPointerList> = e.new_object();
+        let slot = e.mem.alloc(4);
+        for item in [10, 20, 30] {
+            e.mem.set_u32(slot, item);
+            fn_00a0c9f0(&mut e, list, Ptr::new(slot));
+        }
+        assert_eq!(pointer_list_elements(&e, list), vec![30, 20, 10]);
+        assert_eq!(calls_to(&e, LIST_NEW_NODE)[0], vec![list.addr() + 8]);
+    }
+
+    #[test]
+    fn pointer_list_add_after_links_behind_the_node() {
+        let mut e = batch4_engine();
+        let list: Ptr<NiTPointerList> = e.new_object();
+        let slot = e.mem.alloc(4);
+        e.mem.set_u32(slot, 1);
+        fn_00a0c9f0(&mut e, list, Ptr::new(slot));
+        let first = e.get(list, NiTPointerList::m_pkHead);
+        // Behind the last node: it becomes the tail.
+        e.mem.set_u32(slot, 3);
+        let third = fn_00a0ca70(&mut e, list, first, Ptr::new(slot));
+        assert_eq!(pointer_list_elements(&e, list), vec![1, 3]);
+        assert_eq!(e.get(list, NiTPointerList::m_pkTail), third);
+        // In the middle: the later node points back to the new one.
+        e.mem.set_u32(slot, 2);
+        let second = fn_00a0ca70(&mut e, list, first, Ptr::new(slot));
+        assert_eq!(pointer_list_elements(&e, list), vec![1, 2, 3]);
+        assert_eq!(e.mem.u32(third + 4), second);
+    }
+
+    /// The vtable of a test `BSSimpleArray`: allocate `count` words, free
+    /// (nothing, the call is logged) and reallocate keeping the old words.
+    fn install_array_vtable(e: &mut Engine) {
+        e.put_vtable(
+            ARRAY_VTABLE,
+            &[
+                0,
+                ARRAY_ALLOCATE_DOUBLE,
+                ARRAY_FREE_DOUBLE,
+                ARRAY_REALLOCATE_DOUBLE,
+            ],
+        );
+        e.register(ARRAY_ALLOCATE_DOUBLE, |e, a| {
+            zeroed_block(e, a[1] * 4).into_ret()
+        });
+        e.register(ARRAY_FREE_DOUBLE, |_, _| Ret::default());
+        e.register(ARRAY_REALLOCATE_DOUBLE, |e, a| {
+            let fresh = zeroed_block(e, a[2] * 4);
+            let old = e.mem.block_size(a[1]).unwrap_or(0).min(a[2] * 4);
+            let data = e.mem.bytes(a[1], old);
+            e.mem.write(fresh, &data);
+            fresh.into_ret()
+        });
+        // The comparison: the numbers the two pointers point to.
+        e.register(COMPARE_DOUBLE, |e, a| {
+            (e.mem.i32(a[0]).cmp(&e.mem.i32(a[1])) as i32).into_ret()
+        });
+    }
+
+    /// A `BSSimpleArray` of `values` with room for `capacity` words.
+    fn make_array(e: &mut Engine, values: &[u32], capacity: u32) -> Ptr<BSSimpleArray> {
+        let array = zeroed_block(e, 0x10);
+        e.mem.set_u32(array, ARRAY_VTABLE);
+        if capacity > 0 {
+            let buffer = zeroed_block(e, capacity * 4);
+            for (index, value) in values.iter().enumerate() {
+                e.mem.set_u32(buffer + 4 * index as u32, *value);
+            }
+            e.mem.set_u32(array + 4, buffer);
+        }
+        e.mem.set_u32(array + 8, values.len() as u32);
+        e.mem.set_u32(array + 0xc, capacity);
+        Ptr::new(array)
+    }
+
+    fn array_values(e: &Engine, array: Ptr<BSSimpleArray>) -> Vec<u32> {
+        let buffer = e.get(array, BSSimpleArray::pBuffer);
+        (0..e.get(array, BSSimpleArray::iSize))
+            .map(|index| e.mem.u32(buffer + 4 * index))
+            .collect()
+    }
+
+    #[test]
+    fn array_sorted_insert_finds_the_place_with_the_comparison() {
+        let mut e = batch4_engine();
+        install_array_vtable(&mut e);
+        let array = make_array(&mut e, &[], 8);
+        // The elements are the numbers themselves; the comparison reads
+        // through the two pointers.
+        let slot = e.mem.alloc(4);
+        let insert = |e: &mut Engine, value: u32| {
+            // The array holds numbers; the key slot holds the number.
+            e.mem.set_u32(slot, value);
+            fn_00a0caf0(e, array, slot, COMPARE_DOUBLE);
+        };
+        for value in [5, 1, 9, 3, 7] {
+            insert(&mut e, value);
+        }
+        assert_eq!(array_values(&e, array), vec![1, 3, 5, 7, 9]);
+        insert(&mut e, 0);
+        insert(&mut e, 10);
+        assert_eq!(array_values(&e, array), vec![0, 1, 3, 5, 7, 9, 10]);
+        // A key that compares equal is inserted at the match.
+        insert(&mut e, 5);
+        assert_eq!(array_values(&e, array), vec![0, 1, 3, 5, 5, 7, 9, 10]);
+    }
+
+    #[test]
+    fn array_sorted_find_answers_the_index_or_minus_one() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        e.register(BSEARCH, |e, a| {
+            for index in 0..a[2] {
+                if e.mem.u32(a[1] + 4 * index) == e.mem.u32(a[0]) {
+                    return (a[1] + 4 * index).into_ret();
+                }
+            }
+            0u32.into_ret()
+        });
+        let array = make_array(&mut e, &[10, 20, 30], 4);
+        let buffer = e.get(array, BSSimpleArray::pBuffer);
+        let key = e.mem.alloc(4);
+        e.mem.set_u32(key, 30);
+        assert_eq!(
+            bs_simple_array_tile_value_sorted_find(&mut e, array, key, 0x77),
+            2
+        );
+        assert_eq!(calls_to(&e, BSEARCH), vec![vec![key, buffer, 3, 4, 0x77]]);
+        e.mem.set_u32(key, 25);
+        assert_eq!(
+            bs_simple_array_tile_value_sorted_find(&mut e, array, key, 0x77),
+            -1
+        );
+    }
+
+    #[test]
+    fn array_insert_shifts_grows_or_appends() {
+        let mut e = batch4_engine();
+        install_array_vtable(&mut e);
+        e.call_log = Some(vec![]);
+        let slot = e.mem.alloc(4);
+        // With room: the tail moves up.
+        let array = make_array(&mut e, &[1, 2, 3], 8);
+        e.mem.set_u32(slot, 9);
+        fn_00a0cd50(&mut e, array, 1, slot);
+        assert_eq!(array_values(&e, array), vec![1, 9, 2, 3]);
+        assert_eq!(e.get(array, BSSimpleArray::iReservedSize), 8);
+        // Full: a new buffer of doubled capacity, the old one is freed.
+        let full = make_array(&mut e, &[1, 2, 3, 4], 4);
+        let old = e.get(full, BSSimpleArray::pBuffer);
+        fn_00a0cd50(&mut e, full, 2, slot);
+        assert_eq!(array_values(&e, full), vec![1, 2, 9, 3, 4]);
+        assert_eq!(e.get(full, BSSimpleArray::iReservedSize), 8);
+        assert_ne!(e.get(full, BSSimpleArray::pBuffer), old);
+        assert_eq!(
+            calls_to(&e, ARRAY_FREE_DOUBLE),
+            vec![vec![full.addr(), old]]
+        );
+        // Above 8 the capacity grows by 8.
+        let wide = make_array(&mut e, &[0; 10], 10);
+        fn_00a0cd50(&mut e, wide, 0, slot);
+        assert_eq!(e.get(wide, BSSimpleArray::iReservedSize), 18);
+        assert_eq!(array_values(&e, wide)[..3], [9, 0, 0]);
+        // At the end it appends.
+        let tail = make_array(&mut e, &[1, 2], 2);
+        fn_00a0cd50(&mut e, tail, 2, slot);
+        assert_eq!(array_values(&e, tail), vec![1, 2, 9]);
+        assert_eq!(e.get(tail, BSSimpleArray::iReservedSize), 4);
+    }
+
+    #[test]
+    fn array_add_stores_the_item_and_answers_the_index() {
+        let mut e = batch4_engine();
+        install_array_vtable(&mut e);
+        let array = make_array(&mut e, &[], 0);
+        let slot = e.mem.alloc(4);
+        for (expected, value) in [(0, 7), (1, 8)] {
+            e.mem.set_u32(slot, value);
+            assert_eq!(fn_00a0cf00(&mut e, array, slot), expected);
+        }
+        assert_eq!(array_values(&e, array), vec![7, 8]);
+        assert_eq!(e.get(array, BSSimpleArray::iReservedSize), 4);
+    }
+
+    #[test]
+    fn array_move_copies_forward_or_backward() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let block = e.mem.alloc(32);
+        for index in 0..8 {
+            e.mem.set_u32(block + 4 * index, index + 1);
+        }
+        let words = |e: &Engine| (0..8).map(|i| e.mem.u32(block + 4 * i)).collect::<Vec<_>>();
+        let destinations = |e: &Engine| -> Vec<u32> {
+            calls_to(e, MEMMOVE)
+                .iter()
+                .map(|call| call[0] - block)
+                .collect()
+        };
+        // Down by one word: ascending.
+        fn_00a0cf60(&mut e, 0, block, block + 4, 3);
+        assert_eq!(words(&e), vec![2, 3, 4, 4, 5, 6, 7, 8]);
+        assert_eq!(destinations(&e), vec![0, 4, 8]);
+        // Up by one word: descending.
+        e.call_log = Some(vec![]);
+        fn_00a0cf60(&mut e, 0, block + 4, block, 3);
+        assert_eq!(words(&e), vec![2, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(destinations(&e), vec![12, 8, 4]);
+        // Equal places and an empty count copy nothing.
+        e.call_log = Some(vec![]);
+        fn_00a0cf60(&mut e, 0, block, block, 3);
+        fn_00a0cf60(&mut e, 0, block, block + 8, 0);
+        assert!(calls_to(&e, MEMMOVE).is_empty());
+    }
+
+    #[test]
+    fn array_make_room_gives_the_first_buffer_then_grows() {
+        let mut e = batch4_engine();
+        install_array_vtable(&mut e);
+        e.call_log = Some(vec![]);
+        let array = make_array(&mut e, &[], 0);
+        assert_eq!(fn_00a0d000(&mut e, array), 0);
+        assert_eq!(e.get(array, BSSimpleArray::iReservedSize), 4);
+        assert_eq!(e.get(array, BSSimpleArray::iSize), 1);
+        assert_eq!(
+            calls_to(&e, ARRAY_ALLOCATE_DOUBLE),
+            vec![vec![array.addr(), 4]]
+        );
+        // Room left: only the count changes.
+        assert_eq!(fn_00a0d000(&mut e, array), 1);
+        assert_eq!(calls_to(&e, ARRAY_ALLOCATE_DOUBLE).len(), 1);
+        // Full (4 of 4): doubled to 8 by reallocation.
+        fn_00a0d000(&mut e, array);
+        fn_00a0d000(&mut e, array);
+        assert_eq!(fn_00a0d000(&mut e, array), 4);
+        assert_eq!(e.get(array, BSSimpleArray::iReservedSize), 8);
+        assert_eq!(calls_to(&e, ARRAY_REALLOCATE_DOUBLE).len(), 1);
+        // 8 of 8: doubled to 16, then 16 grows by 8.
+        for _ in 0..3 {
+            fn_00a0d000(&mut e, array);
+        }
+        assert_eq!(fn_00a0d000(&mut e, array), 8);
+        assert_eq!(e.get(array, BSSimpleArray::iReservedSize), 16);
+        for _ in 0..8 {
+            fn_00a0d000(&mut e, array);
+        }
+        assert_eq!(e.get(array, BSSimpleArray::iReservedSize), 24);
+    }
+
+    #[test]
+    fn array_resize_allocates_reallocates_or_copies() {
+        let mut e = batch4_engine();
+        install_array_vtable(&mut e);
+        e.call_log = Some(vec![]);
+        // Without a buffer: a new one and the capacity.
+        let empty = make_array(&mut e, &[], 0);
+        fn_00a0d0c0(&mut e, empty, 6, 0);
+        assert_ne!(e.get(empty, BSSimpleArray::pBuffer), 0);
+        assert_eq!(e.get(empty, BSSimpleArray::iReservedSize), 6);
+        // The count equals the capacity: reallocated.
+        let full = make_array(&mut e, &[1, 2], 2);
+        fn_00a0d0c0(&mut e, full, 4, 2);
+        assert_eq!(calls_to(&e, ARRAY_REALLOCATE_DOUBLE).len(), 1);
+        assert_eq!(e.mem.u32(e.get(full, BSSimpleArray::pBuffer)), 1);
+        // Otherwise: a new buffer with the elements, the old one freed.
+        let partial = make_array(&mut e, &[5, 6, 7], 4);
+        let old = e.get(partial, BSSimpleArray::pBuffer);
+        fn_00a0d0c0(&mut e, partial, 8, 3);
+        assert_eq!(array_values(&e, partial), vec![5, 6, 7]);
+        assert_ne!(e.get(partial, BSSimpleArray::pBuffer), old);
+        assert_eq!(
+            calls_to(&e, ARRAY_FREE_DOUBLE),
+            vec![vec![partial.addr(), old]]
+        );
+    }
+
+    #[test]
+    fn menu_string_map_compares_keys_without_case() {
+        let mut e = batch4_engine();
+        let (a, b, c) = (
+            cstring(&mut e, "Alpha"),
+            cstring(&mut e, "aLPHA"),
+            cstring(&mut e, "beta"),
+        );
+        let this = Ptr::new(0);
+        assert!(menu_string_map_is_keys_equal(
+            &mut e,
+            this,
+            Ptr::new(a),
+            Ptr::new(b)
+        ));
+        assert!(!menu_string_map_is_keys_equal(
+            &mut e,
+            this,
+            Ptr::new(a),
+            Ptr::new(c)
+        ));
+    }
+
+    #[test]
+    fn menu_string_map_hash_lowers_the_characters() {
+        let mut e = batch4_engine();
+        let map = make_map(&mut e, 7, false);
+        let key = cstring(&mut e, "AbC");
+        let expected = ((97u32 * 33 + 98) * 33 + 99) % 7;
+        assert_eq!(
+            menu_string_map_key_to_hash_index(&mut e, map.cast(), Ptr::new(key)),
+            expected
+        );
+        // The empty key hashes to 0.
+        let empty = cstring(&mut e, "");
+        assert_eq!(
+            menu_string_map_key_to_hash_index(&mut e, map.cast(), Ptr::new(empty)),
+            0
+        );
+    }
+
+    #[test]
+    fn string_hash_keeps_the_case_and_the_sign_of_the_bytes() {
+        let mut e = batch4_engine();
+        let map = make_map(&mut e, 7, false);
+        let key = cstring(&mut e, "Ab");
+        assert_eq!(
+            fn_00a0d440(&mut e, map.cast(), Ptr::new(key)),
+            (65u32 * 33 + 98) % 7
+        );
+        // A byte above 0x7f is added as a negative number.
+        let high = e.mem.alloc(4);
+        e.mem.set_cstr(high, &[0xe9]);
+        assert_eq!(
+            fn_00a0d440(&mut e, map.cast(), Ptr::new(high)),
+            (-23i32 as u32) % 7
+        );
+    }
+
+    #[test]
+    fn integer_hash_and_node_allocation_use_the_map_fields() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let map = make_map(&mut e, 7, false);
+        assert_eq!(fn_00a0d260(&mut e, map.cast(), 100), 100 % 7);
+        let node = fn_00a0d280(&mut e, map.cast());
+        assert_ne!(node, 0);
+        assert_eq!(calls_to(&e, LIST_NEW_NODE), vec![vec![map.addr() + 0xc]]);
+    }
+
+    /// Records the vtable word of the object at each [`MAP_REMOVE_ALL`].
+    fn record_remove_all(e: &mut Engine) -> Rc<RefCell<Vec<u32>>> {
+        let seen = Rc::new(RefCell::new(vec![]));
+        let sink = seen.clone();
+        e.register_double(MAP_REMOVE_ALL, move |e, a| {
+            sink.borrow_mut().push(e.mem.u32(a[0]));
+            Ret::default()
+        });
+        seen
+    }
+
+    #[test]
+    fn base_map_destructors_empty_the_map_and_free_the_buckets() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let seen = record_remove_all(&mut e);
+        let map = make_map(&mut e, 4, false);
+        let table = e.get(map, NiTPointerMap::m_ppkHashTable);
+        fn_00a0d390(&mut e, map.cast());
+        assert_eq!(*seen.borrow(), vec![VTABLE_MAP_BASE]);
+        assert_eq!(calls_to(&e, FREE_BYTES), vec![vec![table]]);
+        // The pointer map level empties the map under its own vtable first.
+        seen.borrow_mut().clear();
+        fn_00a0d3c0(&mut e, map.cast());
+        assert_eq!(*seen.borrow(), vec![VTABLE_POINTER_MAP, VTABLE_MAP_BASE]);
+        assert_eq!(e.mem.u32(map.addr()), VTABLE_MAP_BASE);
+        assert_eq!(calls_to(&e, FREE_BYTES).len(), 2);
+        // The `int` to `int` map's base level.
+        seen.borrow_mut().clear();
+        fn_00a0d790(&mut e, map.cast());
+        assert_eq!(*seen.borrow(), vec![VTABLE_INT_MAP_BASE]);
+        assert_eq!(e.mem.u32(map.addr()), VTABLE_INT_MAP_BASE);
+        assert_eq!(calls_to(&e, FREE_BYTES)[2], vec![table]);
+    }
+
+    #[test]
+    fn string_map_destructor_frees_copied_keys_then_unwinds() {
+        let mut e = batch4_engine();
+        install_map_vtable(&mut e);
+        e.call_log = Some(vec![]);
+        let seen = record_remove_all(&mut e);
+        let map = make_map(&mut e, 4, true);
+        let table = e.get(map, NiTPointerMap::m_ppkHashTable);
+        // Keys are copies (their own blocks), here the numbers 0x100 + n.
+        for key in [0x101, 0x105, 0x102] {
+            fn_00a0c6c0(&mut e, map, key, 0);
+        }
+        ni_t_string_template_map_destructor(&mut e, map.cast());
+        // Bucket 1 (first node first: 0x105 then 0x101), then bucket 2.
+        assert_eq!(
+            calls_to(&e, FREE_BYTES),
+            vec![vec![0x105], vec![0x101], vec![0x102], vec![table]]
+        );
+        assert_eq!(*seen.borrow(), vec![VTABLE_POINTER_MAP, VTABLE_MAP_BASE]);
+        assert_eq!(e.mem.u32(map.addr()), VTABLE_MAP_BASE);
+        // A map that does not copy its keys frees only the buckets.
+        e.call_log = Some(vec![]);
+        let plain = make_map(&mut e, 4, false);
+        let plain_table = e.get(plain, NiTPointerMap::m_ppkHashTable);
+        fn_00a0c6c0(&mut e, plain, 7, 0);
+        ni_t_string_template_map_destructor(&mut e, plain.cast());
+        assert_eq!(calls_to(&e, FREE_BYTES), vec![vec![plain_table]]);
+    }
+
+    #[test]
+    fn map_node_key_release_only_when_keys_are_copied() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let node = zeroed_block(&mut e, 12);
+        e.mem.set_u32(node + 4, 0x7777);
+        let copying = make_map(&mut e, 2, true);
+        let plain = make_map(&mut e, 2, false);
+        fn_00a0d4a0(&mut e, plain.cast(), node);
+        assert!(calls_to(&e, FREE_BYTES).is_empty());
+        fn_00a0d4a0(&mut e, copying.cast(), node);
+        assert_eq!(calls_to(&e, FREE_BYTES), vec![vec![0x7777]]);
+    }
+
+    #[test]
+    fn scalar_deleting_destructors_free_the_object_with_bit_zero() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let seen = record_remove_all(&mut e);
+        // The menu string map writes its own vtable, then unwinds the chain.
+        let map = make_map(&mut e, 4, false);
+        assert_eq!(
+            menu_string_map_scalar_deleting_destructor(&mut e, map.cast(), 0),
+            map.cast()
+        );
+        assert_eq!(*seen.borrow(), vec![VTABLE_POINTER_MAP, VTABLE_MAP_BASE]);
+        assert!(calls_to(&e, MEMORY_DEALLOCATE).is_empty());
+        menu_string_map_scalar_deleting_destructor(&mut e, map.cast(), 1);
+        assert_eq!(
+            calls_to(&e, MEMORY_DEALLOCATE),
+            vec![vec![MEMORY_MANAGER, map.addr()]]
+        );
+        // The string template map and the two pointer map levels.
+        seen.borrow_mut().clear();
+        let second = make_map(&mut e, 4, false);
+        ni_t_string_template_map_scalar_deleting_destructor(&mut e, second.cast(), 1);
+        assert_eq!(*seen.borrow(), vec![VTABLE_POINTER_MAP, VTABLE_MAP_BASE]);
+        assert_eq!(calls_to(&e, MEMORY_DEALLOCATE).len(), 2);
+        seen.borrow_mut().clear();
+        let third = make_map(&mut e, 4, false);
+        ni_t_pointer_map_char_p_int_scalar_deleting_destructor(&mut e, third.cast(), 0);
+        assert_eq!(*seen.borrow(), vec![VTABLE_POINTER_MAP, VTABLE_MAP_BASE]);
+        assert_eq!(calls_to(&e, MEMORY_DEALLOCATE).len(), 2);
+        seen.borrow_mut().clear();
+        let fourth = make_map(&mut e, 4, false);
+        ni_t_map_base_char_p_int_scalar_deleting_destructor(&mut e, fourth.cast(), 1);
+        assert_eq!(*seen.borrow(), vec![VTABLE_MAP_BASE]);
+        assert_eq!(calls_to(&e, MEMORY_DEALLOCATE).len(), 3);
+        seen.borrow_mut().clear();
+        let ints = make_map(&mut e, 4, false);
+        let table = e.get(ints, NiTPointerMap::m_ppkHashTable);
+        ni_t_pointer_map_int_int_scalar_deleting_destructor(&mut e, ints.cast(), 1);
+        assert_eq!(
+            *seen.borrow(),
+            vec![VTABLE_INT_POINTER_MAP, VTABLE_INT_MAP_BASE]
+        );
+        assert_eq!(calls_to(&e, FREE_BYTES).last().unwrap(), &vec![table]);
+        assert_eq!(
+            calls_to(&e, MEMORY_DEALLOCATE).last().unwrap(),
+            &vec![MEMORY_MANAGER, ints.addr()]
+        );
+    }
+
+    #[test]
+    fn map_base_constructors_allocate_and_clear_the_buckets() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        for (build, vtable) in [
+            (
+                fn_00a0d5f0 as fn(&mut Engine, Ptr, u32) -> Ptr,
+                VTABLE_MAP_BASE,
+            ),
+            (fn_00a0d710, VTABLE_INT_MAP_BASE),
+        ] {
+            let map = zeroed_block(&mut e, 0x14);
+            e.mem.set_u32(map + 0xc, 99);
+            assert_eq!(build(&mut e, Ptr::new(map), 5), Ptr::new(map));
+            assert_eq!(e.mem.u32(map), vtable);
+            assert_eq!(e.mem.u32(map + 4), 5);
+            assert_eq!(e.mem.u32(map + 0xc), 0);
+            let table = e.mem.u32(map + 8);
+            assert_ne!(table, 0);
+            assert_eq!(e.mem.bytes(table, 20), vec![0; 20]);
+        }
+        assert_eq!(calls_to(&e, ALLOC_BYTES), vec![vec![20], vec![20]]);
+        let memsets = calls_to(&e, MEMSET);
+        assert_eq!(memsets.len(), 2);
+        assert_eq!(memsets[0][1..], [0, 20]);
+    }
+
+    #[test]
+    fn map_node_release_clears_the_value_and_frees_the_node() {
+        let mut e = batch4_engine();
+        e.call_log = Some(vec![]);
+        let map = make_map(&mut e, 2, false);
+        let node = zeroed_block(&mut e, 12);
+        e.mem.set_u32(node + 8, 0x55);
+        fn_00a0d7c0(&mut e, map.cast(), node);
+        assert_eq!(e.mem.u32(node + 8), 0);
+        assert_eq!(
+            calls_to(&e, MAP_FREE_NODE),
+            vec![vec![map.addr() + 0xc, node]]
+        );
+    }
+
+    #[test]
+    fn all_functions_of_the_fourth_batch_are_registered() {
+        let e = Engine::new();
+        for address in [
+            0x00a0_c090,
+            0x00a0_c0c0,
+            0x00a0_c190,
+            0x00a0_c220,
+            0x00a0_c300,
+            0x00a0_c430,
+            0x00a0_c570,
+            0x00a0_c6c0,
+            0x00a0_c7a0,
+            0x00a0_c7c0,
+            0x00a0_c850,
+            0x00a0_c900,
+            0x00a0_c9f0,
+            0x00a0_ca70,
+            0x00a0_caf0,
+            0x00a0_cb90,
+            0x00a0_cbe0,
+            0x00a0_cd50,
+            0x00a0_cf00,
+            0x00a0_cf60,
+            0x00a0_d000,
+            0x00a0_d0c0,
+            0x00a0_d180,
+            0x00a0_d1b0,
+            0x00a0_d220,
+            0x00a0_d260,
+            0x00a0_d280,
+            0x00a0_d2a0,
+            0x00a0_d390,
+            0x00a0_d3c0,
+            0x00a0_d440,
+            0x00a0_d4a0,
+            0x00a0_d4d0,
+            0x00a0_d520,
+            0x00a0_d5c0,
+            0x00a0_d5f0,
+            0x00a0_d670,
+            0x00a0_d710,
+            0x00a0_d790,
+            0x00a0_d7c0,
+        ] {
+            assert!(e.is_translated(address), "{address:08x}");
+        }
+    }
+
+    #[test]
+    fn all_functions_of_the_third_batch_are_registered() {
+        let e = Engine::new();
+        for address in [
+            0x00a0_a0b0,
+            0x00a0_a130,
+            0x00a0_a220,
+            0x00a0_a270,
+            0x00a0_a300,
+            0x00a0_a410,
+            0x00a0_ab70,
+            0x00a0_abe0,
+            0x00a0_ac80,
+            0x00a0_ad40,
+            0x00a0_ae70,
+            0x00a0_af10,
+            0x00a0_b020,
+            0x00a0_b110,
+            0x00a0_b1f0,
+            0x00a0_b280,
+            0x00a0_b350,
+            0x00a0_b420,
+            0x00a0_b520,
+            0x00a0_b8d0,
+            0x00a0_b950,
+            0x00a0_ba50,
+            0x00a0_bae0,
+            0x00a0_baf0,
+            0x00a0_bb00,
+            0x00a0_bb50,
+            0x00a0_bbd0,
+            0x00a0_bbe0,
+            0x00a0_bbf0,
+            0x00a0_bc80,
+            0x00a0_bdc0,
+            0x00a0_bdd0,
+            0x00a0_bde0,
+            0x00a0_be10,
+            0x00a0_be70,
+            0x00a0_beb0,
+            0x00a0_c000,
+            0x00a0_c020,
+            0x00a0_c060,
+            0x00a0_c080,
+        ] {
+            assert!(e.is_translated(address), "{address:08x}");
+        }
     }
 }
