@@ -92,6 +92,7 @@ use bevy::render::render_resource::{
 use bevy::render::renderer::RenderDevice;
 #[cfg(target_os = "macos")]
 use bevy::render::settings::Backends;
+#[cfg(target_os = "macos")]
 use bevy::render::settings::{RenderCreation, WgpuSettings};
 use bevy::render::view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured};
 use bevy::render::RenderPlugin;
@@ -122,14 +123,20 @@ fn full_brightness_nits() -> f32 {
 /// Use Apple's native graphics API for macOS builds. Bevy's default backend
 /// set is cross-platform; macOS builds select Metal explicitly.
 fn renderer_plugin() -> RenderPlugin {
-    let mut settings = WgpuSettings::default();
     #[cfg(target_os = "macos")]
     {
-        settings.backends = Some(Backends::METAL);
+        let settings = WgpuSettings {
+            backends: Some(Backends::METAL),
+            ..default()
+        };
+        RenderPlugin {
+            render_creation: RenderCreation::Automatic(settings),
+            ..default()
+        }
     }
-    RenderPlugin {
-        render_creation: RenderCreation::Automatic(settings),
-        ..default()
+    #[cfg(not(target_os = "macos"))]
+    {
+        RenderPlugin::default()
     }
 }
 
