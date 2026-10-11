@@ -30,16 +30,149 @@ Map provenance:
 
 | | Functions | Share |
 | --- | ---: | ---: |
-| translated | 9483 | 14.3% |
-| traced | 4467 | 6.7% |
-| platform | 3420 | 5.2% |
-| library | 21916 | 33.1% |
-| open | 26973 | 40.7% |
+| translated | 11225 | 16.9% |
+| traced | 4301 | 6.5% |
+| platform | 3416 | 5.2% |
+| library | 21912 | 33.1% |
+| open | 25405 | 38.3% |
 | **all** | **66259** | |
 
-Game code (functions in subsystems that are neither platform nor library): **40523** functions, of which 13547 (33.4%) are translated or traced.
+Translation totals count markers, not complete behavior. **127** engine functions
+have explicit incomplete markers and remain `partial` in the task queue.
 
-Rust cites 14436 distinct `.text` addresses; 58 of them lie outside every function in the map (mid-instruction data, or code no function covers).
+| Partial engine function | Gap location |
+| --- | --- |
+| `00404760` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:460` |
+| `00404a00` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:566` |
+| `00404a80` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:583` |
+| `00404b90` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:623` |
+| `00404c00` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:633` |
+| `00404de0` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:714` |
+| `00404fd0` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:810` |
+| `00405120` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:869` |
+| `00405250` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:919` |
+| `00405310` | `crates/engine/src/units/fallout_shared_magic/effectitem.rs:941` |
+| `004391c0` | `crates/engine/src/units/fallout_shared/multiboundmarkerdata.rs:188` |
+| `00439410` | `crates/engine/src/units/fallout_shared/multiboundmarkerdata.rs:312` |
+| `00439490` | `crates/engine/src/units/fallout_shared/multiboundmarkerdata.rs:332` |
+| `00483370` | `crates/engine/src/units/fallout_shared/tesform.rs:446` |
+| `00483a50` | `crates/engine/src/units/fallout_shared/tesform.rs:663` |
+| `0055a2f0` | `crates/engine/src/units/fallout_shared/tesobjectrefr.rs:803` |
+| `005e1160` | `crates/engine/src/units/fallout_shared/tesscriptrunmanager.rs:41` |
+| `005e1550` | `crates/engine/src/units/fallout_shared/tesscriptrunmanager.rs:225` |
+| `005e24d0` | `crates/engine/src/units/fallout_shared/tesscriptrunmanager.rs:308` |
+| `005e2730` | `crates/engine/src/units/fallout_shared/tesscriptrunmanager.rs:320` |
+| `005f21c0` | `crates/engine/src/units/fallout_shared/tesanimgroup.rs:108` |
+| `005f22d0` | `crates/engine/src/units/fallout_shared/tesanimgroup.rs:132` |
+| `005f3a20` | `crates/engine/src/units/fallout_shared/tesanimgroup.rs:1045` |
+| `006270f0` | `crates/engine/src/units/fallout_shared_havok/loadedareabound.rs:41` |
+| `00629b40` | `crates/engine/src/units/fallout_shared_havok/loadedareabound.rs:289` |
+| `00629e50` | `crates/engine/src/units/fallout_shared_havok/loadedareabound.rs:390` |
+| `006987d0` | `crates/engine/src/units/fallout_shared_pathfinding/navmesh_util.rs:3385` |
+| `00699b60` | `crates/engine/src/units/fallout_shared_pathfinding/navmesh_util.rs:3620` |
+| `006bd040` | `crates/engine/src/units/fallout_shared_pathfinding/navmesh_util.rs:3260` |
+| `006e9cc0` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:55` |
+| `006e9db0` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:82` |
+| `006e9fc0` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:139` |
+| `006ea510` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:288` |
+| `006ea780` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:370` |
+| `006eac70` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:530` |
+| `006eae40` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:581` |
+| `006eb440` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:822` |
+| `006eb6b0` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:896` |
+| `006eb8c0` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:982` |
+| `006eb9d0` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:1016` |
+| `006ebd30` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:1154` |
+| `006ec000` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:1262` |
+| `006ec130` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:1294` |
+| `006ec4b0` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:1377` |
+| `006ec660` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:1422` |
+| `006ec870` | `crates/engine/src/units/fallout_shared_pathfinding/pathmanager.rs:1492` |
+| `007738c0` | `crates/engine/src/units/fallout_interface/hudmainmenu.rs:2841` |
+| `00774b00` | `crates/engine/src/units/fallout_interface/hudmainmenu.rs:2967` |
+| `00774fd0` | `crates/engine/src/units/fallout_interface/hudmainmenu.rs:3098` |
+| `00775380` | `crates/engine/src/units/fallout_interface/hudmainmenu.rs:3257` |
+| `00775a00` | `crates/engine/src/units/fallout_interface/hudmainmenu.rs:4158` |
+| `00846b60` | `crates/engine/src/units/fallout_misc/run_00846b60.rs:16` |
+| `008643b0` | `crates/engine/src/units/fallout_misc/bgsloadformbuffer.rs:20` |
+| `008659c0` | `crates/engine/src/units/fallout_misc/bgssaveformbuffer.rs:17` |
+| `008c9330` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1407` |
+| `008c9430` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1423` |
+| `008c94e0` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1438` |
+| `008c9ae0` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1590` |
+| `008c9bd0` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1615` |
+| `008c9c70` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1509` |
+| `008c9d70` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1536` |
+| `008c9e40` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1546` |
+| `008c9ef0` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1663` |
+| `008ca070` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1562` |
+| `008ca350` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1571` |
+| `008ca480` | `crates/engine/src/units/fallout_ai/aitaskmanager.rs:1782` |
+| `0092ec40` | `crates/engine/src/units/fallout_ai/mobileobject.rs:331` |
+| `0092f260` | `crates/engine/src/units/fallout_ai/mobileobject.rs:555` |
+| `00930c70` | `crates/engine/src/units/fallout_ai/mobileobject.rs:1215` |
+| `00931710` | `crates/engine/src/units/fallout_ai/mobileobject.rs:1557` |
+| `009319c0` | `crates/engine/src/units/fallout_ai/mobileobject.rs:1659` |
+| `009320e0` | `crates/engine/src/units/fallout_ai/mobileobject.rs:1892` |
+| `00932b70` | `crates/engine/src/units/fallout_ai/mobileobject.rs:2169` |
+| `00933010` | `crates/engine/src/units/fallout_ai/mobileobject.rs:2329` |
+| `00933150` | `crates/engine/src/units/fallout_ai/mobileobject.rs:2364` |
+| `00933270` | `crates/engine/src/units/fallout_ai/mobileobject.rs:2400` |
+| `009339a0` | `crates/engine/src/units/fallout_ai/mobileobject.rs:2649` |
+| `00934250` | `crates/engine/src/units/fallout_ai/mobileobject.rs:2908` |
+| `009344d0` | `crates/engine/src/units/fallout_ai/mobileobject.rs:2990` |
+| `00934fd0` | `crates/engine/src/units/fallout_ai/mobileobject.rs:3262` |
+| `00935480` | `crates/engine/src/units/fallout_ai/mobileobject.rs:3395` |
+| `00935920` | `crates/engine/src/units/fallout_ai/mobileobject.rs:3541` |
+| `00935f60` | `crates/engine/src/units/fallout_ai/mobileobject.rs:3822` |
+| `009abf30` | `crates/engine/src/units/fallout_ai/explosion.rs:1256` |
+| `009ac200` | `crates/engine/src/units/fallout_ai/explosion.rs:1646` |
+| `009ac5a0` | `crates/engine/src/units/fallout_ai/explosion.rs:189` |
+| `009ac9c0` | `crates/engine/src/units/fallout_ai/explosion.rs:302` |
+| `009acd60` | `crates/engine/src/units/fallout_ai/explosion.rs:473` |
+| `009ad670` | `crates/engine/src/units/fallout_ai/explosion.rs:744` |
+| `009ae140` | `crates/engine/src/units/fallout_ai/explosion.rs:1316` |
+| `009ae280` | `crates/engine/src/units/fallout_ai/explosion.rs:1074` |
+| `009ae6e0` | `crates/engine/src/units/fallout_ai/explosion.rs:3289` |
+| `009afaf0` | `crates/engine/src/units/fallout_ai/explosion.rs:1366` |
+| `009b0e00` | `crates/engine/src/units/fallout_ai/explosion.rs:1755` |
+| `009b1090` | `crates/engine/src/units/fallout_ai/explosion.rs:1537` |
+| `009b1810` | `crates/engine/src/units/fallout_ai/explosion.rs:3619` |
+| `009b22c0` | `crates/engine/src/units/fallout_ai/explosion.rs:2237` |
+| `009b2940` | `crates/engine/src/units/fallout_ai/explosion.rs:2443` |
+| `009b2cb0` | `crates/engine/src/units/fallout_ai/explosion.rs:2565` |
+| `009b2d30` | `crates/engine/src/units/fallout_ai/explosion.rs:2579` |
+| `00ad7020` | `crates/engine/src/units/bsaudio/bsaudio.rs:63` |
+| `00ad7150` | `crates/engine/src/units/bsaudio/bsaudio.rs:83` |
+| `00ad7230` | `crates/engine/src/units/bsaudio/bsaudio.rs:101` |
+| `00ad73b0` | `crates/engine/src/units/bsaudio/bsaudio.rs:124` |
+| `00ad7480` | `crates/engine/src/units/bsaudio/bsaudio.rs:141` |
+| `00ad7550` | `crates/engine/src/units/bsaudio/bsaudio.rs:159` |
+| `00ad7620` | `crates/engine/src/units/bsaudio/bsaudio.rs:177` |
+| `00ad7740` | `crates/engine/src/units/bsaudio/bsaudio.rs:207` |
+| `00ad77f0` | `crates/engine/src/units/bsaudio/bsaudio.rs:217` |
+| `00c3db60` | `crates/engine/src/units/bsmain/iomanager.rs:65` |
+| `00c3e1b0` | `crates/engine/src/units/bsmain/iomanager.rs:134` |
+| `00c3e4f0` | `crates/engine/src/units/bsmain/iomanager.rs:349` |
+| `00c3e8b0` | `crates/engine/src/units/bsmain/iomanager.rs:399` |
+| `00c3ec80` | `crates/engine/src/units/bsmain/iomanager.rs:429` |
+| `00c3eeb0` | `crates/engine/src/units/bsmain/iomanager.rs:476` |
+| `00c3f7a0` | `crates/engine/src/units/bsmain/iomanager.rs:693` |
+| `00c3f8c0` | `crates/engine/src/units/bsmain/iomanager.rs:714` |
+| `00c3f960` | `crates/engine/src/units/bsmain/iomanager.rs:729` |
+| `00c3fa70` | `crates/engine/src/units/bsmain/iomanager.rs:757` |
+| `00c3fb50` | `crates/engine/src/units/bsmain/iomanager.rs:777` |
+| `00c3fce0` | `crates/engine/src/units/bsmain/iomanager.rs:836` |
+| `00c3ffb0` | `crates/engine/src/units/bsmain/iomanager.rs:919` |
+| `00c40aa0` | `crates/engine/src/units/bsmain/iomanager.rs:1164` |
+| `00c40b70` | `crates/engine/src/units/bsmain/iomanager.rs:1192` |
+| `00c410b0` | `crates/engine/src/units/bsmain/iomanager.rs:1319` |
+| `00c41330` | `crates/engine/src/units/bsmain/iomanager.rs:1430` |
+| `00c41ac0` | `crates/engine/src/units/bsmain/iomanager.rs:1489` |
+
+Game code (functions in subsystems that are neither platform nor library): **40523** functions, of which 15115 (37.3%) are translated or traced.
+
+Rust cites 16201 distinct `.text` addresses; 59 of them lie outside every function in the map (mid-instruction data, or code no function covers).
 
 Names by tier (see the engine-map README for each tier's evidence):
 
@@ -69,49 +202,49 @@ Largest first. `Named` counts functions with an Xbox PDB (or, in the runtime lib
 
 | Subsystem | Functions | KB | Named | translated | traced | platform | library | open | done |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| compiler: static init/exit | 21335 | 529 | 102 | 1 | 64 | 0 | 21270 | 0 | - |
-| fallout shared | 10470 | 2065 | 3149 | 6166 | 996 | 0 | 0 | 3308 | 68.4% |
-| Havok SDK | 6591 | 1555 | 3499 | 53 | 77 | 0 | 0 | 6461 | 2.0% |
-| fallout/ai | 4849 | 1475 | 1888 | 1876 | 612 | 0 | 0 | 2361 | 51.3% |
-| fallout/interface | 2645 | 991 | 1247 | 503 | 742 | 0 | 0 | 1400 | 47.1% |
-| (unplaced) | 2353 | 470 | 0 | 30 | 390 | 1 | 0 | 1932 | 17.8% |
-| fallout shared/pathfinding | 1788 | 365 | 452 | 315 | 199 | 0 | 0 | 1274 | 28.7% |
-| NiMain | 1619 | 261 | 1134 | 3 | 75 | 0 | 0 | 1541 | 4.8% |
-| BSHavok | 1615 | 316 | 1134 | 22 | 139 | 0 | 0 | 1454 | 10.0% |
-| BSShader | 1549 | 608 | 350 | 0 | 141 | 1408 | 0 | 0 | - |
+| compiler: static init/exit | 21335 | 529 | 102 | 1 | 66 | 0 | 21268 | 0 | - |
+| fallout shared | 10470 | 2065 | 3149 | 6390 | 954 | 0 | 0 | 3126 | 70.1% |
+| Havok SDK | 6591 | 1555 | 3499 | 53 | 78 | 0 | 0 | 6460 | 2.0% |
+| fallout/ai | 4849 | 1475 | 1888 | 2343 | 558 | 0 | 0 | 1948 | 59.8% |
+| fallout/interface | 2645 | 991 | 1247 | 631 | 723 | 0 | 0 | 1291 | 51.2% |
+| (unplaced) | 2353 | 470 | 0 | 41 | 407 | 1 | 0 | 1904 | 19.0% |
+| fallout shared/pathfinding | 1788 | 365 | 452 | 711 | 173 | 0 | 0 | 904 | 49.4% |
+| NiMain | 1619 | 261 | 1134 | 3 | 76 | 0 | 0 | 1540 | 4.9% |
+| BSHavok | 1615 | 316 | 1134 | 59 | 134 | 0 | 0 | 1422 | 12.0% |
+| BSShader | 1549 | 608 | 350 | 0 | 142 | 1407 | 0 | 0 | - |
 | NiAnimation | 1279 | 171 | 903 | 0 | 32 | 0 | 0 | 1247 | 2.5% |
-| fallout/misc | 1045 | 171 | 353 | 311 | 128 | 0 | 0 | 606 | 42.0% |
-| BSMain | 991 | 192 | 478 | 0 | 63 | 0 | 0 | 928 | 6.4% |
-| NiXenonRenderer | 965 | 172 | 298 | 0 | 5 | 960 | 0 | 0 | - |
+| fallout/misc | 1045 | 171 | 353 | 460 | 122 | 0 | 0 | 463 | 55.7% |
+| BSMain | 991 | 192 | 478 | 107 | 64 | 0 | 0 | 820 | 17.3% |
+| NiXenonRenderer | 965 | 172 | 298 | 1 | 5 | 959 | 0 | 0 | - |
 | SpeedTree | 732 | 234 | 151 | 0 | 112 | 620 | 0 | 0 | - |
-| fallout/magic | 705 | 162 | 378 | 7 | 67 | 0 | 0 | 631 | 10.5% |
-| LIBCMT | 682 | 124 | 503 | 0 | 21 | 31 | 630 | 0 | - |
+| fallout/magic | 705 | 162 | 378 | 7 | 69 | 0 | 0 | 629 | 10.8% |
+| LIBCMT | 682 | 124 | 503 | 0 | 23 | 31 | 628 | 0 | - |
 | NiParticle | 649 | 89 | 540 | 0 | 66 | 0 | 0 | 583 | 10.2% |
-| fallout shared/havok | 478 | 60 | 110 | 7 | 73 | 0 | 0 | 398 | 16.7% |
+| fallout shared/havok | 478 | 60 | 110 | 39 | 68 | 0 | 0 | 371 | 22.4% |
 | FaceGen | 474 | 164 | 51 | 0 | 10 | 0 | 0 | 464 | 2.1% |
 | fallout shared/facegen | 433 | 63 | 91 | 0 | 55 | 0 | 0 | 378 | 12.7% |
 | BSMenu | 361 | 136 | 221 | 165 | 39 | 0 | 0 | 157 | 56.5% |
-| BSAudio | 304 | 75 | 141 | 0 | 31 | 0 | 0 | 273 | 10.2% |
-| fallout shared/magic | 296 | 43 | 83 | 5 | 69 | 0 | 0 | 222 | 25.0% |
-| BSSystem | 275 | 54 | 36 | 1 | 36 | 238 | 0 | 0 | - |
+| BSAudio | 304 | 75 | 141 | 40 | 29 | 0 | 0 | 235 | 22.7% |
+| fallout shared/magic | 296 | 43 | 83 | 82 | 45 | 0 | 0 | 169 | 42.9% |
+| BSSystem | 275 | 54 | 36 | 1 | 37 | 237 | 0 | 0 | - |
 | NiCollision | 215 | 104 | 115 | 0 | 4 | 0 | 0 | 211 | 1.9% |
-| fallout shared/distant terrain system | 204 | 37 | 62 | 0 | 26 | 0 | 0 | 178 | 12.7% |
-| BSCore | 197 | 22 | 45 | 1 | 13 | 2 | 0 | 181 | 7.1% |
+| fallout shared/distant terrain system | 204 | 37 | 62 | 1 | 26 | 0 | 0 | 177 | 13.2% |
+| BSCore | 197 | 22 | 45 | 2 | 14 | 2 | 0 | 179 | 8.1% |
 | fallout/audio | 190 | 55 | 49 | 13 | 41 | 0 | 0 | 136 | 28.4% |
-| fallout shared/sky | 164 | 59 | 51 | 2 | 33 | 0 | 0 | 129 | 21.3% |
-| fallout shared/region system | 159 | 26 | 74 | 0 | 20 | 0 | 0 | 139 | 12.6% |
+| fallout shared/sky | 164 | 59 | 51 | 66 | 23 | 0 | 0 | 75 | 54.3% |
+| fallout shared/region system | 159 | 26 | 74 | 2 | 18 | 0 | 0 | 139 | 12.6% |
 | fallout shared/tempeffects | 149 | 48 | 58 | 0 | 22 | 0 | 0 | 127 | 14.8% |
 | fallout shared/speedtree | 115 | 33 | 57 | 1 | 19 | 0 | 0 | 95 | 17.4% |
-| NiSystem | 92 | 7 | 39 | 1 | 4 | 0 | 0 | 87 | 5.4% |
-| BSSystemUtilities | 86 | 5 | 25 | 0 | 1 | 85 | 0 | 0 | - |
-| fallout/dialogue | 74 | 14 | 46 | 0 | 18 | 0 | 0 | 56 | 24.3% |
+| NiSystem | 92 | 7 | 39 | 5 | 3 | 0 | 0 | 84 | 8.7% |
+| BSSystemUtilities | 86 | 5 | 25 | 0 | 2 | 84 | 0 | 0 | - |
+| fallout/dialogue | 74 | 14 | 46 | 0 | 19 | 0 | 0 | 55 | 25.7% |
 | BSMovie | 62 | 9 | 21 | 0 | 9 | 53 | 0 | 0 | - |
 | libcpmt | 12 | 0 | 8 | 0 | 0 | 0 | 12 | 0 | - |
 | d3dx9 | 11 | 0 | 8 | 0 | 0 | 11 | 0 | 0 | - |
 | fallout/debug | 10 | 0 | 7 | 0 | 1 | 0 | 0 | 9 | 10.0% |
 | fallout shared/settings | 9 | 0 | 5 | 0 | 2 | 0 | 0 | 7 | 22.2% |
 | BSDevices | 8 | 1 | 5 | 0 | 5 | 3 | 0 | 0 | - |
-| XAPILIB | 8 | 0 | 6 | 0 | 5 | 3 | 0 | 0 | - |
+| XAPILIB | 8 | 0 | 6 | 1 | 4 | 3 | 0 | 0 | - |
 | zLib | 4 | 10 | 1 | 0 | 0 | 0 | 4 | 0 | - |
 | BSDiag | 3 | 0 | 3 | 0 | 0 | 3 | 0 | 0 | - |
 | RemoteLog | 1 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | - |
@@ -128,9 +261,9 @@ The call tree of `Main::OnIdle` (Xbox PDB, PC `0086e650`), the game's per-frame 
 | Depth | Call sites | Functions | translated | traced | platform | library | open |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0 | 1 | 1 | 1 | 0 | 0 | 0 | 0 |
-| 1 | 143 | 117 | 94 | 31 | 3 | 0 | 15 |
-| 2 | 1575 | 583 | 1000 | 414 | 24 | 4 | 133 |
-| 3 | 4973 | 1303 | 3074 | 1156 | 160 | 26 | 557 |
+| 1 | 143 | 117 | 101 | 30 | 3 | 0 | 9 |
+| 2 | 1575 | 583 | 1137 | 318 | 24 | 4 | 92 |
+| 3 | 4973 | 1303 | 3626 | 875 | 148 | 26 | 298 |
 
 The calls of `Main::OnIdle` itself (depth 1), in order:
 
@@ -160,7 +293,7 @@ The calls of `Main::OnIdle` itself (depth 1), in order:
 | 22 | `00703d50` | `Interface::IsConsoleVisible` | translated |
 | 23 | `008d6f30` | - | translated |
 | 24 | `006da7c0` | `Pathing::ProfilePathing` | translated |
-| 25 | `00851d90` | `BGSSaveLoadManager::UpdateQueuedSaves` | open |
+| 25 | `00851d90` | `BGSSaveLoadManager::UpdateQueuedSaves` | translated |
 | 26 | `0086ef30` | - | translated |
 | 27 | `0086ef90` | - | translated |
 | 28 | `0086f190` | `Main::OnIdle_FixActorBones` | translated |
@@ -172,7 +305,7 @@ The calls of `Main::OnIdle` itself (depth 1), in order:
 | 34 | `00c3dbf0` | `IOManager::UpdateQueue` | open |
 | 35 | `0086efa0` | - | translated |
 | 36 | `0070edf0` | `XUserInterface::XUIIsUp` | traced |
-| 37 | `0078cfc0` | `LoadingMenu::SuspendBackgroundThread` | open |
+| 37 | `0078cfc0` | `LoadingMenu::SuspendBackgroundThread` | translated |
 | 38 | `00705ea0` | `Interface::IsInGameLoadingMenuOpen` | translated |
 | 39 | `00457d70` | `TES::ShowLoadingMenu` | translated |
 | 40 | `0086efe0` | `Main::OnIdle_ScaleLOD` | translated |
@@ -234,19 +367,19 @@ The calls of `Main::OnIdle` itself (depth 1), in order:
 | 96 | `00b5ac90` | `ShadowSceneNode::UpdateOcclusionPlaneVisibility` | platform |
 | 97 | `0045b070` | `TES::UpdateMultiBoundVisibility` | translated |
 | 98 | `0043d4d0` | - | translated |
-| 99 | `008c80e0` | `AILinearTaskThreadManager::SetMainRendering` | open |
+| 99 | `008c80e0` | `AILinearTaskThreadManager::SetMainRendering` | traced |
 | 100 | `00713d80` | - | translated |
-| 101 | `008c78c0` | `AILinearTaskThreadManager::StartThreads` | open |
-| 102 | `008ca070` | `AITaskManager::StartTasksDuringRendering` | traced |
+| 101 | `008c78c0` | `AILinearTaskThreadManager::StartThreads` | traced |
+| 102 | `008ca070` | `AITaskManager::StartTasksDuringRendering` | translated |
 | 103 | `0086fc60` | `Main::OnIdle_UpdateAnimationsAndEffects` | translated |
 | 104 | `0043d4d0` | - | translated |
 | 105 | `0086fd70` | `Main::OnIdle_DoInterfaceIdle` | translated |
 | 106 | `00702360` | `Interface::IsInMenuMode` | translated |
 | 107 | `007058e0` | `Interface::LastMinuteUpdate` | translated |
 | 108 | `0047d0b0` | `PathManager::QInstance` | traced |
-| 109 | `006ebc50` | `PathManager::Update` | traced |
+| 109 | `006ebc50` | `PathManager::Update` | translated |
 | 110 | `00552ba0` | - | translated |
-| 111 | `006a61b0` | `NavMeshRender::Update` | open |
+| 111 | `006a61b0` | `NavMeshRender::Update` | translated |
 | 112 | `0043d4d0` | - | translated |
 | 113 | `00408d60` | - | translated |
 | 114 | `006c0720` | `NavMeshObstacleManager::GetInstance` | translated |
@@ -265,17 +398,26 @@ The calls of `Main::OnIdle` itself (depth 1), in order:
 | 127 | `004dc360` | - | translated |
 | 128 | `0043d4d0` | - | translated |
 | 129 | `00713d80` | - | translated |
-| 130 | `008c7990` | `AILinearTaskThreadManager::WaitForThreads` | open |
-| 131 | `008ca300` | `AITaskManager::WaitForTasksDuringRendering` | traced |
+| 130 | `008c7990` | `AILinearTaskThreadManager::WaitForThreads` | traced |
+| 131 | `008ca300` | `AITaskManager::WaitForTasksDuringRendering` | translated |
 | 132 | `0086f6a0` | `Main::UpdateNonRenderSafeAITasks` | translated |
 | 133 | `00870610` | `Main::OnIdle_PostThreadsProcess` | translated |
 | 134 | `0070ed10` | - | traced |
 | 135 | `0070ed20` | - | traced |
 | 136 | `00703e10` | `Interface::OpenConsole` | translated |
-| 137 | `00a29680` | - | traced |
+| 137 | `00a29680` | - | translated |
 | 138 | `005ae270` | `Script::ClearOptimizations` | open |
 | 139 | `005a9d60` | `ScriptLocals::ClearOptimizations` | translated |
 | 140 | `0084d030` | - | traced |
 | 141 | `00702360` | `Interface::IsInMenuMode` | translated |
 | 142 | `00950090` | - | translated |
 | 143 | `00aa7290` | - | traced |
+
+### Frame system wiring
+
+Every depth-1 and depth-2 call is listed in [frame_wiring.tsv](../research/engine-map/frame_wiring.tsv), generated and checked by `world::frame::coverage`. Partial means some behavior exists, with its placement or missing work stated in the row; it does not mean the function is fully executed in play. Queries and unsupported calls stay open. Translation counts above are separate.
+
+| Depth | system | partial | open |
+| ---: | ---: | ---: | ---: |
+| 1 | 1 | 11 | 131 |
+| 2 | 0 | 18 | 1557 |

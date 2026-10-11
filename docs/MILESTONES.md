@@ -33,6 +33,436 @@ reading do not establish them.
 
 ## Active work: M1
 
+Resumed continuous translation on 2026-10-11 after the usage reset.
+#134 through #138 merged after both CI checks; rolling #139 awaits checks.
+The 34-body effect-item batch passed all checks and collection (`ddeecbd`);
+a fresh worker immediately began I/O management. HUD also passed collection
+(`82e56ee` after rebase, 14,177 combined engine tests) and restarted. Movement
+also collected (`4cc1b3f`, 14,189 combined tests) and restarted on BSAudio.
+#138 merged six script helpers and eighteen regressions. I/O collected as
+`75bd3b5` with 14,239 combined engine tests passing, and a fresh worker
+immediately continued. HUD's intermediate focused check passed 93 tests;
+its forty-body batch is now source-ready. I/O's remaining twenty-four bodies
+are under compiler validation. Audio collected as `4c16784` with 14,279 combined
+engine tests passing; its fresh worker immediately began the remaining
+twenty-two bodies, now source-ready. Root #140 publishes two script
+accessors: all 16,062 workspace tests, strict lint, formatting and
+release/debug builds pass, alongside forty-one native cases. The original
+compiled-script probe now passes both real event handlers. The saved-item
+probe stops at owner reference predicate `008d0360`; its rewrite assertion
+has not run. Root drafts that predicate and the following false predicate
+`0047c850`, with twelve native cases passing; Rust checks are queued.
+The evaluator implements
+BEGIN/action-list paths only; other modes stay explicitly unsupported.
+The user freed the idle build caches, restoring about 25 GB at verification.
+Build 40 remains current; whole-save and playable inventory integration
+are still pending. Next action: continue HUD/audio checks and
+close the probe dependencies. [HANDOFF.md](HANDOFF.md) tracks ownership.
+
+Script-loading dependency #135 is published at `86d19a0`: 15,876 workspace
+tests including doctests, strict lint, formatting and release/debug builds
+pass. It adds five helpers and ten regressions, with ten matching native
+cases; interpreter/script-form integration remains open. The effect batch
+now validates, followed by the ready HUD and movement drafts. #134/#135
+await both CI checks. Next action: collect those validated slots and continue
+the real script-loading path. Build 40 remains current without a new ETA.
+
+#132 and #133 merged after both CI checks; rolling #134 now publishes
+the next actor dialogue/HUD collection with fresh CI. Collection passes
+14,126 combined engine tests, strict lint and formatting. A fresh movement
+worker immediately continues; root's five script dependencies pass focused
+tests and now run full checks. Six native cases establish the next parser's
+signed fields and reference-prefix behavior, but it is still untranslated.
+Build 40 remains current. Next action: publish the validated script helpers,
+then collect the queued effect/HUD batches and continue script loading.
+
+HUD collection `0eb6b3c` passes 14,100 combined engine tests, doctest,
+strict lint and formatting; its fresh worker has drafted the remaining
+item prompts, details and layout, now under review. Movement validates its
+next twenty routines. Root's five script-loading dependencies have ten
+passing native cases and ten prepared Rust regressions, with Rust checks
+queued after movement collection. Both #132 and #133 pass core CI and
+await viewer CI. Build 40 remains current; no next-play-build date is
+confirmed. Next action: collect movement, validate script dependencies,
+then validate the effect and HUD batches.
+
+Rolling #131 merged `7cda9bf` after both CI checks; #133 publishes the next
+movement/effect batch with fresh CI. The effect collection passed 14,095
+combined engine tests, strict lint and formatting, and its fresh worker
+immediately continued. Root's script-loading follow-on has five reviewed
+dependencies and six matching native constructor cases, with Rust checks
+queued behind HUD and movement. Next action: collect those slots, validate
+the script dependencies, then continue native action-list loading.
+
+Persistence dependency #132 is published at `6513c26`; all 15,781 workspace
+tests, strict lint, formatting and release/debug builds pass. The normal
+engine registry preserves 10,201 original count/health-only item payloads
+from eight saves byte-for-byte, including eighteen multi-stack entries;
+three full-record decode failures remain excluded. Whole-save and playable
+inventory acceptance are still pending. Build 40 remains current without
+a confirmed next-build date. Next action: validate script-local construction
+and supply script forms and mappings for the broader inventory probe.
+
+Movement collection `757af70` passes 14,051 combined engine tests and
+strict checks; a fresh worker starts its remaining normal bodies. Reader
+#130 merged after both CI checks; rolling #131 has fresh CI after rebasing.
+The draft inventory probe preserves 10,201 original count/condition item
+payloads from eight saves byte-for-byte, including eighteen multi-stack
+entries. Three records that fail full decoding are explicitly excluded.
+Final engine validation runs now; no whole-save round trip or playable
+consumer is established. Next action: finish these checks and publish the
+three dependency helpers, then investigate script-extra loading.
+
+HUD collection `5c12df2` passes combined engine tests, strict lint and
+formatting, including its audio correction. A fresh worker continues the
+next large HUD function. The accumulated movement/HUD/explosion batch can
+now be published; movement save/load validation runs next. Reader #130
+core CI passes and viewer CI is pending. Build 40 remains current: the
+inventory payload work still has no playable consumer or release date.
+Next action: publish the rolling batch and validate the form-map helpers.
+
+Explosion collection `5380adf` passes 13,990 combined engine tests and
+strict lint/formatting; a fresh worker starts effect items. HUD now
+validates its audio correction before the next rolling publication.
+The separately compiled form-map draft enables a byte-identical two-stack
+payload load/write probe; formal engine validation remains pending.
+Next action: collect HUD and publish the accumulated rolling batch.
+
+Rolling #129 merged `1389dab` after both CI checks. Later movement/HUD
+collections remain local pending a reviewed HUD audio-call correction.
+Reader #130 passes 15,771 workspace tests, strict lint, formatting and
+release/debug builds; its two-stack buffered read consumes all 41 bytes.
+Full ItemChange loading reaches missing form-map allocator `0043a010`
+before loading. That allocator and its refill are drafted, uncompiled.
+Explosion now validates; movement and the next HUD batch follow. Build 40
+remains current. Next action: collect these slots and validate form-map
+allocation to unblock the full payload load/write probe.
+
+HUD collection `74cd13b` passes 13,970 combined engine tests, doctest,
+strict lint and formatting. A fresh worker immediately continues its next
+normal routines. Inventory writer #128 merged `14c77da` after both CI
+checks; the reader is rebased and validating, with full ItemChange payload
+round-trip probes next. Movement and explosion drafts await their compiler
+turns. Rolling #129 awaits viewer CI. Build 40 remains current; inventory
+stack preservation has no playable consumer or next-build date yet.
+Next action: finish reader checks and exercise the two-stack round trip.
+
+Rolling #127 passed both CI checks and merged `72003ab`; #129 publishes
+explosion effect processing at `12f6153` with fresh CI. Movement continuation
+collected as `c757035`: 13,925 combined engine tests, doctest, strict lint
+and formatting pass. Six larger bodies now have normal paths implemented;
+four compiler exception-cleanup partials remain explicit. A fresh worker
+immediately continues at `00931880`. HUD now validates; the inventory reader
+and byte-identical payload round-trip probe follow. Build 40 remains current.
+Next action: collect HUD, then validate the inventory reader.
+
+Rolling #126 merged `97e7572` after both CI checks; #127 publishes the
+collected movement helpers and animation loader with fresh CI. Inventory
+follow-on #128 (`4b68ea0`) passes 15,691 core tests, strict lint, formatting and
+release/debug builds. Its real-registry probe preserves two separate
+count/condition stacks in a 41-byte payload. Native loading and a world
+consumer remain unfinished. Build 40 remains current.
+Save-buffer #125 merged `68387b4` after both CI checks. Eleven reader
+helpers are peer-reviewed with ten matching native vectors, uncompiled.
+Next action: validate loading and the two-stack native reader probe;
+Explosion effects collected as `b9871e9`: 13,885 combined engine tests,
+strict lint and formatting pass; compiler SEH cleanup stays partial.
+A fresh worker immediately started the next explosion body. Movement now
+validates, then HUD and the inventory reader.
+
+Animation loader collected as `6c569b7`: 13,879 combined engine tests,
+strict lint and formatting pass. Three compiler-cleanup partials remain
+explicit; a fresh worker immediately started HUDMainMenu. Root now validates
+the inventory payload dependencies and two-stack probe. Build 40 remains
+current, without a new viewer consumer. Next action: finish this bounded
+writer check, then collect the reviewed explosion effects batch.
+
+MobileObject collected as `8f92810`: 34 complete functions and 13,864
+combined engine tests, strict lint and formatting pass. A fresh worker
+immediately tackles its larger remaining bodies. Animation loader now
+validates; root's two-stack inventory probe follows. Rolling #126 and
+save-buffer #125 await CI. Build 40 remains current; these translations
+have no viewer consumer yet, so no next-build date is established.
+Next action: collect the loader and validate the inventory payload probe.
+
+Rolling #124 passed both checks and merged `c6ac7eb`. Rolling #126 now
+publishes animation parsing and Init3D; save-buffer #125 is rebased with
+fresh CI. MobileObject is validating; the animation loader is queued.
+Root inventory writing has 16 helpers/15 tests prepared and a two-stack
+probe ready, uncompiled. Next action: collect the queued slot batches and
+validate that probe; Build 40 remains current.
+
+Init3D collected as `407caf3`: 13,824 combined engine tests, strict lint
+and formatting pass; SEH cleanup remains explicit. Fresh a04 immediately
+starts the next explosion routine while a01 validates MobileObject.
+Root's inventory form-ID/map follow-on is prepared with seven native
+vectors and static review, but has not compiled. Next action: collect
+MobileObject and the animation loader, then validate the inventory probe.
+
+Save-buffer #125 is open at `7c58130`: all 15,641 core tests, strict lint,
+formatting and release/debug builds pass. The real-registry count/health
+writer produces a payload that the FOS decoder reads back correctly; a
+full save round trip and viewer integration remain open. a04 Init3D now
+validates; a01 and the reviewed animation loader wait for the compiler.
+Build 40 remains current. Next action: collect these batches and trace
+per-stack state ownership before adding a world consumer.
+
+Reference #122 and rolling #123 passed both checks and merged as `6bea9a1`
+and `8b5eebe`. Loaded-area bounds are published in rolling #124 with fresh
+CI. Animation collection `6dbf98f` passes 13,820 combined engine tests,
+strict lint and formatting; 37 functions are complete, two retain SEH
+partials and `005f3a20` remains open. A fresh worker started that routine.
+Root now validates the buffered count/health writer and payload-decoder
+probe. Build 40 remains the play version. Next action: finish that bounded
+probe while the other slots continue, then collect the prepared Init3D batch.
+
+Loaded-area bounds collected as `86886d9`: 29 complete functions and three
+explicit exception-cleanup partials; 13,790 combined engine tests, strict
+lint and formatting pass. A fresh MobileObject worker started immediately.
+Animation-group validation now has the compiler. Rolling #123 is open at
+`f963f09`; #122 has passed core CI and awaits viewer CI. Root save-buffer
+writing/growth/insertion code and tests are prepared, with six native
+constructor cases, but uncompiled. Build 40 remains published; no new
+viewer behavior or next-build date is established. Next action: finish
+animation validation and the save-buffer probe; ship each passing PR.
+
+Rolling #121 merged as `eda98da`. Explosion Initialize collection
+`e4de812` passes 13,756 combined engine tests, strict lint and formatting;
+exception cleanup remains partial. Its fresh worker starts `009ad670`.
+Reference #122 is rebased with fresh CI; the follow-on has six native
+save-buffer constructor cases, but its Rust code is not compiled yet.
+Next action: publish multibound/Initialize and collect loaded-area bounds.
+
+Reference adapter #122 is open at `0653079` after 15,587 core tests,
+strict workspace lint, formatting, release/debug builds and the real
+registry probe pass. The handle keeps reference lists isolated and aliases
+the same object when copied. No viewer consumer or save round trip exists.
+Next action: collect the prepared Explosion batch and trace buffered
+extra-data saving while #121/#122 await their current-head CI gates.
+
+Multibound collection `20c6123` passes 13,751 combined engine tests,
+strict lint and formatting. Three exception-cleanup partials remain
+explicit; eight generated cases also match the native executable. Its
+fresh slot now translates TESAnimGroup. Rolling #120 merged as `3a92d0a`;
+#121 has fresh CI. Next action: finish reference-adapter workspace checks
+and the real-registry probe, then validate the prepared Explosion batch.
+
+Navigation collection `a902f84` passes 13,724 combined engine tests, lint
+and formatting, including the immediate-vtable correction. Its three
+exception-cleanup partials remain explicit; the fresh slot advances to
+loaded-area bounds. Multibound validation is running, with eight generated
+native cases available as regression expectations. Next action: collect
+multibound, then validate the reference adapter and bootstrap probe.
+
+Explosion collection `d781c3b` passes 13,722 combined engine tests, lint
+and formatting. Both added normal paths retain exception-cleanup partials;
+the fresh agent owns the five untouched bodies. Navigation now validates.
+Multibound review corrections are prepared but uncompiled. Rolling #120
+passes core CI and awaits viewer CI. Next action: collect navigation and
+finish the reference adapter after the queued multibound checks.
+
+Reference bootstrap now passes through the real translated registry:
+construction, embedded list access, count/health changes and count removal
+preserving health. Dependencies pass 13,716 engine tests, lint, formatting
+and debug build. An existing-reference handle and isolation test are
+prepared but uncompiled. Explosion's focused suite passes 98 tests;
+full validation is active. Next action: collect Explosion and validate the
+reference adapter after the queued slot checks.
+
+Resumed after the usage reset. Rolling #119 passed both checks and merged
+as `951c0c7`; the checked pathfinding follow-on is being published next.
+The allocator test failure was an incorrect backing-size expectation:
+the platform heap rounds to eight bytes. The revised test checks both
+requested and backing sizes; validation is running. Next action: finish
+the reference bootstrap probe and resume serialized slot validation.
+
+At the saved 98% usage stop, pathfinding collection `ded5afd` passes
+13,717 combined engine tests, lint and formatting. Its 17 remaining
+exception-cleanup partials stay recorded; a03 advanced to b0060 and
+saved research without source edits. a01/a04 have uncompiled follow-ons
+preserved in their worktrees. Rolling #119 core passes, viewer pending.
+Next action: ship #119 after both checks pass, then resume the recorded
+dependency and slot validation queue in HANDOFF.md.
+
+Health adapter #118 passed both checks and merged as `a0ee61d` on
+2026-10-10 at 22:32 local time. Rolling #119 is rebased onto that main
+and includes the checked navigation continuation; fresh CI gates it.
+Next action: finish pathfinding collection and validate allocator startup.
+
+Navigation collection `d24c517` passes 13,698 combined engine tests,
+lint and formatting. Two additional normal paths retain explicit
+exception-cleanup partials; the last edge-repair body remains unregistered.
+A fresh worker researches it while pathfinding validates. Rolling #119
+and health #118 have passed core CI and await viewer CI.
+Next action: collect pathfinding and validate the lead allocator helpers.
+
+Explosion's owner/weapon callback-reload correction and nine further
+functions pass 13,695 combined engine tests, lint and formatting.
+Collection `a2fe87a` removes the publishing hold on the next rolling
+batch. A fresh worker owns its 18 remaining entries (eleven explicit
+exception-cleanup partials and seven untranslated). Navigation validates
+next. These translations do not yet establish newly playable behavior.
+Next action: publish the checked batch and collect the next finished slot.
+
+Count adapter #117 passed both checks and merged as `cbca26e` on
+2026-10-10 local time. Health #118 is rebased onto main with unchanged
+implementation and fresh CI. Lead form dependencies pass 124 focused and
+13,466 engine tests, lint and formatting; the reference probe reaches the
+uninitialized allocator. Its traced startup helpers are prepared. Next
+action: validate those dependencies and the pending explosion corrections.
+
+Rolling #116 passed both checks and merged as `c23f744` on 2026-10-10
+local time. Pathfinding's reviewed corrections and 35 further functions
+pass 13,680 combined engine tests, lint and formatting; a fresh agent
+owns its next task. The next rolling batch remains local until explosion's
+owner-reload correction passes. Lead reference-constructor helpers and
+form callback-reload regressions are in focused validation. Next action:
+collect the checked explosion correction and open the next rolling PR.
+
+Continuous update, 2026-10-10: navigation's relocation fix and three more
+functions pass 13,638 combined engine tests, lint and formatting. A fresh
+agent owns its three remaining geometry functions. Pathfinding validates
+its review corrections next; explosion's owner reload fix is prepared
+while its fresh agent continues the queued functions.
+Count #117 and health #118 pass local checks and await CI; the health
+probe checks 20 health and 14 count payloads with the save unchanged.
+Reference-constructor dependency work is prepared but uncompiled.
+Next action: collect the review fixes and ship remote #116 after CI.
+
+Phase 2 list adapter #115 passed both checks and merged as `94165e8` on
+2026-10-10 local time. Count follow-on #117 now targets main with fresh CI;
+health adaptation is in local validation. Pathfinding collection adds 35
+complete functions and five explicit exception-cleanup partials; 13,599
+combined engine tests, lint and formatting pass. A fresh agent is on its
+next task. Next action: finish health validation and ship remote #116
+after its viewer check passes; the local navigation relocation fix still
+gates publishing the subsequent batch.
+
+Navigation collection, 2026-10-10: 36 further functions pass 13,577
+combined engine tests, lint and formatting. PC review found a buffer
+relocation case in `0069b030` that still needs a correction and regression;
+this batch remains local until fixed. A fresh navigation agent is working
+on that correction and the six remaining queue entries. Pathfinding now
+has the serialized compiler window. Next action: collect checked work and
+ship the existing remote #116 when both checks pass.
+
+Review corrections collected, 2026-10-10: a04 adds 24 further functions
+and fixes the reviewed point-copy/accessor ABIs and x87 NaN stores;
+13,541 combined engine tests, lint and formatting pass. The ledger now
+keeps 12 documented AI partials in the task queue, with five tool tests
+passing. Fresh a04 research continues while a01 validates in the single
+compile window. Next action: ship updated #116 after both CI checks pass.
+
+Rolling PR #114 passed both CI checks and merged as `89e1a0b` on
+2026-10-10 local time. #116 now holds the subsequent navigation/explosion
+batch, with review corrections required before merge. #115 is rebased
+onto new main with unchanged adapter source and fresh CI. Next action:
+collect corrected slots and finish the count-payload follow-on checks.
+
+Explosion collection, 2026-10-10: 24 functions added, 16 skipped;
+13,511 combined engine tests plus formatting/lint pass. Native review
+found a return-value/NaN copy correction and accessor-description issues;
+the next a04 task owns those fixes and missing branch tests before this
+batch merges. Other slots continue. Next action: collect the corrections
+and ship rolling PR #114 when its viewer check passes (it excludes this
+new explosion batch).
+
+Continuous batch update, 2026-10-10: build 40 from merged #113 passed
+Doc Mitchell (63 s), Back in the Saddle (410 s) and Ghost Town Gunfight
+(339 s) scripted acceptance routes. Navigation continuation adds 36
+complete translations with four explicit skips; 13,487 combined engine
+tests, lint and formatting pass. Phase 2 list adapter PR #115 passed local
+core checks and awaits CI. Next action: continue the prepared translation
+slots and validate the count-payload dependency (see ENGINE_STATE.md).
+
+Engine-port takeover, 2026-10-10 evening: rolling translation PR #109
+passed both CI checks and merged as `b995218`; these translations are
+unit-tested engine code, not new playable behavior. Interrupted a01/a04
+work resumed; Phase 1 PR 7 remains unfinished in p2. Current owners and
+resume instructions: [HANDOFF.md](HANDOFF.md). Next action: finish and
+verify the interface/render stage while collecting checked translations.
+
+First resumed translation batch: a01's 40 navigation spatial helpers
+collected as `74f7fb1`; formatting, lint and 13,281 engine tests pass.
+Five generated point-product cases (`00698620`) also match native
+`nv-call` output. These functions are not yet wired into play. Evidence
+and queued slots: [HANDOFF.md](HANDOFF.md). Next action: finish the
+interface/render acceptance and collect the remaining checked slots.
+
+2026-10-10, Phase 1 PR 7: interface/render call and gate model, explicit
+depth-2 wiring inventory, and post-swap audio/process-list scheduling
+implemented. Both workspaces passed tests (core 15,108; viewer release
+182), fmt, clippy with warnings denied and release builds; all three
+acceptance routes passed. Evidence and open work:
+[FRAME_SKELETON.md](FRAME_SKELETON.md), "PR 7 result". Original-game
+comparison remains pending. Next action: merge after CI and review,
+publish the play build, then begin Phase 2 (HANDOFF.md). Buffered
+player input remains an interface follow-up before moving menu idle.
+Interface/render PR #113 now passes local core/viewer tests, lint, release
+builds and all three acceptance routes. CI and merge remain pending;
+play build remains 39. Exact menu-input placement and renderer work remain
+open, and original-game comparison is not done. Evidence and owners:
+[HANDOFF.md](HANDOFF.md). Next action: merge after both required checks,
+then publish play build 40 from merged main.
+
+Navigation-render batch collected as `6855902`: 36 preserved translations
+now covered by 31 focused tests, including nonempty triangle geometry and
+512 native style vectors. Combined lead checks passed formatting, lint
+and 13,312 engine tests. These functions remain outside live gameplay.
+Next action remains interface/render CI and play build publication.
+
+Exterior-cell loader batch collected as `d68664d`: 38 translations and
+43 focused tests; combined formatting, lint and 13,355 engine tests pass.
+Rolling #112 merged as `d854fbe`; #114 holds later batches. Interface/render
+#113 is rebased onto that main and rerunning CI. Phase 2 list-adapter
+preparation is isolated and not yet validated or used by the viewer.
+Next action: merge #113 after both checks and publish play build 40.
+
+Havok-world batch collected as `195ffaa`: 40 complete functions and
+42 focused tests; combined formatting, lint and 13,397 engine tests pass.
+The isolated Phase 2 list probe now passes with installed executable data
+and the real registry. No world consumer or save round trip is established.
+Next action remains interface/render CI and play build 40 publication.
+
+Phase 1 PR 7 merged as `f917219` after both CI checks passed. Build 40
+is building from main. AI task-manager batch collected as `136fa2a`:
+28 complete and 12 partial functions (five behavior gaps, seven cleanup
+gaps), with 13,438 combined engine tests passing before the PR 7 rebase.
+The list adapter passed its initial full checks and is rebased for another
+combined check. Next action: verify and publish play build 40.
+
+Phase 2 health payload, 2026-10-10: native vectors exposed and now verify
+the constructor's signaling-NaN correction. The read-only reference-save
+probe passes all 20 health and 14 count payloads, with the source hash
+unchanged. All 15,315 core tests, formatting, lint and release build pass.
+No world consumer or save writer is added. Next action: merge the count
+dependency, then gate the health follow-on on CI; see ENGINE_STATE.md.
+
+Phase 2 count dependency, 2026-10-10: list adapter #115 is merged.
+The missing base destructor now matches a generated native sentinel case.
+Count creation, signed updates and removal pass through the real registry.
+A read-only Doc Mitchell save probe checked 14 count payloads across 3,319
+extra lists, with its source hash unchanged. Local core checks and release
+validation pass, including the unchanged count source in the health
+follow-on. This is count-only adaptation, not a save round trip. Next
+action: merge after CI; details in [ENGINE_STATE.md](ENGINE_STATE.md).
+
+2026-10-10, first Phase 2 list boundary: an explicit engine-owned list
+handle delegates to translated PC functions, with four missing helpers
+closed. Generated integration tests and an installed-executable probe
+pass construction, insertion, cached lookup and detach. Local core checks
+passed 15,154 tests, lint, formatting and release build after rebasing
+onto merged PR #113. No world consumer
+or save round trip is established. Evidence, ownership and the next count
+destructor dependency: [ENGINE_STATE.md](ENGINE_STATE.md). Next action:
+merge after CI, then close that dependency for a count adapter.
+
+Build 40 published from merged main `f917219` at 19:47 local. Release
+build and the fresh Doc Mitchell route passed (63 s); startup loaded
+417 objects and 406 meshes in 3.8 s. App executable hash matches the
+built source binary, and WHATS-NEW uses LF. The two longer routes are
+rerunning. Next action: finish those checks and the Phase 2 adapter PR.
+
 Next session: start with [HANDOFF.md](HANDOFF.md). Open tasks:
 [TASKS.md](TASKS.md); contributor rules: [CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -1031,6 +1461,57 @@ The maintainer set a one-week fast track (about 1.9 billion tokens).
   `docs/FRAME_SKELETON.md`, `docs/LEDGER.md` (generated).
 - Next action: PR 6 (the AI task stage: `Sky::Update` and the weather chain
   move there with `TES::UpdateCellAnimations`).
+
+### Phase 1 PR 6: the AI task stage (`claude/phase1-ai-stage`, 2026-10-10)
+
+- Evidence: `crates/world/src/frame/ai_stage.rs`
+  (`world::frame::ai_stage`), all from the disassembly: the AI linear task
+  thread functions as their work calls and handshakes (the combined
+  `008c7bd0`, made when `iNumHWThreads` ≤ 2, `008c7307`; the pair
+  `008c7da0`/`008c7f50` otherwise, so on most PCs; events `008c79e0`/
+  `008c7a70`, the render wait `008c80d0`), `schedule()` putting them in one
+  order the exe can run (each thread's order and every wait kept); and the
+  work calls with gates of `Main::OnIdle_UpdateAnimationsAndEffects`
+  (`0086fc60`: nothing in menu mode unless in dialogue or fader 1, nor with
+  the world frozen), `TES::UpdateCellAnimations` (`00453550`: wind, the
+  Havok step between `LockHavokUpdateMT` 1/0, `Sky::Update` only with one
+  thread), `TES::UpdateCellMainThread` (`004537c0`: `Sky::Update`),
+  `GridCellArray::UpdateManagedNodes` (`004ba9a0`), the two
+  `bhkWorld::Update` sites (`00554780`, `00551890`),
+  `ProcessLists::RunActorUpdates` (`0096c7c0`: slot +0x2f8 per processed
+  actor) and `Actor::Update` (`00888b50`, 19 sub-steps). Corrections: with
+  AI threads the sky is the main thread's (`004537c0`), and the offstage
+  moves are stage 7's (`Main::PostSwapProcess` → `0086f890` → `0096d810`).
+  FRAME_SKELETON.md "PR 6 result".
+- Viewer: `frame_order::AiSet` (thread calls inside `StartThreads`' and
+  `WaitForThreads`' steps, sub-steps nested, gates on `ThisAi`). Under
+  gates: `move_pieces` (`TES::RunAnimations`), the projectiles
+  (`resolve_shots`, `fly_bolts`, `fly_thrown`, the movement pass), the
+  Havok step (`clutter::simulate`, contact sounds), the weather's step
+  (`Sky::Update`). At their calls outside the gates, with reasons: the HUD
+  and Pip-Boy (interface idle), the posing, idles, head tracking, clothes
+  and faces (animation pass), `move_actors` (movement). `move_offstage`
+  moved to stage 7. Doors and movies stay in stage 4.
+- Tests: `ai_stage` 14; engine: `0086fc60` (15 states), `00453550` (12),
+  `004537c0`, `Actor::Update` (5) follow the model; viewer: AI sets in the
+  exe's order for 2 and 8 threads, menu mode stops the gated sets,
+  dialogue keeps the sky. Acceptance: doc, vcg02 and vms16 pass (57 s,
+  399 s, 339 s; no panic).
+- Behaviour: loose objects, bolts, thrown things, people's shots and
+  models' own animations hold still in menu mode (and the dialogue menu);
+  the weather's step waits in menus other than dialogue; people are posed
+  before they move (a gait change shows a frame later); offstage people
+  move after the render work.
+- Files: `crates/world/src/frame/ai_stage.rs` (new),
+  `crates/world/src/frame.rs`, engine tests in `fallout_misc/main.rs`,
+  `fallout_shared/tes.rs`, `fallout_ai/actor_p2.rs`,
+  `viewer/src/frame_order.rs`, `viewer/src/main.rs` and the plugins
+  `bolts`, `clutter`, `companions`, `explosives`, `hiteffects`, `hud`,
+  `impact_fx`, `local_map`, `pipboy`, `weapon_fx`; `docs/FRAME_SKELETON.md`,
+  `docs/LEDGER.md` (generated).
+- Next action: PR 7 (the interface and render stage: `Interface::Idle`,
+  `LastMinuteUpdate`, `Main::Swap`'s pre/post work, and
+  `Main::OnIdle_UpdateProcessLists`' calls).
 
 ## Deferred
 
