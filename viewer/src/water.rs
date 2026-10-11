@@ -349,7 +349,10 @@ impl Plugin for WaterPlugin {
                 stream_distant_water,
                 light_water,
             )
-                .chain(),
+                .chain()
+                // Not in the frame's stages: the GPU's water around the camera
+                // (`crate::frame_order::ViewerSet::AfterFrame`).
+                .in_set(crate::frame_order::ViewerSet::AfterFrame),
         )
         .add_systems(
             PostUpdate,

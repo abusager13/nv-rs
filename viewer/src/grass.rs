@@ -113,7 +113,14 @@ impl Plugin for GrassPlugin {
         load_internal_asset!(app, SHADER, "grass.wgsl", Shader::from_wgsl);
         app.add_plugins(MaterialPlugin::<GrassMaterial>::default())
             .init_resource::<GrassField>()
-            .add_systems(Update, (stream_grass, light_grass).chain());
+            .add_systems(
+                Update,
+                // Not in the frame's stages: the GPU's copy of the grass around
+                // the camera (`crate::frame_order::ViewerSet::AfterFrame`).
+                (stream_grass, light_grass)
+                    .chain()
+                    .in_set(crate::frame_order::ViewerSet::AfterFrame),
+            );
     }
 }
 

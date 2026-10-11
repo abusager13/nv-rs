@@ -155,10 +155,22 @@ impl Plugin for WeaponEffectsPlugin {
                 Update,
                 (start_effects, update_flashes, attenuate)
                     .chain()
-                    .after(crate::combat::player_attack)
-                    .after(crate::combat::object_shots)
+                    // In the AI work (stage 6, `crate::frame_order`): after the
+                    // player's stage (attack, objects' shots, the view model) by
+                    // the stages' order. Kept: after people's moves. Placed for
+                    // order only, after the actors' movement pass
+                    // (`crate::frame_order::AiSet`), outside its gate (the
+                    // flashes' and firing sounds' exact place isn't traced).
                     .after(crate::ai::move_actors)
-                    .after(crate::viewmodel::update_view_model),
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    ))
+                    .after(crate::frame_order::AiSet::Call(
+                        crate::frame_order::ACTORS_MOVEMENT,
+                    ))
+                    .before(crate::frame_order::AiSet::next(
+                        crate::frame_order::ACTORS_MOVEMENT,
+                    )),
             )
             .add_systems(
                 PostUpdate,

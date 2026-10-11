@@ -59,9 +59,26 @@
 //! decompiler drops two blocks (`0086ebd7`, `0086ec00`) that test a local
 //! the function sets to 0 just before (`0086ebbb`), so they are never taken.
 //!
-//! Not changed here: how the viewer schedules its systems (Phase 1 PR 3).
+//! The viewer orders its per-frame systems by these stages and steps and
+//! runs them under these gates (`viewer/src/frame_order.rs`, Phase 1 PR 3).
+//! The player's step, `Main::OnIdle_UpdatePlayer`, is split further in
+//! [`player`] (Phase 1 PR 4); the world and time stage's callees in
+//! [`world_time`] (Phase 1 PR 5); the AI task stage (the AI linear task
+//! threads' work, the Havok step, the actor updates, the sky) in
+//! [`ai_stage`] (Phase 1 PR 6); the interface and render stages (the
+//! interface idle, `LastMinuteUpdate`, sleeping, the menus' background,
+//! `Main::Swap`, the post-swap and post-thread work, the console) and the
+//! controls' poll in [`interface`] (Phase 1 PR 7). [`coverage`] says, for
+//! every call to depth 2, which model holds it and how it is wired (Phase
+//! 1's gate).
 
 // Translated from 0086e650 (decompiled, FalloutNV.exe 1.4.0.525)
+
+pub mod ai_stage;
+pub mod coverage;
+pub mod interface;
+pub mod player;
+pub mod world_time;
 
 /// FRAME_SKELETON.md's stages, for grouping only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,8 +146,10 @@ pub enum Gate {
     LoadingMenuOpen,
     /// The world runs: menu mode clear (`0086e918`, `0086e946`) and the world
     /// not frozen (`0086e923`, `0086e955`). The screen splatters, the cell
-    /// tests, the sky's update (slot +0x104 of the object `00559450`
-    /// returns), `Calendar::Update` with the frame time (`0084d030`).
+    /// tests, the "World" scene graph's view distance (its slot +0x104 with the
+    /// frame time, `BSSceneGraph::SetViewDistanceBasedOnFrameRate`,
+    /// [`world_time::SCENE_GRAPH_UPDATE`]), `Calendar::Update` with the frame
+    /// time (`0084d030`).
     WorldRuns,
     /// The second cell-test question (`0086ef70`, `TES` +0x52): as
     /// `WorldRuns`, and `00451530` (`TES` +0x51 or +0x52 set) held
@@ -544,6 +563,11 @@ const fn step(
     }
 }
 
+/// The interface idle's wiring (both calls, steps 80 and 105).
+const IDLE_WIRING: &str = "interface::DO_INTERFACE_IDLE_STEPS and the interface manager's \
+    PreIdleStuff, Idle and PostIdleStuff (viewer menus remain before the frame; HUD and \
+    Pip-Boy remain at the AI idle's approximate position; input buffering and fallback routing open)";
+
 /// The calls of `Main::OnIdle` (`0086e650`), in order.
 pub const STEPS: [FrameStep; 143] = [
     step(0x0086_a830, None, Stage::FrameStart, Gate::Always, Wiring::Open),
@@ -559,7 +583,7 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x004b_7210, None, Stage::FrameStart, Gate::Always, Wiring::Open),
     step(0x0042_4940, None, Stage::FrameStart, Gate::Always, Wiring::Open),
     step(0x0087_82b0, Some("MemoryLevelManager::RunNonDestructiveFree"), Stage::FrameStart, Gate::FreeMemory, Wiring::Open),
-    step(0x0086_f940, Some("Main::OnIdle_UpdatePlayer"), Stage::Player, Gate::Always, Wiring::Open),
+    step(0x0086_f940, Some("Main::OnIdle_UpdatePlayer"), Stage::Player, Gate::Always, Wiring::Partial("world::frame::player (its calls and PlayerCharacter::Update's sub-steps, in order, with their gates; viewer: frame_order::PlayerSet)")),
     step(0x006f_f580, None, Stage::Player, Gate::Always, Wiring::Open),
     step(0x006f_f860, None, Stage::Player, Gate::Always, Wiring::Open),
     step(0x0086_fd90, Some("Main::OnIdle_UpdateImageSpace"), Stage::Player, Gate::Always, Wiring::Open),
@@ -577,7 +601,7 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x0048_3710, None, Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x004e_1610, None, Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x0086_ef40, None, Stage::Housekeeping, Gate::MenuFlagClear, Wiring::Open),
-    step(0x0086_f260, Some("Main::OnIdle_UpdateTimer"), Stage::Housekeeping, Gate::Always, Wiring::Partial("physics::havok::Clock (the frame timer and Havok's delta time only)")),
+    step(0x0086_f260, Some("Main::OnIdle_UpdateTimer"), Stage::Housekeeping, Gate::Always, Wiring::Partial("physics::havok::Clock (the frame timer and Havok's delta time only; viewer: clutter::time_havok_frame with physics::havok::FrameTimer)")),
     step(0x0086_f390, Some("Main::OnIdle_PollControls"), Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x00c3_dbf0, Some("IOManager::UpdateQueue"), Stage::Housekeeping, Gate::Always, Wiring::Open),
     step(0x0086_efa0, None, Stage::Housekeeping, Gate::Always, Wiring::Open),
@@ -601,11 +625,11 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x0055_9450, None, Stage::WorldAndTime, Gate::WorldRuns, Wiring::Open),
     step(0x0084_d030, None, Stage::WorldAndTime, Gate::WorldRuns, Wiring::Open),
     step(0x0084_d030, None, Stage::WorldAndTime, Gate::WorldRuns, Wiring::Open),
-    step(0x0086_7a40, Some("Calendar::Update"), Stage::WorldAndTime, Gate::WorldRuns, Wiring::Partial("world::scripting GameState::advance_clock (game time; its calendar is labelled a guess)")),
+    step(0x0086_7a40, Some("Calendar::Update"), Stage::WorldAndTime, Gate::WorldRuns, Wiring::Partial("world::scripting GameState::advance_clock (game time; its calendar is labelled a guess; world_time::CALENDAR_UPDATE)")),
     step(0x0043_d4d0, None, Stage::WorldAndTime, Gate::WorldRuns, Wiring::Open),
     step(0x0045_5640, Some("TES::RunAnimations"), Stage::WorldAndTime, Gate::WorldRunsSingleThread, Wiring::Open),
     step(0x0040_fbf0, None, Stage::WorldAndTime, Gate::Always, Wiring::Open),
-    step(0x0097_8550, Some("ProcessLists::RunActorScripts"), Stage::WorldAndTime, Gate::Always, Wiring::Open),
+    step(0x0097_8550, Some("ProcessLists::RunActorScripts"), Stage::WorldAndTime, Gate::Always, Wiring::Partial("viewer: scripts::run_scripts, ordered here (it runs every script it knows, and the game clock; world_time::RUN_ACTOR_SCRIPTS)")),
     step(0x0043_d4d0, None, Stage::WorldAndTime, Gate::Always, Wiring::Open),
     step(0x0097_77a0, Some("ProcessLists::UpdateRadiationList"), Stage::WorldAndTime, Gate::ProcessListsThreaded, Wiring::Open),
     step(0x0096_eb40, Some("ProcessLists::ChangeProcessLevelTempList"), Stage::WorldAndTime, Gate::ProcessListsThreaded, Wiring::Open),
@@ -622,10 +646,10 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x0086_8850, Some("GarbageCollector::Update"), Stage::WorldAndTime, Gate::Always, Wiring::Open),
     step(0x0086_8d10, Some("GarbageCollector::ClearTempEffects"), Stage::WorldAndTime, Gate::Always, Wiring::Open),
     step(0x0052_4c90, None, Stage::WorldAndTime, Gate::Always, Wiring::Open),
-    step(0x0066_52e0, Some("BSTreeManager::Update"), Stage::WorldAndTime, Gate::Always, Wiring::Partial("speedtree::wind (the wind update 006658b0 only; viewer: trees)")),
-    step(0x0086_fbe0, Some("Main::OnIdle_UpdateCurrentGridCell"), Stage::WorldAndTime, Gate::Always, Wiring::Partial("world::ref_scripts (the grid-move test of TES::UpdateCurrentGridCell 00452580 only)")),
+    step(0x0066_52e0, Some("BSTreeManager::Update"), Stage::WorldAndTime, Gate::Always, Wiring::Partial("world_time::TREE_MANAGER_UPDATE (the wind update 006658b0 is speedtree::wind, viewer: trees::blow_wind; the camera's axes in trees::sway_trees)")),
+    step(0x0086_fbe0, Some("Main::OnIdle_UpdateCurrentGridCell"), Stage::WorldAndTime, Gate::Always, Wiring::Partial("world_time::UPDATE_CURRENT_GRID_CELL (world::ref_scripts has its grid-move test; viewer: exterior::stream_squares and the distant land at its sub-steps)")),
     step(0x0043_d4d0, None, Stage::InterfaceAndScene, Gate::Always, Wiring::Open),
-    step(0x0086_fd70, Some("Main::OnIdle_DoInterfaceIdle"), Stage::InterfaceAndScene, Gate::InterfaceIdleSingleThread, Wiring::Open),
+    step(0x0086_fd70, Some("Main::OnIdle_DoInterfaceIdle"), Stage::InterfaceAndScene, Gate::InterfaceIdleSingleThread, Wiring::Partial(IDLE_WIRING)),
     step(0x0048_3710, None, Stage::InterfaceAndScene, Gate::Always, Wiring::Open),
     step(0x0049_fef0, Some("BGSDecalManager::GetInstance"), Stage::InterfaceAndScene, Gate::Always, Wiring::Open),
     step(0x0049_fff0, Some("BGSDecalManager::UpdateDecals"), Stage::InterfaceAndScene, Gate::Always, Wiring::Open),
@@ -650,7 +674,7 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x008c_a070, Some("AITaskManager::StartTasksDuringRendering"), Stage::AiStart, Gate::AiTaskQueueStart, Wiring::Open),
     step(0x0086_fc60, Some("Main::OnIdle_UpdateAnimationsAndEffects"), Stage::AiStart, Gate::Always, Wiring::Open),
     step(0x0043_d4d0, None, Stage::AiStart, Gate::Always, Wiring::Open),
-    step(0x0086_fd70, Some("Main::OnIdle_DoInterfaceIdle"), Stage::AiStart, Gate::InterfaceIdleThreaded, Wiring::Open),
+    step(0x0086_fd70, Some("Main::OnIdle_DoInterfaceIdle"), Stage::AiStart, Gate::InterfaceIdleThreaded, Wiring::Partial(IDLE_WIRING)),
     step(0x0070_2360, Some("Interface::IsInMenuMode"), Stage::AiStart, Gate::InterfaceIdleThreaded, Wiring::Open),
     step(0x0070_58e0, Some("Interface::LastMinuteUpdate"), Stage::AiStart, Gate::LastMinuteUpdate, Wiring::Open),
     step(0x0047_d0b0, Some("PathManager::QInstance"), Stage::AiStart, Gate::NotFrozen, Wiring::Open),
@@ -665,13 +689,13 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x0071_4a00, None, Stage::AiStart, Gate::Always, Wiring::Open),
     step(0x00a8_1a80, None, Stage::AiStart, Gate::ParallelUpdateEnd, Wiring::Open),
     step(0x0070_23c0, Some("Interface::GetTopMenuID"), Stage::AiStart, Gate::Always, Wiring::Open),
-    step(0x0070_56f0, Some("Interface::UpdateSleeping"), Stage::AiStart, Gate::SleepWaitMenuTop, Wiring::Open),
+    step(0x0070_56f0, Some("Interface::UpdateSleeping"), Stage::AiStart, Gate::SleepWaitMenuTop, Wiring::Partial("interface::UPDATE_SLEEPING_STEPS (viewer: game_menus::update_sleeping)")),
     step(0x0087_1dc0, Some("Main::RenderMenuBackground"), Stage::Render, Gate::Sleeping, Wiring::Open),
     step(0x0057_ab70, None, Stage::Render, Gate::Always, Wiring::Open),
     step(0x00b6_0040, None, Stage::Render, Gate::Always, Wiring::Open),
     step(0x0047_e040, Some("TESActorBaseData::GetAlignmentForKarma"), Stage::Render, Gate::Always, Wiring::Open),
     step(0x0086_ff70, Some("Main::Swap"), Stage::Render, Gate::Always, Wiring::Open),
-    step(0x0087_05d0, Some("Main::PostSwapProcess"), Stage::Render, Gate::Always, Wiring::Open),
+    step(0x0087_05d0, Some("Main::PostSwapProcess"), Stage::Render, Gate::Always, Wiring::Partial("interface::POST_SWAP_STEPS (viewer: sounds, radio, music, ai::move_offstage)")),
     step(0x004d_c360, None, Stage::Render, Gate::DisplayModeChange, Wiring::Open),
     step(0x0043_d4d0, None, Stage::AiJoin, Gate::AiTasks, Wiring::Open),
     step(0x0071_3d80, None, Stage::AiJoin, Gate::AiThreadsJoin, Wiring::Open),
@@ -691,15 +715,44 @@ pub const STEPS: [FrameStep; 143] = [
     step(0x00aa_7290, None, Stage::AiJoin, Gate::SortFreeBlocks, Wiring::Open),
 ];
 
+/// Whether step `i` (an index into [`STEPS`]) runs in a frame with these
+/// inputs: the frame got past the Tab and Alt test (`0086e69c`), which
+/// only step 1 comes before, and the step's gate holds.
+pub fn step_runs(s: &FrameState, i: usize) -> bool {
+    if s.alt_tab_held {
+        return i == 0;
+    }
+    STEPS[i].gate.holds(s)
+}
+
 /// The steps that run in a frame with these inputs, as indices into
 /// [`STEPS`]: only step 1 when Tab and Alt are held (`0086e69c`).
 pub fn steps_run(s: &FrameState) -> Vec<usize> {
-    if s.alt_tab_held {
-        return vec![0];
+    (0..STEPS.len()).filter(|&i| step_runs(s, i)).collect()
+}
+
+/// The stages in the exe's order: the order in which [`STEPS`] reaches
+/// them (each stage's steps follow each other).
+pub fn stages() -> Vec<Stage> {
+    let mut out: Vec<Stage> = Vec::new();
+    for step in &STEPS {
+        if out.last() != Some(&step.stage) {
+            out.push(step.stage);
+        }
     }
-    (0..STEPS.len())
-        .filter(|&i| STEPS[i].gate.holds(s))
-        .collect()
+    out
+}
+
+/// Whether the frame gets into `stage` at all. No stage has a test of its
+/// own (the stages are for reading); only the Tab and Alt return
+/// (`0086e69c`) skips every stage after the first.
+pub fn stage_reached(s: &FrameState, stage: Stage) -> bool {
+    !s.alt_tab_held || stage == STEPS[0].stage
+}
+
+/// The first step that calls `address` (an index into [`STEPS`]).
+pub fn step_of(address: u32) -> Option<usize> {
+    STEPS.iter().position(|s| s.address == address)
 }
 
 #[cfg(test)]
@@ -750,6 +803,40 @@ mod tests {
     #[test]
     fn stages_follow_each_other() {
         assert!(STEPS.windows(2).all(|w| w[0].stage <= w[1].stage));
+        assert_eq!(
+            stages(),
+            [
+                Stage::FrameStart,
+                Stage::Player,
+                Stage::Housekeeping,
+                Stage::WorldAndTime,
+                Stage::InterfaceAndScene,
+                Stage::AiStart,
+                Stage::Render,
+                Stage::AiJoin,
+            ]
+        );
+    }
+
+    #[test]
+    fn stages_reached_and_steps_found() {
+        let game = FrameState::default();
+        assert!(stages().into_iter().all(|st| stage_reached(&game, st)));
+        let held = FrameState {
+            alt_tab_held: true,
+            ..game
+        };
+        assert_eq!(
+            stages()
+                .into_iter()
+                .filter(|&st| stage_reached(&held, st))
+                .collect::<Vec<_>>(),
+            [Stage::FrameStart]
+        );
+        assert_eq!(step_of(0x0086_f450), Some(index(0x0086_f450, 0)));
+        assert_eq!(step_of(0x0070_2360), Some(2));
+        assert_eq!(step_of(0x1234_5678), None);
+        assert!((0..STEPS.len()).all(|i| step_runs(&game, i) == STEPS[i].gate.holds(&game)));
     }
 
     #[test]

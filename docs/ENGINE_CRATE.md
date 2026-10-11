@@ -145,7 +145,12 @@ $L scaffold "fallout/ai/processlists.cpp" # create its file (lead)
 
 7. **Report** per function: translated / partial / skipped, and why.
    Partial translations keep the marker only if the missing part is named
-   in a comment (`// open: ...`).
+   in a comment (`// open: ...`). Also add `// Translation incomplete:
+   <address> - <missing behavior>` on one line. The ledger keeps such
+   addresses `partial` in the engine queue instead of `done`; remove that
+   incomplete marker only when the documented gap is closed and tested.
+   A panic-only placeholder has no translated branch: leave it skipped,
+   without a translation marker or a new registry entry.
 
 ## Checking against the real exe
 
@@ -157,6 +162,20 @@ acceptance routes once it is wired.
 
 ## Lessons from the first sessions (2026-10-09)
 
+- **Test doubles that keep state.** `e.register` takes a plain `fn`; a double that
+  captures anything goes through `e.register_double`. `Engine::new()` registers
+  every translated function, so a test doubles every callee outside its file
+  or that callee runs for real.
+- **Variable-argument functions** (cdecl `...`, e.g. `sprintf_s`, `PrintLine`,
+  `Script::ParseParameters`): write the typed function taking the extra words
+  as a slice, and register a small entry `fn(&mut Engine, &[u32]) -> Ret` as
+  `(addr, entry as AbiFn)` (see `parse_parameters_entry` in `tesscript.rs`).
+  Where the callee receives a `va_list`, copy the words into game memory and
+  pass that address.
+- **Structs passed by value** (points, matrices, `BSString`) are consecutive
+  words in `args!`, in push order (first member at the lowest address).
+- **Compiler-folded masks.** Blocks guarded by `flags & 0` (the compiler folded
+  the mask to zero) never run; leave them out and say so in the doc comment.
 - **Arguments come from the disassembly.** The decompiler often hangs a
   pushed word on the wrong call (`PUSH x; CALL getter; MOV ECX,EAX; CALL
   method`: `x` belongs to `method`), drops `this`, and mis-sizes `this`

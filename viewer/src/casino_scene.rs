@@ -167,8 +167,14 @@ pub struct CasinoScenePlugin;
 
 impl Plugin for CasinoScenePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CasinoShown>()
-            .add_systems(Update, show_casino.after(crate::menus::run_menus));
+        app.init_resource::<CasinoShown>().add_systems(
+            Update,
+            show_casino
+                // Kept: the table drawn for the menu as it ran this frame,
+                // inside the interface set (`crate::frame_order`).
+                .after(crate::menus::run_menus)
+                .in_set(crate::frame_order::ViewerSet::Interface),
+        );
     }
 }
 

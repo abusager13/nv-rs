@@ -127,7 +127,17 @@ impl Plugin for ImpactFxPlugin {
                 Update,
                 (start_impacts, age_impacts)
                     .chain()
-                    .after(crate::hiteffects::play_hits),
+                    // Kept: the hits' effects start the impacts. Placed for
+                    // order only with them, after the actors' movement pass
+                    // (`crate::frame_order::AiSet`), outside its gate (their
+                    // exact place isn't traced).
+                    .after(crate::hiteffects::play_hits)
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    ))
+                    .before(crate::frame_order::AiSet::next(
+                        crate::frame_order::ACTORS_MOVEMENT,
+                    )),
             )
             .add_systems(
                 PostUpdate,

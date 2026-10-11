@@ -155,8 +155,14 @@ pub struct LockpickPlugin;
 
 impl Plugin for LockpickPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Lockpicking>()
-            .add_systems(Update, show_lockpicking.after(pick_locks));
+        app.init_resource::<Lockpicking>().add_systems(
+            Update,
+            show_lockpicking
+                // Kept: drawn as the menu ran this frame, inside the
+                // interface set (`crate::frame_order`).
+                .after(pick_locks)
+                .in_set(crate::frame_order::ViewerSet::Interface),
+        );
     }
 }
 

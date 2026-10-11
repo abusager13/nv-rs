@@ -129,18 +129,37 @@ impl Plugin for PipboyPlugin {
             .add_systems(Startup, setup_pipboy)
             .add_systems(
                 Update,
+                // Kept, inside the interface set (`crate::frame_order`):
+                // after the game's own menus, so one open over the Pip-Boy
+                // (a question, "how many?") has the input first.
+                pipboy_keys
+                    .after(crate::game_menus::run_open_menus)
+                    .before(crate::menus::run_menus)
+                    .in_set(crate::frame_order::ViewerSet::Interface),
+            )
+            // The Pip-Boy's screen is the interface idle's
+            // (`Main::OnIdle_DoInterfaceIdle`), the AI threads' first call
+            // with threads > 1 (`crate::frame_order::AiSet`): after the scripts
+            // (stage 4) and the first-person model (stage 2) by the stages'
+            // order. At the call but outside its gate: without AI work (menu
+            // mode, which the Pip-Boy is) the main thread makes the call
+            // instead (frame step 105).
+            .add_systems(
+                Update,
                 (
-                    // After the game's own menus: one open over the Pip-Boy
-                    // (a question, "how many?") has the input first.
-                    pipboy_keys
-                        .after(crate::game_menus::run_open_menus)
-                        .before(crate::menus::run_menus),
+                    // Kept: the light follows the screen's state.
                     pipboy_light.after(update_pipboy),
-                    update_pipboy
-                        .after(crate::scripts::run_scripts)
-                        .after(crate::viewmodel::update_view_model)
-                        .before(crate::actors::animate_actors),
-                ),
+                    update_pipboy,
+                )
+                    .in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    ))
+                    .after(crate::frame_order::AiSet::Call(
+                        crate::frame_order::INTERFACE_IDLE,
+                    ))
+                    .before(crate::frame_order::AiSet::next(
+                        crate::frame_order::INTERFACE_IDLE,
+                    )),
             );
     }
 }

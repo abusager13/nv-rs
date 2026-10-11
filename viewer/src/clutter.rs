@@ -256,14 +256,63 @@ impl Plugin for ClutterPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Clutter>()
             .init_resource::<HavokFrame>()
-            .add_systems(First, time_havok_frame)
+            // The frame timer: part of `Main::OnIdle_UpdateTimer` (step 32,
+            // `crate::frame_order`).
             .add_systems(
                 Update,
-                (grab_held, simulate, play_contact_sounds, draw)
-                    .chain()
-                    .after(crate::combat::player_attack)
-                    .after(crate::explosives::fly_thrown)
-                    .after(crate::walk::walk),
+                time_havok_frame.in_set(crate::frame_order::FrameSet::step(
+                    crate::frame_order::UPDATE_TIMER,
+                )),
+            )
+            // The bodies' Havok step: `bhkWorld::Update` (slot +0xc4) on the
+            // exterior world (`00554780`, through
+            // `GridCellArray::UpdateManagedNodes`) or the interior's own
+            // (`TESObjectCELL::UpdateManagedNodes`), between
+            // `TES::LockHavokUpdateMT(1)` and `(0)` in
+            // `TES::UpdateCellAnimations` (`00453550`), which an AI thread
+            // calls after the actors' updates (`crate::frame_order::AiSet`):
+            // under its gate, the bodies hold still in menu mode. After the
+            // player's walk and attack (stage 2) by the stages' order.
+            .add_systems(
+                Update,
+                (
+                    // The Grab control's hold (`PlayerCharacter::Update`'s
+                    // `0095f6c0`, the player stage's sub-step 43): kept here,
+                    // before the step it feeds, until the player's systems
+                    // read the crosshair inside the update.
+                    grab_held
+                        // Kept: thrown things land first.
+                        .after(crate::explosives::fly_thrown)
+                        .in_set(crate::frame_order::FrameSet::Stage(
+                            world::frame::Stage::AiStart,
+                        ))
+                        .before(crate::frame_order::AiSet::Call(
+                            crate::frame_order::UPDATE_CELL_ANIMATIONS,
+                        )),
+                    (simulate, play_contact_sounds)
+                        .chain()
+                        .in_set(crate::frame_order::AiSet::Call(
+                            crate::frame_order::UPDATE_CELL_ANIMATIONS,
+                        ))
+                        .after(crate::frame_order::AiSet::at(
+                            crate::frame_order::UPDATE_CELL_ANIMATIONS,
+                            crate::frame_order::HAVOK_LOCK_AT,
+                        ))
+                        .before(crate::frame_order::AiSet::at(
+                            crate::frame_order::UPDATE_CELL_ANIMATIONS,
+                            crate::frame_order::HAVOK_UNLOCK_AT,
+                        )),
+                    // The bodies drawn where they are, outside the gate (it
+                    // picks up pieces as they are spawned, which it would miss
+                    // under the gate).
+                    draw.in_set(crate::frame_order::FrameSet::Stage(
+                        world::frame::Stage::AiStart,
+                    ))
+                    .after(play_contact_sounds)
+                    .before(crate::frame_order::AiSet::next(
+                        crate::frame_order::UPDATE_CELL_ANIMATIONS,
+                    )),
+                ),
             );
     }
 }
