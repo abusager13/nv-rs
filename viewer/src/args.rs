@@ -134,7 +134,8 @@ OPTIONS:
                             Pip-Boy's too, through its screen
     --key-at SECONDS KEY[:HOLD]
                             for testing: press a key (a letter or digit,
-                            mouse-left, mouse-right, escape, tab, mouse-x=COUNTS: the
+                            F12 for a state checkpoint, mouse-left,
+                            mouse-right, escape, tab, mouse-x=COUNTS: the
                             mouse moving sideways each frame, or
                             wheel=NOTCHES, negative out) that
                             many seconds after you're placed, held HOLD

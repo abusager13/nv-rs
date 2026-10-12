@@ -29,6 +29,7 @@ mod particles_cmd;
 mod play_cmd;
 mod records;
 mod render_cmd;
+mod route_compare_cmd;
 mod scripts_cmd;
 mod sha256;
 mod shader_cmd;
@@ -64,6 +65,10 @@ TARGET is one of:
                                the folders below
 
 THE ORIGINAL GAME'S SAVES (.fos), read-only:
+    nvinspect compare-route <DATA> <ROUTE.tsv>
+                          compare paired original .fos and nv-rs state
+                          checkpoints: player/actor positions and health,
+                          quest stages and actor AI packages
     nvinspect fos <SAVE> [PLUGIN]
                           the save's header, plugins, location table,
                           global data, change forms by type and change
@@ -518,6 +523,13 @@ fn main() -> ExitCode {
 
 fn run(args: &[String]) -> Result<(), CliError> {
     let (positional, options) = parse_args(args)?;
+    if positional[0] == "compare-route" {
+        let stdout = io::stdout();
+        let mut out = BufWriter::new(stdout.lock());
+        route_compare_cmd::run(&mut out, &positional[1..])?;
+        out.flush()?;
+        return Ok(());
+    }
     if positional[0] == "fos" {
         let stdout = io::stdout();
         let mut out = BufWriter::new(stdout.lock());
