@@ -12,6 +12,10 @@ game data into the repository. Keep captures and the manifest outside Git.
    `.fos` file to a private capture folder.
 2. At the same route point in nv-rs, press F12. A scripted viewer run can
    schedule it with `--key-at 50 F12` (50 game seconds after placement).
+   The existing Windows acceptance driver can request several captures with
+   `-CaptureAt 10,30,45` (for example, with `-Routes doc`). F12 writes its
+   `reports/NNN` folders under the working directory from which the driver
+   was launched.
    Copy `reports/NNN/state.txt` as `tester.txt` and its `actors.tsv` as
    `tester.actors.tsv` for that checkpoint (and use matching stems for the
    others). F12 also writes a picture and human report, useful for checking

@@ -36,6 +36,7 @@ buttons and no choice left is left open and logged as waiting. Outputs (logs, sc
 powershell -File scripts\acceptance.ps1 -Data "D:\Steam\steamapps\common\Fallout New Vegas\Data"
 powershell -File scripts\acceptance.ps1 -Routes vms16 -Build
 powershell -File scripts\acceptance.ps1 -Background
+powershell -File scripts\acceptance.ps1 -Routes doc -CaptureAt 10,30,45
 #>
 param(
     # The game's Data folder (or set NV_DATA).
@@ -46,12 +47,15 @@ param(
     [string]$Out,
     # Build the release viewer first.
     [switch]$Build,
+    # Record F12 state/actor checkpoints at these seconds after placement.
+    [int[]]$CaptureAt = @(),
     # Keep the runs out of the way (the viewer's --background: its window
     # behind the others, without the focus, the mouse left alone).
     [switch]$Background
 )
 
 $ErrorActionPreference = 'Stop'
+if ($CaptureAt | Where-Object { $_ -lt 0 }) { throw '-CaptureAt times must be nonnegative.' }
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Data) {
     $default = 'C:\Games\Steam\steamapps\common\Fallout New Vegas\Data'
@@ -128,6 +132,9 @@ foreach ($r in $chosen) {
     # (see the header); --box-answers 2: VCG01's "revise your character"
     # box answered "Finished - Travel Onward" (its third button).
     $a = @($Data) + $spec.Args + @('--answer-boxes', '--box-answers', '2', '--screenshot', $shot)
+    foreach ($second in ($CaptureAt | Sort-Object -Unique)) {
+        $a += @('--key-at', [string]$second, 'F12')
+    }
     if ($Background) { $a += '--background' }
     # Each route is its own viewer run: a new game, so the DLC start
     # messages show again in every route that starts outside Doc's house.
