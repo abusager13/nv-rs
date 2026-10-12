@@ -31,6 +31,8 @@ door	door.fos	door.txt	VCG01	DocMitchellREF
 
 Run `nvinspect compare-route <DATA FOLDER> <ROUTE.tsv>`. It reports each
 field from the original save and the nv-rs snapshot, then a difference count.
+It prints SHA-256 hashes of both input files and the native save's format,
+number and play time so a result can be tied to the exact captures.
 The command exits with an error if any compared field differs or a requested
 position/package is unavailable. Quests not named in the manifest are not
 compared. Use the game's `FalloutNV.esm` and official DLC files; an original
@@ -40,9 +42,12 @@ under a different form ID map.
 ## What the numbers mean
 
 - Positions are the game's own coordinate units. The comparison also checks
-  the cell/worldspace IDs. Quest stages and package form IDs must match
-  exactly. There is no positional or time tolerance yet; the output gives
-  raw values so any later tolerance can be based on captures.
+  the cell/worldspace IDs. For each requested quest, it checks the current
+  stage, all stages marked done, and running/completed/failed flags. The
+  manifest rejects names or IDs that do not identify quests or placed actors.
+  Package form IDs must match exactly. There is no positional or time
+  tolerance yet; the output gives raw values so any later tolerance can be
+  based on captures.
 - The original package is the `ActorPackage` in a saved actor process,
   decoded from the `.fos` file (`FalloutNV.exe` 1.4.0.525, `008c65d0`).
   nv-rs currently does not save its running AI process, so its package is

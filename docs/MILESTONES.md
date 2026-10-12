@@ -2,8 +2,9 @@
 
 M10 comparison task #22 (2026-10-12, `codex/m10-comparison-harness`):
 `nvinspect compare-route` now has source for paired original `.fos` and
-nv-rs F12 checkpoints, comparing positions, quest stages, health and saved
-versus derived AI packages; usage and evidence limits are in
+nv-rs F12 checkpoints, comparing positions, current and completed quest
+stages, health and saved versus derived AI packages. It records input hashes
+and save metadata; usage and evidence limits are in
 [ROUTE_COMPARISON.md](ROUTE_COMPARISON.md). Not built or run yet. No paired
 original-game capture has been compared. **Next action:** review and check the
 command, then capture a matched Doc route on Windows to validate its fields.

@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use esm::{ActivePlugins, FormId, LoadOrder};
+use esm::{sig, ActivePlugins, FormId, FourCC, LoadOrder};
 use fos::{decode, RefId, Save};
 use world::dialogue::PLAYER_REF;
 use world::scripting::GameState;
@@ -46,16 +46,31 @@ fn resolve(order: &LoadOrder, token: &str) -> Result<FormId, CliError> {
         }
     }
     order
-        .find_by_editor_id(token, None)?
-        .map(|record| record.form_id)
+        .form_by_editor_id(token)
         .ok_or_else(|| CliError::NotFound(format!("form '{token}' is not in the Data folder")))
 }
 
-fn ids(order: &LoadOrder, value: &str) -> Result<Vec<FormId>, CliError> {
+fn ids(order: &LoadOrder, value: &str, kinds: &[FourCC]) -> Result<Vec<FormId>, CliError> {
     value
         .split(',')
         .filter(|token| !token.trim().is_empty())
-        .map(|token| resolve(order, token.trim()))
+        .map(|token| {
+            let id = resolve(order, token.trim())?;
+            if id == PLAYER_REF && kinds.contains(&sig::ACHR) {
+                return Ok(id);
+            }
+            match order.get(id) {
+                Some(record) if kinds.contains(&record.entry.header.kind) => Ok(id),
+                _ => Err(CliError::Usage(format!(
+                    "'{token}' is not a {} record in the Data folder",
+                    if kinds.len() == 1 && kinds[0] == sig::QUST {
+                        "quest"
+                    } else {
+                        "placed actor"
+                    }
+                ))),
+            }
+        })
         .collect()
 }
 
@@ -87,8 +102,8 @@ fn checkpoints(order: &LoadOrder, path: &Path) -> Result<Vec<Checkpoint>, CliErr
             name,
             original: base.join(columns[1].trim()),
             viewer: base.join(columns[2].trim()),
-            quests: ids(order, columns[3])?,
-            actors: ids(order, columns[4])?,
+            quests: ids(order, columns[3], &[sig::QUST])?,
+            actors: ids(order, columns[4], &[sig::ACHR, sig::ACRE])?,
         });
     }
     if rows.is_empty() {
@@ -236,6 +251,21 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
     }
     let original = &imported.state;
     writeln!(out, "{}:", point.name)?;
+    writeln!(
+        out,
+        "  original sha256 {}",
+        crate::sha256::hex_digest(&original_bytes)
+    )?;
+    writeln!(
+        out,
+        "  nv-rs sha256 {}",
+        crate::sha256::hex_digest(&viewer_bytes)
+    )?;
+    writeln!(
+        out,
+        "  native save format {:#x}.{:x}, number {}, played {}",
+        save.header.version, save.minor_version, save.header.save_number, save.header.play_time
+    )?;
     let mut differences = position(out, "player", order, original, &viewer, PLAYER_REF)?;
     differences += measured(
         out,
@@ -261,6 +291,45 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
                 .to_string(),
             &viewer.stages.get(&quest).copied().unwrap_or(0).to_string(),
         )?;
+        let stages = |state: &GameState| {
+            let mut done: Vec<_> = state
+                .stages_done
+                .iter()
+                .filter_map(|&(id, stage)| (id == quest).then_some(stage))
+                .collect();
+            done.sort_unstable();
+            done
+        };
+        differences += field(
+            out,
+            &format!("quest {quest} stages done"),
+            &format!("{:?}", stages(original)),
+            &format!("{:?}", stages(&viewer)),
+        )?;
+        for (label, left, right) in [
+            (
+                "running",
+                original.running.contains(&quest),
+                viewer.running.contains(&quest),
+            ),
+            (
+                "completed",
+                original.completed.contains(&quest),
+                viewer.completed.contains(&quest),
+            ),
+            (
+                "failed",
+                original.failed.contains(&quest),
+                viewer.failed.contains(&quest),
+            ),
+        ] {
+            differences += field(
+                out,
+                &format!("quest {quest} {label}"),
+                &left.to_string(),
+                &right.to_string(),
+            )?;
+        }
     }
     for &actor in &point.actors {
         differences += position(
