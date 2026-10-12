@@ -200,13 +200,17 @@ fn native_id(order: &LoadOrder, save: &Save<'_>, id: FormId) -> Option<u32> {
 
 /// The running package saved in the native actor process (`ActorPackage`,
 /// FalloutNV.exe 1.4.0.525, 008c65d0; `fos::decode::actor_form`). `None`
-/// means no process was saved or it could not be decoded; `Some(None)` means
-/// the saved process explicitly had no package.
+/// means no process was saved, it could not be decoded, or its package was
+/// created during play (those IDs are not stable across runs). `Some(None)`
+/// means the saved process explicitly had no package.
 fn native_package(order: &LoadOrder, save: &Save<'_>, actor: FormId) -> Option<Option<FormId>> {
     let cf = save.change_form_of(native_id(order, save, actor)?)?;
     let form = decode::actor_form(cf, actor == PLAYER_REF).ok()?;
     match form.actor.mobile.process?.package {
-        Some(reference) => loaded_id(order, save, reference).map(Some),
+        Some(reference) => {
+            let package = loaded_id(order, save, reference)?;
+            (package.mod_index() != 0xff).then_some(Some(package))
+        }
         None => Some(None),
     }
 }
@@ -430,7 +434,7 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
             None => {
                 writeln!(
                     out,
-                    "  ! actor {actor} package: no decodable native process"
+                    "  ! actor {actor} package: no comparable native process/package"
                 )?;
                 differences += 1;
             }

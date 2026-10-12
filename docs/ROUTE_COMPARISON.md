@@ -58,7 +58,8 @@ under a different form ID map.
 - The original package is the `ActorPackage` in a saved actor process,
   decoded from the `.fos` file (`FalloutNV.exe` 1.4.0.525, `008c65d0`).
   The nv-rs package comes from the live viewer `Walker` at F12, and so does
-  its actor position. A native save without a decodable process or an actor
+  its actor position. A native save without a decodable process, a package
+  created during play (whose form ID is not stable across runs), or an actor
   absent from the viewer capture is reported as unavailable.
 - Health is calculated by the existing `world::fos_import` and `world::combat`
   paths. The importer does not yet carry active effects or all actor values
