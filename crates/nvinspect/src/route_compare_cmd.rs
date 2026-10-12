@@ -471,3 +471,129 @@ pub fn run(out: &mut impl Write, rest: &[String]) -> Result<(), CliError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use esm::Plugin;
+    use fos::save_type as t;
+    use fos::write::{Form, PipeWriter, SaveWriter};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "nvinspect_route_compare_{}_{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn put(&self, name: &str, contents: impl AsRef<[u8]>) -> PathBuf {
+            let path = self.0.join(name);
+            std::fs::write(&path, contents).unwrap();
+            path
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn order() -> LoadOrder {
+        use testdata::{group, record, sub, zstr};
+        let mut header = 1.34f32.to_le_bytes().to_vec();
+        header.extend([0; 8]);
+        let mut bytes = record(b"TES4", 0, &sub(b"HEDR", &header));
+        let quest = record(b"QUST", 0x1234, &sub(b"EDID", &zstr("TestQuest")));
+        bytes.extend(group(*b"QUST", 0, &quest));
+        let actor = record(b"ACHR", 0x5678, &sub(b"EDID", &zstr("TestActor")));
+        bytes.extend(group(*b"ACHR", 0, &actor));
+        let plugin = Plugin::from_bytes(bytes).unwrap();
+        LoadOrder::from_plugins(vec![("FalloutNV.esm".into(), None, plugin)]).unwrap()
+    }
+
+    #[test]
+    fn manifest_resolves_only_requested_record_kinds() {
+        let files = Scratch::new();
+        let order = order();
+        let path = files.put(
+            "route.tsv",
+            "start\tnative.fos\tviewer.txt\tTestQuest\tTestActor,player\n",
+        );
+        let points = checkpoints(&order, &path).unwrap_or_else(|_| panic!("manifest parse failed"));
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].quests, vec![FormId(0x1234)]);
+        assert_eq!(points[0].actors, vec![FormId(0x5678), PLAYER_REF]);
+
+        files.put("route.tsv", "start\tnative.fos\tviewer.txt\tTestActor\t\n");
+        assert!(checkpoints(&order, &path).is_err());
+        files.put("route.tsv", "start\tnative.fos\tviewer.txt\t\tTestQuest\n");
+        assert!(checkpoints(&order, &path).is_err());
+    }
+
+    #[test]
+    fn live_actor_sidecar_rejects_bad_and_repeated_rows() {
+        let files = Scratch::new();
+        let snapshot = files.put("start.txt", "nv-rs save 1\n");
+        let actors = files.put(
+            "start.actors.tsv",
+            "nv-rs actors 1\n00005678\t00001234\t1\t2.5\t-3\n",
+        );
+        let found = observed_actors(&snapshot).unwrap_or_else(|_| panic!("sidecar parse failed"));
+        let actor = found.get(&FormId(0x5678)).unwrap();
+        assert_eq!(actor.package, Some(FormId(0x1234)));
+        assert_eq!(actor.position, [1.0, 2.5, -3.0]);
+
+        std::fs::write(&actors, "nv-rs actors 1\n00005678\t-\tNaN\t2\t3\n").unwrap();
+        assert!(observed_actors(&snapshot).is_err());
+        std::fs::write(
+            &actors,
+            "nv-rs actors 1\n00005678\t-\t1\t2\t3\n00005678\t-\t1\t2\t3\n",
+        )
+        .unwrap();
+        assert!(observed_actors(&snapshot).is_err());
+    }
+
+    #[test]
+    fn synthetic_native_quest_difference_is_reported() {
+        let files = Scratch::new();
+        let order = order();
+        let mut quest = PipeWriter::new();
+        quest.u8(0x01).vsval(1).u8(10).u8(1).vsval(0);
+        let native = SaveWriter {
+            forms: vec![Form::new(1, 0x2 | 0x8000_0000, t::QUST, quest.finish())],
+            form_ids: vec![0x0000_1234],
+            ..SaveWriter::default()
+        };
+        let (bytes, _) = native.build();
+        let original = files.put("native.fos", bytes);
+        let viewer = files.put("viewer.txt", world::save::save(&GameState::default(), None));
+        let point = Checkpoint {
+            name: "start".into(),
+            original,
+            viewer,
+            quests: vec![FormId(0x1234)],
+            actors: Vec::new(),
+        };
+        let mut out = Vec::new();
+        let differences = compare(&mut out, &order, &point)
+            .unwrap_or_else(|_| panic!("synthetic comparison failed"));
+        let text = String::from_utf8(out).unwrap();
+        assert!(differences > 0, "{text}");
+        assert!(
+            text.contains("quest 00001234 stage: original 10; nv-rs 0"),
+            "{text}"
+        );
+        assert!(text.contains("original sha256 "), "{text}");
+        assert!(text.contains("native save format "), "{text}");
+    }
+}
