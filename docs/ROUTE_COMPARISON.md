@@ -12,9 +12,12 @@ game data into the repository. Keep captures and the manifest outside Git.
    `.fos` file to a private capture folder.
 2. At the same route point in nv-rs, press F12. A scripted viewer run can
    schedule it with `--key-at 50 F12` (50 game seconds after placement).
-   Copy the generated `reports/NNN/state.txt` into that folder. F12 also
-   writes a picture and human report, useful for checking that the two
-   checkpoints really align.
+   Copy `reports/NNN/state.txt` as `tester.txt` and its `actors.tsv` as
+   `tester.actors.tsv` for that checkpoint (and use matching stems for the
+   others). F12 also writes a picture and human report, useful for checking
+   that the two checkpoints really align. The actor sidecar holds the live
+   loaded actors' positions and selected packages; the command requires it
+   when the manifest names actors.
 3. Put a tab-separated `route.tsv` in the folder. Each line has five fields:
    checkpoint name, original `.fos` path, nv-rs `state.txt` path, comma-separated
    quest IDs/editor IDs, and comma-separated actor reference IDs/editor IDs.
@@ -50,10 +53,9 @@ under a different form ID map.
   based on captures.
 - The original package is the `ActorPackage` in a saved actor process,
   decoded from the `.fos` file (`FalloutNV.exe` 1.4.0.525, `008c65d0`).
-  nv-rs currently does not save its running AI process, so its package is
-  **derived** by `world::ai::current_package` from the saved game state.
-  A package match is therefore weaker evidence than a live runtime match.
-  A native save without a decodable process is reported as unavailable.
+  The nv-rs package comes from the live viewer `Walker` at F12, and so does
+  its actor position. A native save without a decodable process or an actor
+  absent from the viewer capture is reported as unavailable.
 - Health is calculated by the existing `world::fos_import` and `world::combat`
   paths. The importer does not yet carry active effects or all actor values
   from `.fos` (`world::fos_import::GAPS`), so a health match is provisional
@@ -63,5 +65,5 @@ under a different form ID map.
   that the same input sequence or frame timing produced those moments.
 
 The next M10 batch should add live capture of the original actor state and
-nv-rs's running package, plus route input/timing metadata. Then calibrate
+route input/timing metadata. Then calibrate
 position and time tolerances from repeated original-game recordings.

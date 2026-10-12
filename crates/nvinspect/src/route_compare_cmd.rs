@@ -1,8 +1,8 @@
 //! Compare route checkpoints captured as original `.fos` saves and nv-rs's
-//! own F12 `state.txt` files. The original saves are decoded by `fos` and
-//! `world::fos_import`; neither input is modified.
+//! own F12 `state.txt` and `actors.tsv` files. The original saves are decoded
+//! by `fos` and `world::fos_import`; neither input is modified.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,12 @@ struct Checkpoint {
     viewer: PathBuf,
     quests: Vec<FormId>,
     actors: Vec<FormId>,
+}
+
+#[derive(Clone, Copy)]
+struct ObservedActor {
+    package: Option<FormId>,
+    position: [f32; 3],
 }
 
 fn file_error(path: &Path, message: impl ToString) -> CliError {
@@ -112,6 +118,58 @@ fn checkpoints(order: &LoadOrder, path: &Path) -> Result<Vec<Checkpoint>, CliErr
     Ok(rows)
 }
 
+/// The F12 sidecar records the package selected by a live viewer Walker.
+/// Its path is `<snapshot stem>.actors.tsv`, beside the copied snapshot.
+fn observed_actors(snapshot: &Path) -> Result<BTreeMap<FormId, ObservedActor>, CliError> {
+    let path = snapshot.with_extension("actors.tsv");
+    let bytes = read(&path)?;
+    let text = std::str::from_utf8(&bytes).map_err(|e| file_error(&path, e))?;
+    let mut lines = text.lines();
+    if lines.next() != Some("nv-rs actors 1") {
+        return Err(file_error(&path, "not an nv-rs F12 actors snapshot"));
+    }
+    let mut actors = BTreeMap::new();
+    for (index, line) in lines.enumerate() {
+        let fields: Vec<_> = line.split('\t').collect();
+        if fields.len() != 5 {
+            return Err(file_error(
+                &path,
+                format!("line {} has no actor record", index + 2),
+            ));
+        }
+        let form = |word: &str| u32::from_str_radix(word, 16).map(FormId);
+        let actor = form(fields[0])
+            .map_err(|_| file_error(&path, format!("line {} has a bad actor ID", index + 2)))?;
+        let package = if fields[1] == "-" {
+            None
+        } else {
+            Some(form(fields[1]).map_err(|_| {
+                file_error(&path, format!("line {} has a bad package ID", index + 2))
+            })?)
+        };
+        let mut position = [0.0; 3];
+        for (axis, word) in position.iter_mut().zip(&fields[2..]) {
+            *axis = word
+                .parse::<f32>()
+                .ok()
+                .filter(|n| n.is_finite())
+                .ok_or_else(|| {
+                    file_error(&path, format!("line {} has a bad position", index + 2))
+                })?;
+        }
+        if actors
+            .insert(actor, ObservedActor { package, position })
+            .is_some()
+        {
+            return Err(file_error(
+                &path,
+                format!("line {} repeats actor {actor}", index + 2),
+            ));
+        }
+    }
+    Ok(actors)
+}
+
 /// Convert a form in a native save into the current Data folder's load order.
 fn loaded_id(order: &LoadOrder, save: &Save<'_>, reference: RefId) -> Option<FormId> {
     let raw = save.form_id(reference)?;
@@ -197,9 +255,12 @@ fn position(
     original: &GameState,
     viewer: &GameState,
     actor: FormId,
+    observed: Option<[f32; 3]>,
 ) -> Result<usize, CliError> {
     let left = original.place(order, actor);
-    let right = viewer.place(order, actor);
+    let right = viewer
+        .place(order, actor)
+        .map(|(space, cell, place, heading)| (space, cell, observed.unwrap_or(place), heading));
     if left.is_none() || right.is_none() {
         writeln!(
             out,
@@ -250,6 +311,11 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
         viewer.player_heading = place.heading;
     }
     let original = &imported.state;
+    let observed = if point.actors.is_empty() {
+        BTreeMap::new()
+    } else {
+        observed_actors(&point.viewer)?
+    };
     writeln!(out, "{}:", point.name)?;
     writeln!(
         out,
@@ -266,7 +332,7 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
         "  native save format {:#x}.{:x}, number {}, played {}",
         save.header.version, save.minor_version, save.header.save_number, save.header.play_time
     )?;
-    let mut differences = position(out, "player", order, original, &viewer, PLAYER_REF)?;
+    let mut differences = position(out, "player", order, original, &viewer, PLAYER_REF, None)?;
     differences += measured(
         out,
         "game hour",
@@ -332,6 +398,11 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
         }
     }
     for &actor in &point.actors {
+        let Some(live) = observed.get(&actor) else {
+            writeln!(out, "  ! actor {actor}: absent from live nv-rs F12 capture")?;
+            differences += 1;
+            continue;
+        };
         differences += position(
             out,
             &format!("actor {actor}"),
@@ -339,6 +410,7 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
             original,
             &viewer,
             actor,
+            Some(live.position),
         )?;
         differences += measured(
             out,
@@ -348,12 +420,11 @@ fn compare(out: &mut impl Write, order: &LoadOrder, point: &Checkpoint) -> Resul
         )?;
         match native_package(order, &save, actor) {
             Some(package) => {
-                let current = world::ai::current_package(order, &viewer, actor).map(|p| p.form_id);
                 differences += field(
                     out,
-                    &format!("actor {actor} package (nv-rs derived)"),
+                    &format!("actor {actor} package"),
                     &format!("{package:?}"),
-                    &format!("{current:?}"),
+                    &format!("{:?}", live.package),
                 )?;
             }
             None => {

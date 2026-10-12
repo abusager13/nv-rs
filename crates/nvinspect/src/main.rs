@@ -66,9 +66,9 @@ TARGET is one of:
 
 THE ORIGINAL GAME'S SAVES (.fos), read-only:
     nvinspect compare-route <DATA> <ROUTE.tsv>
-                          compare paired original .fos and nv-rs state
-                          checkpoints: player/actor positions and health,
-                          quest stages and actor AI packages
+                          compare paired original .fos and nv-rs F12
+                          checkpoints (state plus actor sidecar): positions,
+                          health, quest stages and live actor AI packages
     nvinspect fos <SAVE> [PLUGIN]
                           the save's header, plugins, location table,
                           global data, change forms by type and change

@@ -3,7 +3,8 @@
 //! the viewer runs in: the picture, where the player stands and looks
 //! (as the game's console gives them), the hour, the lines that put the
 //! real game and the viewer in the same spot, and the whole state as F5
-//! saves it. The person playing writes what looks or behaves differently
+//! saves it, and the live actors' positions and selected packages in
+//! `actors.tsv`. The person playing writes what looks or behaves differently
 //! in its `note.txt`.
 
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use std::path::{Path, PathBuf};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 
+use crate::ai::Walker;
 use crate::dialogue::DialogueState;
 use crate::scripts::Notices;
 use crate::walk::{game_point, Player};
@@ -99,6 +101,23 @@ fn describe(place: &str, world: bool, s: &Spot, hour: Option<f32>) -> String {
     out
 }
 
+/// Live actor state at this frame, separate from the reloadable save format.
+/// `Walker::package` is the package the AI actually selected, while a
+/// package recalculated from `state.txt` might differ after loading.
+fn actors(walkers: &Query<&Walker>) -> String {
+    let mut rows: Vec<_> = walkers.iter().collect();
+    rows.sort_by_key(|walker| walker.reference);
+    let mut out = String::from("nv-rs actors 1\n");
+    for walker in rows {
+        let package = walker
+            .package
+            .map_or_else(|| "-".to_string(), |id| format!("{id}"));
+        let [x, y, z] = walker.position;
+        out.push_str(&format!("{}\t{package}\t{x}\t{y}\t{z}\n", walker.reference));
+    }
+    out
+}
+
 #[allow(clippy::too_many_arguments)] // Bevy system resources are separate parameters.
 pub fn report_key(
     mut commands: Commands,
@@ -109,6 +128,7 @@ pub fn report_key(
     player: Res<Player>,
     mut notices: ResMut<Notices>,
     cameras: Query<(&Transform, &FlyCamera)>,
+    walkers: Query<&Walker>,
 ) {
     if !keys.just_pressed(KeyCode::F12) {
         return;
@@ -145,6 +165,7 @@ pub fn report_key(
     let written = std::fs::create_dir_all(&folder)
         .and_then(|()| std::fs::write(folder.join("report.txt"), describe(&place, world, &s, hour)))
         .and_then(|()| std::fs::write(folder.join("state.txt"), world::save::save(state, saved)))
+        .and_then(|()| std::fs::write(folder.join("actors.tsv"), actors(&walkers)))
         .and_then(|()| {
             std::fs::write(
                 folder.join("note.txt"),
