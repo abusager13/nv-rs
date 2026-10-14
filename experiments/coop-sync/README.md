@@ -1,10 +1,10 @@
 # Local co-op experiment
 
-This is a local-only experiment for a 2–4 player Fallout: New Vegas co-op
+This is an experiment for a 2–4 player Fallout: New Vegas co-op
 mode in nv-rs. Its design and packet demo live under `experiments/coop-sync`;
 the first host/client movement integration lives in the Bevy viewer. It is
-kept on the local `codex/coop-experiment` branch with no remote branch or pull
-request.
+pushed to `abusager13/nv-rs` on branch `codex/coop-experiment`; there is no
+pull request.
 
 The target is a host-authoritative asynchronous shared world implemented in
 nv-rs's Rust/Bevy simulation. Each player has their own character, inventory,
