@@ -1,5 +1,6 @@
 //! Command-line arguments. Kept free of Bevy so it can be tested on its own.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 pub const USAGE: &str = "\
@@ -17,6 +18,8 @@ USAGE:
                  as they walk.
 
 OPTIONS:
+    --coop-host ADDR       host a local co-op experiment session
+    --coop-join ADDR       join a co-op session (start in the same cell)
     --official              load only FalloutNV.esm and the official DLC
     --plugins FILE          read the active plugin list from FILE
     --ini FILE              read the archive list (SArchiveList) from FILE
@@ -298,6 +301,14 @@ pub struct Args {
     pub answer_boxes: bool,
     /// `--box-answers`: the buttons for boxes with several, in turn.
     pub box_answers: Vec<usize>,
+    /// The local co-op experiment's host or client network role.
+    pub coop: Option<CoopMode>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CoopMode {
+    Host(SocketAddr),
+    Join(SocketAddr),
 }
 
 /// Where to stand, in the game's terms: feet position in game units, and
@@ -362,6 +373,8 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
     let mut answer_boxes = false;
     let mut box_answers = Vec::new();
     let mut background = false;
+    let mut coop_host = None;
+    let mut coop_join = None;
     let mut pipboy = None;
     let mut pipboy_keys = Vec::new();
     let mut pad = false;
@@ -407,6 +420,18 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
             }
             "--walk" => walk = true,
             "--fps" => fps = true,
+            "--coop-host" => {
+                let v = value("--coop-host")?;
+                coop_host = Some(v.parse::<SocketAddr>().map_err(|_| {
+                    format!("--coop-host expects an address such as 0.0.0.0:39000, got '{v}'")
+                })?);
+            }
+            "--coop-join" => {
+                let v = value("--coop-join")?;
+                coop_join = Some(v.parse::<SocketAddr>().map_err(|_| {
+                    format!("--coop-join expects an address such as 127.0.0.1:39000, got '{v}'")
+                })?);
+            }
             "--talk" => talk = true,
             "--choose" => {
                 let v = value("--choose")?;
@@ -565,6 +590,21 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
         }
     }
     let movies = movies.unwrap_or(screenshot.is_none());
+    if coop_host.is_some() && coop_join.is_some() {
+        return Err("choose either --coop-host or --coop-join".into());
+    }
+    let coop = match (coop_host, coop_join) {
+        (Some(address), None) => Some(CoopMode::Host(address)),
+        (None, Some(address)) => Some(CoopMode::Join(address)),
+        (None, None) => None,
+        (Some(_), Some(_)) => unreachable!(),
+    };
+    if coop.is_some() && load_fos.is_some() {
+        return Err(
+            "co-op experiment starts from the same explicit cell; --load-fos is not available yet"
+                .into(),
+        );
+    }
     // An original save says where to start.
     if load_fos.is_some() {
         if new_game || stage.is_some() {
@@ -614,6 +654,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
             menu_keys,
             answer_boxes,
             box_answers,
+            coop,
         })),
         [] | [_] => Err("expected the Data folder and a cell".into()),
         [_, _, extra, ..] => Err(format!("unexpected argument '{extra}'")),

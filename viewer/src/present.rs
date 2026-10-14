@@ -7,41 +7,59 @@
 //! the newest finished frame at each refresh instead: still no tearing,
 //! and the frame rate isn't held to the display's. The surface's own modes
 //! are asked first (Bevy doesn't fall back from a mode the surface lacks);
-//! without mailbox the default stays.
+//! without mailbox the default stays. macOS keeps Bevy's default present
+//! mode because Metal surface inspection touches the NSView and must not
+//! run on Bevy's render thread.
 
+use bevy::prelude::{App, Plugin};
+#[cfg(not(target_os = "macos"))]
 use std::sync::atomic::{AtomicU8, Ordering};
+#[cfg(not(target_os = "macos"))]
 use std::sync::Arc;
 
-use bevy::prelude::*;
+#[cfg(not(target_os = "macos"))]
+use bevy::prelude::{Local, Query, Res, Resource, Update, Window, With};
+#[cfg(not(target_os = "macos"))]
 use bevy::render::renderer::{RenderAdapter, RenderInstance};
+#[cfg(not(target_os = "macos"))]
 use bevy::render::view::window::ExtractedWindows;
+#[cfg(not(target_os = "macos"))]
 use bevy::render::{Render, RenderApp, RenderSet};
+#[cfg(not(target_os = "macos"))]
 use bevy::window::{PresentMode, PrimaryWindow};
 
 /// What the render world found about the surface: 0 not yet, 1 mailbox
 /// there, 2 not.
 #[derive(Resource, Clone, Default)]
+#[cfg(not(target_os = "macos"))]
 struct Mailbox(Arc<AtomicU8>);
 
 pub struct PresentPlugin;
 
 impl Plugin for PresentPlugin {
     fn build(&self, app: &mut App) {
-        let found = Mailbox::default();
-        app.insert_resource(found.clone()).add_systems(
-            Update,
-            use_mailbox.in_set(crate::frame_order::ViewerSet::AfterFrame),
-        );
-        if let Some(render) = app.get_sub_app_mut(RenderApp) {
-            render
-                .insert_resource(found)
-                .add_systems(Render, look_at_surface.in_set(RenderSet::Cleanup));
+        #[cfg(target_os = "macos")]
+        let _ = app;
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let found = Mailbox::default();
+            app.insert_resource(found.clone()).add_systems(
+                Update,
+                use_mailbox.in_set(crate::frame_order::ViewerSet::AfterFrame),
+            );
+            if let Some(render) = app.get_sub_app_mut(RenderApp) {
+                render
+                    .insert_resource(found)
+                    .add_systems(Render, look_at_surface.in_set(RenderSet::Cleanup));
+            }
         }
     }
 }
 
 /// Once the window is up: whether a surface on it takes mailbox (one
 /// made for the question, as Bevy makes its own, and dropped).
+#[cfg(not(target_os = "macos"))]
 fn look_at_surface(
     found: Res<Mailbox>,
     windows: Res<ExtractedWindows>,
@@ -72,6 +90,7 @@ fn look_at_surface(
 }
 
 /// The window presents by mailbox once its surface is known to take it.
+#[cfg(not(target_os = "macos"))]
 fn use_mailbox(
     found: Res<Mailbox>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,

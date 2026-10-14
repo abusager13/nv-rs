@@ -869,6 +869,41 @@ pub fn action_points(order: &LoadOrder, state: &GameState) -> f32 {
         .max(0.0)
 }
 
+/// Sets the player's current action points to a host-authoritative value
+/// (`PLAYER_REF`, actor value 12). This corrects small differences between
+/// the client's local regeneration and the co-op host's AP ledger.
+pub fn set_action_points(order: &LoadOrder, state: &mut GameState, value: f32) -> bool {
+    if !value.is_finite() || value < 0.0 {
+        return false;
+    }
+    let facts = Facts {
+        order,
+        state,
+        speaker: None,
+    };
+    let Some(permanent) = facts.permanent_actor_value(PLAYER_REF, ACTION_POINTS) else {
+        return false;
+    };
+    let current_max = permanent + crate::magic::modifier(state, PLAYER_REF, ACTION_POINTS, false)
+        - crate::magic::modifier(state, PLAYER_REF, ACTION_POINTS, true);
+    if !current_max.is_finite() {
+        return false;
+    }
+    if current_max <= 0.0 {
+        state.value_damage.remove(&(PLAYER_REF, ACTION_POINTS));
+        return true;
+    }
+    let current = f64::from(value).min(current_max);
+    let damage = current_max - current;
+    let key = (PLAYER_REF, ACTION_POINTS);
+    if damage == 0.0 {
+        state.value_damage.remove(&key);
+    } else {
+        state.value_damage.insert(key, damage);
+    }
+    true
+}
+
 /// Takes action points from the player (an attack that has played,
 /// `009c7240`: player vfunc `+0x33c`).
 pub fn spend(state: &mut GameState, amount: f32) {
@@ -1592,8 +1627,11 @@ pub fn can_enter(
 pub struct QueuedAttack {
     /// [`kind`].
     pub kind: u8,
-    /// Rolled when queued.
+    /// Rolled when queued in single-player. Co-op sends the effective
+    /// probability to the host, which performs the roll.
     pub hit: bool,
+    /// Effective probability after concentrated-fire bonuses (0–1).
+    pub hit_chance: f32,
     /// Shots (a burst's), and a long burst's extra ones.
     pub shots: u8,
     pub extra_shots: u8,
@@ -1808,6 +1846,11 @@ impl Plan {
         } else {
             0.0
         };
+        let hit_chance = if a.always_hit {
+            1.0
+        } else {
+            (a.chance + bonus).clamp(0.0, 1.0)
+        };
         let hit = a.always_hit || a.chance + bonus >= rand();
         self.undo.push((self.ap_left, self.clip, self.reserve));
         self.ap_left -= cost;
@@ -1826,6 +1869,7 @@ impl Plan {
         self.attacks.push(QueuedAttack {
             kind: a.kind,
             hit,
+            hit_chance,
             shots: short,
             extra_shots: extra,
             target: a.target,
@@ -1902,9 +1946,12 @@ pub fn begin_attack(state: &mut GameState, facts: AttackFacts) {
     state.vats.attack = Some(facts);
 }
 
-/// An attack has played (`009c7240`): its action points are taken.
-pub fn finish_attack(state: &mut GameState, attack: &QueuedAttack) {
-    spend(state, attack.ap);
+/// An attack has played (`009c7240`): its action points are taken. In co-op,
+/// the host may already have charged this attack when approving it.
+pub fn finish_attack(state: &mut GameState, attack: &QueuedAttack, ap_already_spent: bool) {
+    if !ap_already_spent {
+        spend(state, attack.ap);
+    }
     state.vats.attack = None;
 }
 

@@ -19,6 +19,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 use bevy::render::mesh::VertexAttributeValues;
 use cellview::ActorData;
+use coop_sync_experiment::DialogueSnapshot;
 use esm::FormId;
 use world::dialogue::{self, Choice, GameState, Info, Speaker, Topic};
 use world::dialogue_view::{self as view_rules, Focus, FocusInput, MenuZoom, ViewSettings};
@@ -92,6 +93,15 @@ impl Conversation {
     pub fn discard(&mut self) {
         self.0 = None;
         self.1 = None;
+    }
+
+    /// The read-only state nearby players may listen to. Personal choices
+    /// remain local to the speaker's conversation.
+    pub fn coop_snapshot(&self) -> Option<DialogueSnapshot> {
+        self.0
+            .as_ref()
+            .filter(|talk| !talk.line_only && !talk.zoom.closing())
+            .map(Talk::coop_snapshot)
     }
 
     #[cfg(test)]
@@ -203,6 +213,117 @@ impl Talk {
         }
         let r = self.info.responses.get(self.response)?;
         Some(((self.info.form_id, self.response, self.since), r))
+    }
+
+    fn coop_snapshot(&self) -> DialogueSnapshot {
+        let (text, topics) = match &self.choices {
+            Some(choices) => (
+                String::new(),
+                choices
+                    .iter()
+                    .take(coop_sync_experiment::MAX_DIALOGUE_TOPICS)
+                    .map(|choice| {
+                        bounded_coop_dialogue_text(
+                            &choice.label,
+                            coop_sync_experiment::MAX_DIALOGUE_TOPIC_BYTES,
+                        )
+                    })
+                    .collect(),
+            ),
+            None => (
+                self.info
+                    .responses
+                    .get(self.response)
+                    .map_or_else(String::new, |response| {
+                        bounded_coop_dialogue_text(
+                            &response.text,
+                            coop_sync_experiment::MAX_DIALOGUE_TEXT_BYTES,
+                        )
+                    }),
+                Vec::new(),
+            ),
+        };
+        DialogueSnapshot {
+            speaker: self.speaker.reference.0,
+            speaker_name: bounded_coop_dialogue_text(
+                &self.name,
+                coop_sync_experiment::MAX_DIALOGUE_NAME_BYTES,
+            ),
+            text,
+            topics,
+        }
+    }
+}
+
+fn bounded_coop_dialogue_text(text: &str, max_bytes: usize) -> String {
+    let mut end = text.len().min(max_bytes);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_owned()
+}
+
+/// A nearby player's dialogue displayed as a passive listener overlay.
+#[derive(Resource, Default)]
+pub struct ListenerDialogue(pub Option<(coop_sync_experiment::PlayerId, DialogueSnapshot)>);
+
+#[derive(Component)]
+pub struct ListenerDialogueText;
+
+pub fn setup_listener_dialogue_text(mut commands: Commands) {
+    commands.spawn((
+        Text::new(String::new()),
+        TextFont {
+            font_size: 18.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.95, 0.85, 0.55)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(48.0),
+            left: Val::Percent(15.0),
+            width: Val::Percent(70.0),
+            padding: UiRect::all(Val::Px(12.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.68)),
+        Visibility::Hidden,
+        ListenerDialogueText,
+    ));
+}
+
+pub fn update_listener_dialogue_text(
+    listener: Res<ListenerDialogue>,
+    conversation: Res<Conversation>,
+    mut panel: Query<(&mut Text, &mut Visibility), With<ListenerDialogueText>>,
+) {
+    let dialogue = if conversation.coop_snapshot().is_some() {
+        None
+    } else {
+        listener.0.as_ref()
+    };
+    let text = dialogue.map(|(player, dialogue)| {
+        let mut text = format!(
+            "Listening to Player {} talking with {}:\n",
+            player.0, dialogue.speaker_name
+        );
+        if !dialogue.text.is_empty() {
+            text.push_str(&dialogue.text);
+        } else if !dialogue.topics.is_empty() {
+            text.push_str("Choosing a response: ");
+            text.push_str(&dialogue.topics.join("  •  "));
+        }
+        text
+    });
+    for (mut visible_text, mut visibility) in &mut panel {
+        if let Some(text) = text.as_ref() {
+            if visible_text.0 != *text {
+                visible_text.0.clone_from(text);
+            }
+            *visibility = Visibility::Visible;
+        } else {
+            *visibility = Visibility::Hidden;
+        }
     }
 }
 

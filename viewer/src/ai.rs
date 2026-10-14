@@ -254,6 +254,10 @@ type LongPlan = (Vec<(i32, i32)>, [f32; 3]);
 const PEOPLE_RATES: [f32; 2] = [90.0 * 1.5 * mv::ONE_DEGREE, 90.0 * 2.5 * mv::ONE_DEGREE];
 
 impl Walker {
+    pub(crate) fn is_fallen(&self) -> bool {
+        self.fallen
+    }
+
     /// Discard the running procedure for ResetAI (008a6ce0 / 00923c60),
     /// keeping physical placement. A new package is chosen this frame.
     fn reset_procedure(&mut self) {

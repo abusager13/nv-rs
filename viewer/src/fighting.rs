@@ -247,6 +247,19 @@ impl Dice {
 pub(crate) fn clear_between(collision: &physics::Collider, from: [f32; 3], to: [f32; 3]) -> bool {
     let a = [from[0], from[1], from[2] + 60.0];
     let b = [to[0], to[1], to[2] + 60.0];
+    clear_ray_between(collision, a, b)
+}
+
+/// Whether a ray between two explicit points reaches its endpoint without
+/// crossing static collision. Unlike `clear_between`, this adds no eye-height
+/// offset; V.A.T.S. passes the camera eye and target point directly.
+pub(crate) fn clear_ray_between(
+    collision: &physics::Collider,
+    from: [f32; 3],
+    to: [f32; 3],
+) -> bool {
+    let a = from;
+    let b = to;
     let d = distance(a, b);
     if d < 1.0 {
         return true;
