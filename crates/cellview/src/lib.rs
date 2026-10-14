@@ -43,7 +43,7 @@ use esm::{ActivePlugins, FormId};
 /// How decals are pulled toward the camera (see `preview::cell`).
 pub use preview::cell::{decal_depth_bias, EXTERIOR_DEPTH_SCALE, INTERIOR_DEPTH_SCALE};
 /// The eye height and field of view the game uses (see `preview::cell`).
-pub use preview::cell::{vertical_fov, Specular, EYE_HEIGHT, GAME_FOV_DEGREES};
+pub use preview::cell::{horizontal_fov, vertical_fov, Specular, EYE_HEIGHT, GAME_FOV_DEGREES};
 /// Pieces moved by their model's own animation, and pieces that turn to
 /// face the camera.
 pub use preview::cell::{Billboard, BillboardKind, MeshMotion, SwingDoor};

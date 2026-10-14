@@ -1,0 +1,9 @@
+[package]
+name = "coop-sync-experiment"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+publish = false
+
+# Keep this prototype outside both the game workspace and the Bevy viewer.
+[workspace]

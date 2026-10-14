@@ -173,6 +173,14 @@ impl Plugin {
         self.bytes.len()
     }
 
+    /// A stable, non-cryptographic fingerprint of the complete plugin file.
+    /// Useful for detecting incompatible game data between local co-op peers.
+    pub fn content_fingerprint(&self) -> u64 {
+        self.bytes.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+        })
+    }
+
     pub fn group_count(&self) -> usize {
         self.group_count
     }

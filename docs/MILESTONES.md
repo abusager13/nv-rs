@@ -60,3 +60,14 @@ These were the original milestones. The engine port now delivers them.
   switchable fixes layer.
 - Completion needs a reproducible acceptance run, not a count of functions
   translated.
+
+## Local co-op experiment
+
+User-directed work remains on branch `codex/coop-experiment`; there is no PR.
+The viewer checks V.A.T.S. targets and AP, applies host-side V.A.T.S. hits, and
+replicates actor health. Protocol 10 carries bounded viewport aspect and camera
+pitch so host target checks cover both view angles. `cargo check` passes for the
+current wire and viewer changes, and an optimized viewer build is in progress.
+The previous two-viewer run predates the current V.A.T.S. flow. Next: launch
+two local viewers and verify aim rejection, V.A.T.S. health convergence,
+dialogue listen-in, and host rejection of guest-only shared-world changes.

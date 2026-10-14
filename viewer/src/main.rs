@@ -17,6 +17,7 @@ mod clutter;
 mod combat;
 mod companions;
 mod controls;
+mod coop;
 mod crosshair;
 mod daylight;
 mod dialogue;
@@ -226,6 +227,14 @@ fn main() {
     // The game's console gives pitch positive looking down; the camera's
     // is positive looking up.
     let pitch = args.at.map_or(0.0, |at| -at.pitch.to_radians());
+    let coop_session =
+        match coop::Session::open(args.coop, coop::scene_key(&args.cell, &game.order)) {
+            Ok(session) => session,
+            Err(error) => {
+                eprintln!("error: co-op session: {error}");
+                std::process::exit(1);
+            }
+        };
 
     let grading = Grading {
         grade: ImageSpaceGrade::NEUTRAL,
@@ -296,7 +305,9 @@ fn main() {
             on: args.fps,
             ..default()
         })
+        .insert_resource(coop::CoOpSession(coop_session))
         .insert_resource(dialogue::DialogueState(state))
+        .init_resource::<dialogue::ListenerDialogue>()
         // Main thread only: the engine is not `Send` (`host`).
         .insert_non_send_resource(game_code)
         .insert_resource(sitting::Seats::new(&game.order))
@@ -427,6 +438,18 @@ fn main() {
             Update,
             background::give_focus_back.in_set(ViewerSet::AfterFrame),
         )
+        .add_systems(
+            Update,
+            coop::update_network
+                .after(walk::walk)
+                .in_set(ViewerSet::AfterFrame),
+        )
+        .add_systems(
+            Update,
+            dialogue::update_listener_dialogue_text
+                .after(coop::update_network)
+                .in_set(ViewerSet::AfterFrame),
+        )
         .add_plugins(frame_work::FrameWorkPlugin)
         .insert_resource(game_menus::StartMenu(args.open_menu.clone()))
         .insert_resource(scripts::StartUse(args.use_on.clone()))
@@ -494,6 +517,7 @@ fn main() {
             (
                 setup,
                 dialogue::setup_dialogue_text,
+                dialogue::setup_listener_dialogue_text,
                 scripts::setup_notices,
                 menus::setup_menu_text,
                 combat::setup_hud,

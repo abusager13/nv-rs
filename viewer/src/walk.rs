@@ -40,6 +40,12 @@ pub struct Player {
     /// for the third-person body's animations (`player_body`).
     pub moving: world::animation::MoveFlags,
     pub speed: f32,
+    /// World-space movement intent shared with the co-op host after this
+    /// frame's local input has been resolved.
+    pub network_axes: [f32; 2],
+    pub network_heading: f32,
+    pub network_running: bool,
+    pub network_sneaking: bool,
     /// Sneaking: the mover's flag 0x400, which the Sneak control (Left
     /// Ctrl) toggles (`0093e860`, see [`may_toggle_sneak`]).
     pub sneaking: bool,
@@ -71,6 +77,10 @@ impl Player {
             from_camera: false,
             moving: world::animation::MoveFlags::default(),
             speed: 0.0,
+            network_axes: [0.0; 2],
+            network_heading: 0.0,
+            network_running: false,
+            network_sneaking: false,
             sneaking: false,
             sneak_blend: 0.0,
             always_run: None,
@@ -139,7 +149,7 @@ pub fn game_point(p: Vec3) -> [f32; 3] {
 /// `BSBound`). The dead don't block (their bodies are on the `DEADBIP`
 /// layer, which the player's controller passes), nor do people sitting
 /// down or seated in furniture (`ai::passed_through`).
-fn people(
+pub(crate) fn people(
     walkers: &Query<&crate::ai::Walker>,
     state: &world::scripting::GameState,
 ) -> Vec<physics::Person> {
@@ -242,11 +252,32 @@ pub fn walk(
         Res<ButtonInput<MouseButton>>,
         Option<Res<crate::controls::Controls>>,
     ),
+    overlay: (
+        Res<crate::menus::Menus>,
+        Res<crate::dialogue::Conversation>,
+        Res<crate::vats::Vats>,
+    ),
+    coop: Res<crate::coop::CoOpSession>,
 ) {
+    let (menus, conversation, vats) = overlay;
+    player.network_axes = [0.0; 2];
+    player.network_running = false;
+    player.network_sneaking = player.sneaking;
+    if menus.is_open()
+        || conversation
+            .0
+            .as_ref()
+            .is_some_and(|talk| !talk.is_line_only())
+        || vats.is_on()
+    {
+        return;
+    }
     if !player.walking || !player.ready {
         return;
     }
-    collision.0.set_people(people(&walkers, &state.0));
+    let mut other_people = people(&walkers, &state.0);
+    other_people.extend(crate::coop::remote_people(&coop));
+    collision.0.set_people(other_people);
     let locked = state.0.controls_off[world::scripting::controls::MOVEMENT]
         || state.0.dead.contains(&world::dialogue::PLAYER_REF);
     let Ok((mut transform, camera)) = cameras.single_mut() else {
@@ -334,6 +365,14 @@ pub fn walk(
     } else {
         [0.0, 0.0]
     };
+    player.network_axes = if len > 0.0 {
+        [wish[0] / len, wish[1] / len]
+    } else {
+        [0.0; 2]
+    };
+    player.network_heading = camera.yaw;
+    player.network_running = len > 0.0 && running;
+    player.network_sneaking = sneak;
     // How the player moves, for who notices them (`world::detection`):
     // running sets its own flag (0x200) sneaking or not.
     state.0.player_moving = len > 0.0;

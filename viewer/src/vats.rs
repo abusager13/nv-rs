@@ -196,6 +196,10 @@ pub struct Vats {
     last_attack: Option<QueuedAttack>,
     /// Attacks done so far (the next one's id).
     done: u64,
+    /// Co-op request IDs must remain unique across V.A.T.S. sessions. `done`
+    /// resets each time the menu opens, but the network's cached approval can
+    /// outlive that menu.
+    next_network_attack_id: u64,
     kills: u32,
     /// The player's own clock (the world's time × the player's
     /// multiplier) and when the weapon can fire again on it.
@@ -253,6 +257,16 @@ impl Vats {
     /// Whether V.A.T.S. has the controls (choosing or playing).
     pub fn is_on(&self) -> bool {
         self.phase != Phase::Off
+    }
+
+    pub(crate) fn selected_target(&self) -> Option<FormId> {
+        (self.phase != Phase::Off)
+            .then(|| {
+                self.targets
+                    .get(self.selected)
+                    .map(|target| target.reference)
+            })
+            .flatten()
     }
 
     /// Whether the menu is up (choosing targets), for the tutorial
@@ -508,6 +522,7 @@ pub fn run_vats(
     ),
     mut vats: ResMut<Vats>,
     mut state: ResMut<DialogueState>,
+    mut coop: ResMut<crate::coop::CoOpSession>,
     (mut player, menus, conversation): (ResMut<Player>, Res<Menus>, Res<Conversation>),
     (talkers, cell_scripts, collision): (Res<Talkers>, Res<CellScripts>, Res<CellCollision>),
     mut attack: ResMut<PlayerAttack>,
@@ -600,7 +615,9 @@ pub fn run_vats(
                     Projection::Perspective(p) => Some(p.fov),
                     _ => None,
                 };
-                virt.pause();
+                if !coop.is_active() {
+                    virt.pause();
+                }
                 // The menu is open to the scripts (`MenuMode 1056`,
                 // `0071e420`'s id for `VATSMenu`), whose `MenuMode` blocks
                 // run as it opens (how often the game runs them while it
@@ -625,6 +642,9 @@ pub fn run_vats(
             let keys_now = if menus.game_open {
                 MenuKeys::default()
             } else {
+                let target_validated = vats
+                    .selected_target()
+                    .is_some_and(|target| coop.target_is_validated(target));
                 MenuKeys {
                     v_pressed: keys.just_pressed(KeyCode::KeyV),
                     v_held: keys.pressed(KeyCode::KeyV),
@@ -632,7 +652,7 @@ pub fn run_vats(
                     next_target: keys.just_pressed(KeyCode::KeyD),
                     next_part: keys.just_pressed(KeyCode::KeyW),
                     previous_part: keys.just_pressed(KeyCode::KeyS),
-                    queue: mouse.just_pressed(MouseButton::Left),
+                    queue: mouse.just_pressed(MouseButton::Left) && target_validated,
                     undo: mouse.just_pressed(MouseButton::Right)
                         || keys.just_pressed(KeyCode::KeyB),
                     execute: keys.just_pressed(KeyCode::KeyE),
@@ -656,15 +676,21 @@ pub fn run_vats(
                 state.more.menu_open = None;
             }
             if vats.phase == Phase::Playback {
-                // Out of the menu: the world runs again (at the shots'
-                // pace, from the next frame).
+                // Out of the menu: single-player uses the game's shot pace;
+                // co-op leaves the shared world clock at real time.
                 virt.unpause();
                 vats.playback = Playback::new();
                 vats.player_clock = 0.0;
                 vats.weapon_ready = 0.0;
                 vats.reloading = None;
-                vats.player_mult = cam.player_time_mult;
-                attack.sped_up = Some(cam.player_time_mult);
+                if coop.is_active() {
+                    virt.set_relative_speed(1.0);
+                    vats.player_mult = 1.0;
+                    attack.sped_up = None;
+                } else {
+                    vats.player_mult = cam.player_time_mult;
+                    attack.sped_up = Some(cam.player_time_mult);
+                }
             } else if vats.phase == Phase::Off {
                 virt.unpause();
                 virt.set_relative_speed(1.0);
@@ -681,6 +707,7 @@ pub fn run_vats(
                 state,
                 (&mut fly, eye, camera),
                 &mut player,
+                &mut coop,
                 world,
                 &mut attack,
                 &mut sounds,
@@ -689,6 +716,12 @@ pub fn run_vats(
             );
             if vats.phase == Phase::Off {
                 virt.set_relative_speed(1.0);
+                attack.sped_up = None;
+            } else if coop.is_active() {
+                // No V.A.T.S. time dilation in an asynchronous shared world.
+                virt.set_relative_speed(1.0);
+                vats.playback.world_mult = 1.0;
+                vats.player_mult = 1.0;
                 attack.sped_up = None;
             } else {
                 // The world's pace for the next frame (`00aa4db0`).
@@ -767,10 +800,19 @@ fn open(
         angles([f.x, -f.z, f.y])
     };
     let mut found: Vec<(Target, f32)> = Vec::new();
+    let mut scanned = 0;
+    let mut rigged = 0;
+    let mut living = 0;
+    let mut in_range = 0;
+    let mut clear_los = 0;
+    let mut visible_or_near = 0;
+    let mut unbanned = 0;
     for t in &talkers.0 {
+        scanned += 1;
         let Some((walker, rig)) = rig_of(rigs, t.reference) else {
             continue;
         };
+        rigged += 1;
         let position = walker.position;
         let pose = rig.pose_now(now_virtual);
         let data = BodyPartData::of(order, t.reference);
@@ -782,11 +824,23 @@ fn open(
                     .is_some_and(|n| on_screen(camera, global, n).is_some())
             });
         let d = distance(feet, position);
+        let alive = !state.dead.contains(&t.reference) && rig.ragdoll.is_none();
+        let line_of_sight = crate::fighting::clear_between(&collision.0, feet, position);
+        let sneak_distance = if interior {
+            s.sneak_max_distance
+        } else {
+            s.sneak_max_distance * s.sneak_exterior_mult
+        };
+        living += usize::from(alive);
+        in_range += usize::from(d >= 2.0 && d <= s.max_engage_distance);
+        clear_los += usize::from(line_of_sight);
+        visible_or_near += usize::from(seen || d <= sneak_distance);
+        unbanned += usize::from(!vats::banned_target(order, t.reference));
         let candidate = Candidate {
             reference: t.reference,
-            alive: !state.dead.contains(&t.reference) && rig.ragdoll.is_none(),
+            alive,
             distance: d,
-            line_of_sight: crate::fighting::clear_between(&collision.0, feet, position),
+            line_of_sight,
             on_screen: seen,
         };
         if !vats::eligible(order, s, &candidate, interior) {
@@ -816,7 +870,10 @@ fn open(
     let Some(first) = vats::first_target(s, &picks) else {
         // `--vats` tries again until someone's there to target.
         if !auto_due {
-            println!("V.A.T.S.: nothing to target.");
+            println!(
+                "V.A.T.S.: nothing to target (talkers {scanned}, rigs {rigged}, living {living}, in range {in_range}, clear LOS {clear_los}, visible or near {visible_or_near}, unbanned {unbanned}, eligible {}).",
+                found.len()
+            );
             sound(order, sounds, "UIVATSEnterFail");
         }
         return false;
@@ -1443,6 +1500,7 @@ fn play(
     state: &mut GameState,
     (fly, eye, camera): (&mut FlyCamera, [f32; 3], &Camera),
     player: &mut Player,
+    coop: &mut crate::coop::CoOpSession,
     (talkers, cell_scripts, collision, rigs): (
         &Talkers,
         &CellScripts,
@@ -1532,6 +1590,28 @@ fn play(
             .playing
             .as_ref()
             .is_some_and(|p| p.shots_left > 0 && clock >= p.next_shot);
+    let attack_approval = if due {
+        let weapon = vats.weapon.as_ref().map(|weapon| weapon.form_id);
+        vats.playing.as_ref().and_then(|playing| {
+            coop.target_is_validated(playing.attack.target).then(|| {
+                coop.request_vats_attack(
+                    playing.id,
+                    (u32::from(playing.attack.shots) + u32::from(playing.attack.extra_shots)
+                        - playing.shots_left) as u16,
+                    playing.attack.target,
+                    weapon,
+                    playing.attack.kind,
+                    playing.attack.reload,
+                    playing.attack.slot,
+                    playing.attack.part_av,
+                    playing.attack.ap,
+                    playing.attack.hit_chance,
+                )
+            })
+        })
+    } else {
+        None
+    };
     if due && needs_reload(attack, state) {
         let time = gun.map_or(0.0, |w| w.reload_time);
         vats.reloading = Some(clock + time);
@@ -1540,8 +1620,39 @@ fn play(
         if let Some(p) = vats.playing.as_mut() {
             p.next_shot = clock + time;
         }
+    } else if due
+        && !vats
+            .playing
+            .as_ref()
+            .is_some_and(|playing| coop.target_is_validated(playing.attack.target))
+    {
+        // A target can move behind cover, leave range, or die after the
+        // queue was made. Keep the shot and its AP reservation pending until
+        // the host sends a fresh eligibility result.
+        if let Some(playing) = vats.playing.as_mut() {
+            playing.next_shot = clock + 0.05;
+        }
+    } else if attack_approval == Some(crate::coop::VatsAttackApproval::Pending) {
+        if let Some(playing) = vats.playing.as_mut() {
+            playing.next_shot = clock + 0.05;
+        }
+    } else if attack_approval == Some(crate::coop::VatsAttackApproval::Rejected) {
+        println!("V.A.T.S.: the host rejected the attack's AP reservation.");
+        vats.plan.attacks.clear();
+        vats.specials_queued.clear();
+        vats.playing = None;
+        vats.phase = Phase::Off;
+        vats.mode = mode::OFF;
+        vats.shot_view = None;
+        vats.third_person = false;
+        vats.hud_mask = None;
+        if let Some(modifier) = vats.modifier.take() {
+            state.modifiers.retain(|current| *current != modifier);
+        }
+        world::vats::set_mode(state, mode::OFF);
+        return;
     } else if due {
-        let (a, hit) = {
+        let (a, predicted_hit) = {
             let p = vats.playing.as_mut().expect("due");
             p.shots_left -= 1;
             p.next_shot = clock + interval;
@@ -1549,6 +1660,10 @@ fn play(
                 p.ends = Some(clock + interval);
             }
             (p.attack.clone(), p.hit)
+        };
+        let hit = match attack_approval {
+            Some(crate::coop::VatsAttackApproval::Accepted { hit: Some(hit) }) => hit,
+            _ => predicted_hit,
         };
         vats.weapon_ready = clock + interval;
         let fired = fire(
@@ -1563,6 +1678,7 @@ fn play(
             sounds,
             (&a, hit),
             now_virtual,
+            coop.host_owns_damage(),
         );
         if let Some(p) = vats.playing.as_mut() {
             if !fired {
@@ -1667,7 +1783,8 @@ fn play(
             PlaybackEvent::AttackDone { .. } => {
                 // Its action points are taken now (`009c7240`).
                 if let Some(p) = vats.playing.take() {
-                    vats::finish_attack(state, &p.attack);
+                    let ap_already_spent = coop.vats_attack_charged_by_host(p.id);
+                    vats::finish_attack(state, &p.attack, ap_already_spent);
                     if !vats.plan.attacks.is_empty() {
                         vats.plan.attacks.remove(0);
                         vats.specials_queued.remove(0);
@@ -1890,8 +2007,10 @@ fn start_attack(
         }
     );
     vats.last_attack = Some(next.clone());
+    let attack_id = vats.next_network_attack_id;
+    vats.next_network_attack_id = vats.next_network_attack_id.wrapping_add(1);
     vats.playing = Some(Playing {
-        id: vats.done,
+        id: attack_id,
         shots_left: u32::from(next.shots) + u32::from(next.extra_shots),
         attack: next,
         hit,
@@ -2322,6 +2441,7 @@ fn fire(
     sounds: &mut SoundRequests,
     (a, hit): (&QueuedAttack, bool),
     now_virtual: f32,
+    apply_damage: bool,
 ) -> bool {
     let weapon = vats.weapon.clone();
     let Some((walker, rig)) = rig_of(rigs, a.target) else {
@@ -2369,7 +2489,7 @@ fn fire(
         // A queued hit lands on its part; a miss swings as an ordinary blow,
         // reaching × `fVATSMeleeReachMult`.
         let toward = unit_toward(eye, node);
-        if hit {
+        if hit && apply_damage {
             struck.push((a.target, was_dead(state, a.target)));
             let part = u8::try_from(a.slot).ok();
             let result = Runner::new(order, scripts, state).blow_at(
@@ -2383,7 +2503,7 @@ fn fire(
                 let d = distance(eye, node);
                 println!("  {}.", tell_hit(order, state, attack, a.target, d, &h));
             }
-        } else {
+        } else if !hit && apply_damage {
             let reach = Weapon::melee_reach(weapon.as_ref()) * s.melee_reach_mult
                 + physics::CharacterShape::PLAYER.radius;
             let met = first_met(
@@ -2421,6 +2541,10 @@ fn fire(
                 }
                 Met::Nothing(_) => println!("  The swing missed."),
             }
+        } else if hit {
+            println!("V.A.T.S.: hit resolved by the host.");
+        } else {
+            println!("V.A.T.S.: miss resolved by the host.");
         }
     } else {
         let w = weapon.clone();
@@ -2497,11 +2621,17 @@ fn fire(
             let Some(who) = who else {
                 continue;
             };
-            struck.push((who, was_dead(state, who)));
-            match Runner::new(order, scripts, state).hit_at(PLAYER_REF, who, pellet.as_ref(), part)
-            {
-                Some(h) => println!("  {}.", tell_hit(order, state, attack, who, d, &h)),
-                None => println!("  Hit {who} at {d:.0} units."),
+            if apply_damage {
+                struck.push((who, was_dead(state, who)));
+                match Runner::new(order, scripts, state).hit_at(
+                    PLAYER_REF,
+                    who,
+                    pellet.as_ref(),
+                    part,
+                ) {
+                    Some(h) => println!("  {}.", tell_hit(order, state, attack, who, d, &h)),
+                    None => println!("  Hit {who} at {d:.0} units."),
+                }
             }
         }
     }

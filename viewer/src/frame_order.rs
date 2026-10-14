@@ -517,6 +517,7 @@ pub fn viewer_frame_state(v: FrameInputs) -> FrameState {
 pub fn begin_frame(
     keys: Res<ButtonInput<KeyCode>>,
     buffer: Option<Res<crate::poll::ControlsBuffer>>,
+    coop: Res<crate::coop::CoOpSession>,
     menus: Res<crate::menus::Menus>,
     conversation: Res<crate::dialogue::Conversation>,
     vats: Option<Res<crate::vats::Vats>>,
@@ -539,17 +540,26 @@ pub fn begin_frame(
         .as_deref()
         .and_then(crate::poll::ControlsBuffer::device_keys)
         .unwrap_or(&keys);
-    this.0 = viewer_frame_state(FrameInputs {
+    let ui_frame = viewer_frame_state(FrameInputs {
         alt_tab_held: keys.pressed(KeyCode::Tab)
             && (keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight)),
         menu_up: menus.is_open() || in_dialogue || vats.is_some_and(|v| v.in_menu()),
         vats_mode,
         top_menu: draw.1.last().copied(),
     });
-    this_player.0 = viewer_player_state(&this.0, walker.walking, in_dialogue);
-    this_world.0 = viewer_world_state(&this.0, exterior.is_none());
-    this_ai.0 = viewer_ai_state(&this.0, in_dialogue, exterior.is_none());
-    this_interface.0 = interface::from_frame(&this.0, in_dialogue);
+    let mut simulation_frame = ui_frame;
+    if coop.is_active() && ui_frame.menu_flag() {
+        // In co-op, menus and dialogue take only this player's input. Keep
+        // the frame gates for world and AI work open while leaving the
+        // interface and this player's own controls in menu mode.
+        simulation_frame.in_menu_mode = false;
+        simulation_frame.pipboy_opening = false;
+    }
+    this.0 = simulation_frame;
+    this_player.0 = viewer_player_state(&ui_frame, walker.walking, in_dialogue);
+    this_world.0 = viewer_world_state(&simulation_frame, exterior.is_none());
+    this_ai.0 = viewer_ai_state(&simulation_frame, in_dialogue, exterior.is_none());
+    this_interface.0 = interface::from_frame(&ui_frame, in_dialogue);
 }
 
 /// Configures the sets in `Update`: the viewer's two sets ahead, the
