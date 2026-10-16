@@ -1366,6 +1366,15 @@ pub fn hurt(
         }
         state.more.down.remove(&who);
         state.dead.insert(who);
+        if by == PLAYER_REF {
+            if let Some(player) = state.coop_player_context {
+                state.coop_killers.insert(who, player);
+            } else {
+                state.coop_killers.remove(&who);
+            }
+        } else {
+            state.coop_killers.remove(&who);
+        }
         state.deaths.insert(
             who,
             DeathStart {
@@ -1814,15 +1823,23 @@ pub fn fired_projectile(
     shooter: FormId,
     weapon: &Weapon,
 ) -> Option<FormId> {
-    let from_ammo = weapon
-        .ammo_in_use(order, state, shooter)
-        .and_then(|a| order.get(a))
-        .and_then(|rr| {
-            let d = rr.record().ok()?.get(FourCC::new(b"DAT2"))?.data.clone();
-            (d.len() >= 8)
-                .then(|| rr.plugin.to_global(FormId(le_u32(&d, 4))))
-                .filter(|f| f.0 != 0)
-        });
+    fired_projectile_with_ammo(order, weapon, weapon.ammo_in_use(order, state, shooter))
+}
+
+/// [`fired_projectile`] using an explicitly selected ammunition form. The
+/// host uses this for a guest attack after validating that the guest owns the
+/// reported ammunition.
+pub fn fired_projectile_with_ammo(
+    order: &LoadOrder,
+    weapon: &Weapon,
+    ammo: Option<FormId>,
+) -> Option<FormId> {
+    let from_ammo = ammo.and_then(|a| order.get(a)).and_then(|rr| {
+        let d = rr.record().ok()?.get(FourCC::new(b"DAT2"))?.data.clone();
+        (d.len() >= 8)
+            .then(|| rr.plugin.to_global(FormId(le_u32(&d, 4))))
+            .filter(|f| f.0 != 0)
+    });
     from_ammo.or(weapon.projectile)
 }
 

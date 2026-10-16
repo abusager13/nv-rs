@@ -34,7 +34,7 @@ pub fn foreground() -> isize {
 }
 
 /// Gives the focus back when the window takes it.
-pub fn give_focus_back(mut focused: EventReader<WindowFocused>, user: Option<Res<UserWindow>>) {
+pub fn give_focus_back(mut focused: MessageReader<WindowFocused>, user: Option<Res<UserWindow>>) {
     let Some(user) = user else {
         focused.clear();
         return;

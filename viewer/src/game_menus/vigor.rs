@@ -228,11 +228,11 @@ pub fn update(screen: &mut Screen, dt: f32) {
 }
 
 use crate::lighting::GameLitMaterial;
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
-use bevy::render::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::render::render_resource::{BlendState, WgpuFeatures};
 use bevy::render::renderer::RenderDevice;
-use bevy::render::view::RenderLayers;
 use cellview::space;
 
 const SCENE_LAYER: usize = 27;
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn scene_output_preserves_transparency_independent_of_other_cameras() {
-        let camera = scene_camera(RenderTarget::default());
+        let camera = scene_camera();
         let CameraOutputMode::Write {
             blend_state,
             clear_color,
@@ -365,11 +365,9 @@ pub struct SceneAssets<'w> {
     device: Option<Res<'w, RenderDevice>>,
 }
 
-fn scene_camera(target: RenderTarget) -> Camera {
+fn scene_camera() -> Camera {
     Camera {
-        target,
         order: -5,
-        hdr: true,
         clear_color: ClearColorConfig::Custom(Color::NONE),
         output_mode: CameraOutputMode::Write {
             blend_state: Some(BlendState::REPLACE),
@@ -459,7 +457,9 @@ pub fn draw(
             commands
                 .spawn((
                     Camera3d::default(),
-                    scene_camera(RenderTarget::from(target)),
+                    scene_camera(),
+                    RenderTarget::from(target),
+                    bevy::camera::Hdr,
                     Projection::from(PerspectiveProjection {
                         fov: frustum.vertical_fov(),
                         near: frustum.near * space::METERS_PER_UNIT,
@@ -471,7 +471,7 @@ pub fn draw(
                     Tonemapping::None,
                     DebandDither::Disabled,
                     // No light clusters: nothing here is lit by Bevy's lights.
-                    bevy::pbr::ClusterConfig::None,
+                    bevy::light::cluster::ClusterConfig::Single,
                     Exposure {
                         ev100: crate::START_EV100,
                     },
@@ -526,7 +526,7 @@ pub fn draw(
         };
         if let Some(picture) = picture {
             if let Some((_, index)) = open.models.pictures.iter().find(|(p, _)| *p == picture) {
-                if let Some(material) = assets.materials.get_mut(handle.id()) {
+                if let Some(mut material) = assets.materials.get_mut(handle.id()) {
                     let texture = shown.textures[*index].clone();
                     if material.base.base_color_texture != texture {
                         material.base.base_color_texture = texture;

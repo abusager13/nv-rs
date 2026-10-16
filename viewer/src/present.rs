@@ -24,7 +24,7 @@ use bevy::render::renderer::{RenderAdapter, RenderInstance};
 #[cfg(not(target_os = "macos"))]
 use bevy::render::view::window::ExtractedWindows;
 #[cfg(not(target_os = "macos"))]
-use bevy::render::{Render, RenderApp, RenderSet};
+use bevy::render::{Render, RenderApp, RenderSystems};
 #[cfg(not(target_os = "macos"))]
 use bevy::window::{PresentMode, PrimaryWindow};
 
@@ -51,7 +51,7 @@ impl Plugin for PresentPlugin {
             if let Some(render) = app.get_sub_app_mut(RenderApp) {
                 render
                     .insert_resource(found)
-                    .add_systems(Render, look_at_surface.in_set(RenderSet::Cleanup));
+                    .add_systems(Render, look_at_surface.in_set(RenderSystems::Cleanup));
             }
         }
     }

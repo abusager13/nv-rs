@@ -1,6 +1,6 @@
 //! New Vegas's lighting for lit surfaces, in place of Bevy's physically
 //! based lighting: an extension of the standard material whose fragment
-//! shader (`game_lit.wgsl`) adds up the cell's lights the way the game
+//! shader (`game_lit.wesl`) adds up the cell's lights the way the game
 //! does. The standard material still does everything else: textures,
 //! vertex colors, transparency, culling. Follows Bevy 0.16's
 //! `extended_material` example.
@@ -9,22 +9,23 @@
 // reports as unused.
 #![allow(dead_code)]
 
-use bevy::asset::{load_internal_asset, weak_handle};
+use bevy::asset::{load_internal_asset, uuid_handle};
 use bevy::pbr::{
     ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
 };
 use bevy::prelude::*;
 use bevy::render::mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef};
 use bevy::render::render_resource::{
-    AsBindGroup, CompareFunction, RenderPipelineDescriptor, ShaderRef, ShaderType,
+    AsBindGroup, CompareFunction, RenderPipelineDescriptor, ShaderType,
     SpecializedMeshPipelineError, VertexFormat,
 };
 use bevy::render::render_resource::{
-    AsBindGroupError, BindGroupLayout, BindGroupLayoutEntry, UnpreparedBindGroup,
+    AsBindGroupError, BindGroupBuilder, BindGroupLayout, BindGroupLayoutEntry,
 };
 use bevy::render::renderer::RenderDevice;
+use bevy::shader::ShaderRef;
 
-const SHADER: Handle<Shader> = weak_handle!("3b8e2f41-7c95-4d1a-b06e-9f4a2c7d5e18");
+const SHADER: Handle<Shader> = uuid_handle!("3b8e2f41-7c95-4d1a-b06e-9f4a2c7d5e18");
 
 /// The three corners of the triangle a vertex belongs to, in the mesh's
 /// space. The game works several things out at each vertex and blends
@@ -263,22 +264,28 @@ impl AsBindGroup for LitExtension {
         bindless() && GameLit::bindless_supported(render_device)
     }
 
-    fn label() -> Option<&'static str> {
+    fn label() -> &'static str {
         GameLit::label()
     }
 
-    fn unprepared_bind_group(
+    fn bind_group_data(&self) -> Self::Data {
+        self.0.bind_group_data()
+    }
+
+    fn build_bind_group(
         &self,
         layout: &BindGroupLayout,
         render_device: &RenderDevice,
         param: &mut bevy::ecs::system::SystemParamItem<'_, '_, Self::Param>,
         force_no_bindless: bool,
-    ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
-        self.0.unprepared_bind_group(
+        output: &mut BindGroupBuilder,
+    ) -> Result<(), AsBindGroupError> {
+        self.0.build_bind_group(
             layout,
             render_device,
             param,
             force_no_bindless || !bindless(),
+            output,
         )
     }
 
@@ -316,9 +323,9 @@ impl MaterialExtension for LitExtension {
         let draw = key.bind_group_data;
         if draw.game {
             if let Some(depth) = descriptor.depth_stencil.as_mut() {
-                depth.depth_write_enabled = draw.depth_write;
+                depth.depth_write_enabled = Some(draw.depth_write);
                 if !draw.depth_test {
-                    depth.depth_compare = CompareFunction::Always;
+                    depth.depth_compare = Some(CompareFunction::Always);
                 }
                 // Decals are pulled nearer in the vertex shader, as the
                 // game's depth bias does; Bevy's bias only orders them.
@@ -360,7 +367,7 @@ pub struct GameLightingPlugin;
 
 impl Plugin for GameLightingPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "game_lit.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "game_lit.wesl", Shader::from_wesl);
         app.add_plugins(MaterialPlugin::<GameLitMaterial>::default());
     }
 

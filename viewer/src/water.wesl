@@ -36,11 +36,11 @@
 // same steps); the depth map comes from the scene's own depth (full
 // resolution, not 512 x 512), with the game's two values and 8-bit steps.
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     mesh_functions,
     view_transformations::{position_world_to_clip, position_ndc_to_world, frag_coord_to_ndc},
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
 
 struct WaterParams {
     shallow: vec4<f32>,
@@ -79,12 +79,12 @@ struct WaterParams {
     surface: vec4<f32>,
 }
 
-@group(2) @binding(0) var<uniform> water: WaterParams;
-@group(2) @binding(1) var noise_texture: texture_2d<f32>;
-@group(2) @binding(2) var noise_sampler: sampler;
-@group(2) @binding(3) var reflection_texture: texture_2d<f32>;
-@group(2) @binding(4) var reflection_sampler: sampler;
-@group(2) @binding(5) var depth_texture: texture_depth_multisampled_2d;
+@group(3) @binding(0) var<uniform> water: WaterParams;
+@group(3) @binding(1) var noise_texture: texture_2d<f32>;
+@group(3) @binding(2) var noise_sampler: sampler;
+@group(3) @binding(3) var reflection_texture: texture_2d<f32>;
+@group(3) @binding(4) var reflection_sampler: sampler;
+@group(3) @binding(5) var depth_texture: texture_depth_multisampled_2d;
 
 // Game units per meter (64 units to 0.9144 m).
 const UNITS_PER_METER: f32 = 69.99125;
@@ -195,11 +195,11 @@ fn screen_of(p: vec3<f32>) -> vec2<f32> {
 
 @fragment
 fn fragment(in: WaterVertexOutput) -> @location(0) vec4<f32> {
-#ifdef LOD
+@if(LOD) {
     return distant_water(in);
-#else
+} @else {
     return near_water(in);
-#endif
+}
 }
 
 // Distant water (`WATER033`): flat, without ripples, refraction or depth;
@@ -246,11 +246,11 @@ fn near_water(in: WaterVertexOutput) -> vec4<f32> {
     // depth map: the falloff is 1 and the bend isn't scaled by depth.
     var dm = vec2<f32>(1.0);
     var fall = 1.0;
-#ifdef DEPTH
+@if(DEPTH) {
     dm = depth_map(in.position, eye);
     let falloff_span = water.depth_falloff.y - water.depth_falloff.x;
     fall = saturate((dm.y - water.depth_falloff.x) / falloff_span);
-#endif
+}
     let fade = saturate(2.0 - dxy / 4096.0);
 
     // The ripples, from the world position (or the model's texture
@@ -267,9 +267,7 @@ fn near_water(in: WaterVertexOutput) -> vec4<f32> {
     // Reflection and refraction looked up where the ripples bend the
     // surface to: the offset in the model's own axes.
     var k = mix(4.0, water.var_amounts.w, saturate(dxy / 5000.0));
-#ifdef DEPTH
-    k *= dm.y * fall;
-#endif
+    @if(DEPTH) k *= dm.y * fall;
     let offset = (normal.x * k) * water.axes.xy + (normal.y * k) * water.axes.zw;
     let ss = screen_of(p + vec3<f32>(offset, 0.0));
     let refr = textureSampleLevel(
@@ -286,17 +284,17 @@ fn near_water(in: WaterVertexOutput) -> vec4<f32> {
     // north-south part counted four times (all the sun variants do this).
     var lit = 1.0;
     let sun = water.sun_dir.xyz;
-#ifndef INTERIOR
+@if(!INTERIOR) {
     lit = saturate(dot(normalize(vec3<f32>(sun.x, 4.0 * sun.y, sun.z)), normal));
-#endif
-#ifdef REFLECTIONS
+}
+@if(REFLECTIONS) {
     // The reflection camera's picture is mirrored left to right (see
     // `water.rs`).
     let refl = textureSampleLevel(reflection_texture, reflection_sampler, vec2<f32>(1.0 - ss.x, ss.y), 0.0).rgb / brightness;
     let reflected = mix(water.reflection.rgb, refl, water.var_amounts.y) * water.fresnel_ri.w;
-#endif
+}
 
-#ifdef DEPTH
+@if(DEPTH) {
     // The scene's fog taken back out of the copy (at the surface's
     // distance + the depth value: the shader's).
     let fog_bottom = scene_fog(dist + dy);
@@ -305,41 +303,41 @@ fn near_water(in: WaterVertexOutput) -> vec4<f32> {
     let murk = fall * water.fog_color.w
         * (1.0 - saturate(water.fog_param.z * (1.0 - dx) / max(water.fog_param.w, 1e-3)));
     let body = mix(refr_unfogged, water_color, murk);
-#ifdef REFLECTIONS
-#ifdef INTERIOR
+@if(REFLECTIONS) {
+@if(INTERIOR) {
     var color = mix(mix(body, water_color, dy), reflected, dx * fresnel);
-#else
+} @else {
     var color = mix(body, reflected, dx * fresnel);
-#endif
-#else
+}
+} @else {
     let top = mix(water_color, water.reflection.rgb, dx * fresnel);
     var color = mix(body, top, dy);
-#endif
-#else
+}
+} @else {
     // Without depth: the copy as it is, toward the water's colour by the
     // fresnel term, and the water's colour by its opacity (which fades to
     // full between 4096 and 8192 units away).
     let body = mix(refr, mix(water.shallow.rgb, water.deep.rgb, fresnel) * lit, fresnel);
     let a = saturate((1.0 - fade) * (1.0 - water.var_amounts.z) + water.var_amounts.z);
     let opaque_color = mix(water.shallow.rgb, water.deep.rgb, a);
-#ifdef REFLECTIONS
+@if(REFLECTIONS) {
     var color = mix(mix(body, opaque_color, a), reflected, fresnel);
-#else
+} @else {
     var color = mix(body, mix(opaque_color, water.reflection.rgb, fresnel), a);
-#endif
-#endif
+}
+}
 
-#ifndef INTERIOR
+@if(!INTERIOR) {
     // The sun's highlights: one in a fixed direction and one along the
     // reflected view, × the sun's colour and visibility.
     let reflected_view = 2.0 * dot(to_eye, normal) * normal - to_eye;
     let fixed = pow(saturate(-0.57 * normal.x + 0.82 * normal.z), 100.0);
     let along = pow(saturate(dot(reflected_view, sun)), water.var_amounts.x);
     color += (fixed + along) * water.sun_color.rgb * water.sun_dir.w;
-#ifndef REFLECTIONS
+@if(!REFLECTIONS) {
     color = saturate(color);
-#endif
-#endif
+}
+}
 
     let shaded = mix(color, water.fog_color.rgb, fog_surface);
     return vec4<f32>(shaded * brightness, 1.0);

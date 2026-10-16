@@ -36,11 +36,12 @@
 
 use std::sync::Arc;
 
-use bevy::core_pipeline::core_3d::Camera3dDepthLoadOp;
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Camera3dDepthLoadOp;
+use bevy::camera::Hdr;
+use bevy::camera::{ClearColorConfig, Exposure};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
-use bevy::render::camera::{ClearColorConfig, Exposure};
-use bevy::render::view::RenderLayers;
 use cellview::space;
 use esm::FormId;
 use preview::cell::ActorSkeleton;
@@ -88,13 +89,12 @@ pub fn spawn_camera(commands: &mut Commands, parent: Entity, exposure: Exposure)
             Camera {
                 // After the main camera, onto the same picture.
                 order: 1,
-                hdr: true,
                 clear_color: ClearColorConfig::None,
                 ..default()
             },
+            Hdr,
             Tonemapping::None,
-            // No light clusters: nothing here is lit by Bevy's lights.
-            bevy::pbr::ClusterConfig::None,
+            bevy::light::cluster::ClusterConfig::Single,
             Projection::from(PerspectiveProjection {
                 fov: cellview::vertical_fov(FIRST_PERSON_FOV_DEGREES),
                 near: FIRST_PERSON_NEAR * space::METERS_PER_UNIT,
@@ -105,9 +105,6 @@ pub fn spawn_camera(commands: &mut Commands, parent: Entity, exposure: Exposure)
             Transform::IDENTITY,
             ChildOf(parent),
             RenderLayers::layer(FIRST_PERSON_LAYER),
-            // The text and menus stay on this camera when a movie's camera
-            // (`movie`, a higher order) is on screen.
-            IsDefaultUiCamera,
             // Replaced by the main camera's every frame (`copy_grade`).
             ImageSpaceGrade::NEUTRAL,
             FirstPersonCamera,
@@ -931,7 +928,7 @@ pub fn update_view_model(
         ch, -sh, 0.0, 0.0, sh, ch, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, feet[0], feet[1], feet[2], 1.0,
     ];
     let world_root = Mat4::from_cols_array(&space::matrix(&game));
-    let local = camera_transform.compute_matrix().inverse() * world_root;
+    let local = camera_transform.to_matrix().inverse() * world_root;
     if let Ok(mut t) = transforms.get_mut(root) {
         *t = Transform::from_matrix(local);
     }
@@ -956,7 +953,7 @@ pub fn update_view_model(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::render::camera::CameraProjection;
+    use bevy::camera::CameraProjection;
 
     #[test]
     fn the_first_person_projection_is_the_recorded_one() {

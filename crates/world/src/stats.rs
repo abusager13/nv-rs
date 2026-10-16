@@ -81,10 +81,19 @@ pub fn index(name: &str) -> Option<u8> {
 
 /// A statistic now. Quests completed are counted from the quests.
 pub fn get(state: &GameState, stat: u8) -> u32 {
+    let stored = if let Some(player) = state.coop_player_context {
+        state
+            .coop_misc_stats
+            .get(&(player, stat))
+            .copied()
+            .unwrap_or(0)
+    } else {
+        state.misc_stats.get(&stat).copied().unwrap_or(0)
+    };
     if stat == QUESTS_COMPLETED {
-        return state.completed.len() as u32 + state.misc_stats.get(&stat).copied().unwrap_or(0);
+        return state.completed.len() as u32 + stored;
     }
-    state.misc_stats.get(&stat).copied().unwrap_or(0)
+    stored
 }
 
 /// Adds to a statistic (`ModPCMiscStat` takes negative amounts too; it
@@ -92,9 +101,20 @@ pub fn get(state: &GameState, stat: u8) -> u32 {
 /// statistic (`004d5e10` → `005f5950(11, …)`), which look when scripts next
 /// run (`world::more_functions::challenges::catch_up`).
 pub fn bump(state: &mut GameState, stat: u8, by: i64) {
-    let v = state.misc_stats.entry(stat).or_insert(0);
+    let context = state.coop_player_context;
+    let v = if let Some(player) = context {
+        state.coop_misc_stats.entry((player, stat)).or_insert(0)
+    } else {
+        state.misc_stats.entry(stat).or_insert(0)
+    };
     *v = (i64::from(*v) + by).max(0) as u32;
     if by != 0 {
-        state.more.challenges.stat_bumps.push((stat, by));
+        if let Some(player) = context {
+            // Guest counters stay in a player-keyed map; the viewer sends
+            // their new absolute values to that guest after the host action.
+            state.coop_misc_stat_updates.insert((player, stat), *v);
+        } else {
+            state.more.challenges.stat_bumps.push((stat, by));
+        }
     }
 }

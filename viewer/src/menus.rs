@@ -225,7 +225,7 @@ pub fn setup_menu_text(mut commands: Commands) {
     commands.spawn((
         Text::new(String::new()),
         TextFont {
-            font_size: 20.0,
+            font_size: FontSize::Px(20.0),
             ..default()
         },
         TextColor(Color::srgb(0.95, 0.85, 0.55)),
@@ -400,7 +400,7 @@ pub fn run_menus(
     mut player: ResMut<Player>,
     conversation: Res<Conversation>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
-    mut typed: EventReader<KeyboardInput>,
+    mut typed: MessageReader<KeyboardInput>,
     mut panel: Query<(&mut Text, &mut Visibility), With<MenuText>>,
 ) {
     // The lockpicking menu has the keyboard while it's open (`lockpick`).

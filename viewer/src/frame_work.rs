@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use bevy::prelude::*;
-use bevy::render::{Render, RenderApp, RenderSet};
+use bevy::render::{Render, RenderApp, RenderSystems};
 
 /// Work times gathered since the last report, in milliseconds.
 #[derive(Default, Clone, Copy)]
@@ -75,7 +75,7 @@ impl Plugin for FrameWorkPlugin {
                     (|mut start: ResMut<RenderStart>| {
                         start.0 = Some(Instant::now());
                     })
-                    .in_set(RenderSet::ExtractCommands),
+                    .in_set(RenderSystems::ExtractCommands),
                 )
                 .add_systems(
                     Render,
@@ -84,7 +84,7 @@ impl Plugin for FrameWorkPlugin {
                             r.add(t.elapsed().as_secs_f64() * 1000.0);
                         }
                     })
-                    .in_set(RenderSet::Cleanup),
+                    .in_set(RenderSystems::Cleanup),
                 );
         }
     }

@@ -28,18 +28,18 @@
 //   alpha = saturate(1.75 * texture alpha) * fade    (alpha to coverage)
 //
 // Everything is in game units and the game's axes until the position is
-// handed to Bevy, and on stored (gamma-encoded) values, as `game_lit.wgsl`
-// and `terrain.wgsl`: the result is written as stored values and the image
+// handed to Bevy, and on stored (gamma-encoded) values, as `game_lit.wesl`
+// and `terrain.wesl`: the result is written as stored values and the image
 // space pass decodes the finished picture. The projected depth in the
 // fade and fog lengths is the game's: the view depth less its near plane
 // (5 units; the factor it's then multiplied by is within 0.002% of 1
 // outdoors), the 4D length's w the view depth.
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     forward_io::FragmentOutput,
     view_transformations::position_world_to_clip,
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
 
 struct GrassVertex {
     // The model's vertex as stored, game units.
@@ -74,7 +74,7 @@ struct Grass {
     // (the grass dimmer), AlphaTestRef (unused with multisampling).
     fade: vec4<f32>,
     // x: 1 to fit the slope; y: 1 to light by the model's normals; z: the
-    // luminance shown at full brightness (see `game_lit.wgsl`).
+    // luminance shown at full brightness (see `game_lit.wesl`).
     flags: vec4<f32>,
     // The fog's colour as stored, its power in w.
     fog_color: vec4<f32>,
@@ -82,9 +82,9 @@ struct Grass {
     fog_range: vec4<f32>,
 }
 
-@group(2) @binding(100) var<uniform> grass: Grass;
-@group(2) @binding(101) var grass_texture: texture_2d<f32>;
-@group(2) @binding(102) var grass_sampler: sampler;
+@group(3) @binding(100) var<uniform> grass: Grass;
+@group(3) @binding(101) var grass_texture: texture_2d<f32>;
+@group(3) @binding(102) var grass_sampler: sampler;
 
 const METERS_PER_UNIT: f32 = 0.0142875;
 

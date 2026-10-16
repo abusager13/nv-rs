@@ -37,6 +37,12 @@ use crate::GameFiles;
 #[derive(Debug, Clone)]
 pub(crate) struct Bolt {
     pub shooter: FormId,
+    /// Co-op owner when a guest fired this host-simulated bolt.
+    pub coop_player: Option<u8>,
+    /// The guest's combat stats at launch, retained until this delayed hit.
+    pub combat_profile: Option<crate::coop::CombatProfile>,
+    /// The player's sneak state when this shot left the weapon.
+    pub sneaking: bool,
     pub pellet: Weapon,
     pub projectile: world::explosions::ProjectileRecord,
     pub missile: Missile,
@@ -49,7 +55,14 @@ impl Bolt {
     fn impact(&self, at: [f32; 3]) {
         let p = &self.projectile;
         if p.explodes() && !p.alt_trigger() {
-            crate::explosives::detonate(self.shooter, self.pellet.clone(), p.clone(), at);
+            crate::explosives::detonate(
+                self.shooter,
+                self.coop_player,
+                self.combat_profile.clone(),
+                self.pellet.clone(),
+                p.clone(),
+                at,
+            );
         }
     }
 }
@@ -94,6 +107,11 @@ pub(crate) fn fire(
     if let Ok(mut q) = QUEUE.lock() {
         q.push(Bolt {
             shooter,
+            coop_player: state.coop_player_context,
+            combat_profile: state
+                .coop_player_context
+                .and_then(|_| crate::coop::combat_profile_snapshot(order, state)),
+            sneaking: state.player_sneaking,
             pellet: pellet.clone(),
             missile: Missile::launch(origin, dir, speed, range)
                 .with_gravity(world::projectiles::missile_gravity(&record)),
@@ -250,9 +268,13 @@ fn strike(
     (victim, part): (FormId, Option<u8>),
 ) {
     let me = bolt.shooter;
+    let old_sneaking = state.player_sneaking;
+    if me == PLAYER_REF {
+        state.player_sneaking = bolt.sneaking;
+    }
     let alive = !state.dead.contains(&victim);
     let sneak_attack = me == PLAYER_REF
-        && state.player_sneaking
+        && bolt.sneaking
         && world::scripting::Facts {
             order,
             state,
@@ -260,9 +282,18 @@ fn strike(
         }
         .detection(victim, PLAYER_REF)
         .is_none_or(|v| v < 1);
-    let Some(hit) =
+    let previous_coop_player = state.coop_player_context;
+    state.coop_player_context = bolt.coop_player;
+    let hit = if let Some(profile) = bolt.combat_profile.as_ref() {
+        crate::coop::with_combat_profile(order, state, profile, |state| {
+            Runner::new(order, &scripts.0, state).hit_at(me, victim, Some(&bolt.pellet), part)
+        })
+    } else {
         Runner::new(order, &scripts.0, state).hit_at(me, victim, Some(&bolt.pellet), part)
-    else {
+    };
+    state.coop_player_context = previous_coop_player;
+    state.player_sneaking = old_sneaking;
+    let Some(hit) = hit else {
         println!("{me}'s bolt hit {victim} at {out:.0} units.");
         return;
     };

@@ -2,7 +2,7 @@
 //! ITEMS, DATA) filled from the game's state, drawn as the game draws them
 //! with `[Pipboy] bUsePipboyMode` on (this install): into a picture of
 //! their own (1280 × 960 menu units, `007fba00`), which the screen effect
-//! (`ISIFSCANBLEND`, `pipboy.wgsl`: the glow, scanlines, the rolling
+//! (`ISIFSCANBLEND`, `pipboy.wesl`: the glow, scanlines, the rolling
 //! picture and the bright band, timed by `ui::pipboy::screen`) turns into
 //! the texture of the arm model's `pipboyscreen:0` (`PipBoy3000\
 //! PipBoyArm.NIF`, the `PipBoy` apparel's model, held on the first-person
@@ -63,17 +63,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Hdr;
+use bevy::camera::RenderTarget;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
-use bevy::render::camera::RenderTarget;
 use bevy::render::render_resource::{
-    AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat, TextureUsages,
-    WgpuFeatures,
+    AsBindGroup, Extent3d, ShaderType, TextureDimension, TextureFormat, TextureUsages, WgpuFeatures,
 };
 use bevy::render::renderer::RenderDevice;
-use bevy::render::view::RenderLayers;
-use bevy::sprite::{AlphaMode2d, Material2d, Material2dPlugin};
+use bevy::shader::ShaderRef;
+use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use cellview::space;
 use esm::FormId;
 use preview::cell::ActorSkeleton;
@@ -91,7 +92,7 @@ use crate::sounds::{PcmSound, SoundRequests};
 use crate::walk::{game_point, Player};
 use crate::{FlyCamera, GameFiles, Spawner};
 
-const SCREEN_SHADER: Handle<Shader> = weak_handle!("6f1d0b9e-3c52-4a8e-b7f4-2e9a5c0d81b7");
+const SCREEN_SHADER: Handle<Shader> = uuid_handle!("6f1d0b9e-3c52-4a8e-b7f4-2e9a5c0d81b7");
 
 /// The render layers only the Pip-Boy's two cameras see.
 const MENU_LAYER: usize = 24;
@@ -123,7 +124,7 @@ pub struct PipboyPlugin;
 
 impl Plugin for PipboyPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SCREEN_SHADER, "pipboy.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SCREEN_SHADER, "pipboy.wesl", Shader::from_wesl);
         app.add_plugins(Material2dPlugin::<ScreenMaterial>::default())
             .init_resource::<Pipboy>()
             .add_systems(Startup, setup_pipboy)
@@ -347,7 +348,7 @@ fn pipboy_light(
         if ours.is_none() && light.is_none() {
             continue;
         }
-        if let Some(m) = lit.get_mut(id) {
+        if let Some(mut m) = lit.get_mut(id) {
             match put_light(&mut m.extension.lighting, ours, last, light) {
                 Some(b) => on.lit.insert(id, b),
                 None => on.lit.remove(&id),
@@ -360,7 +361,7 @@ fn pipboy_light(
         if ours.is_none() && light.is_none() {
             continue;
         }
-        if let Some(m) = terrain.get_mut(id) {
+        if let Some(mut m) = terrain.get_mut(id) {
             match put_light(&mut m.extension.lighting, ours, last, light) {
                 Some(b) => on.terrain.insert(id, b),
                 None => on.terrain.remove(&id),
@@ -526,7 +527,7 @@ impl PickMesh {
             .map(|(e, bind)| {
                 globals
                     .get(*e)
-                    .map_or(Mat4::ZERO, |g| g.compute_matrix() * *bind)
+                    .map_or(Mat4::ZERO, |g| g.to_matrix() * *bind)
             })
             .collect();
         let world: Vec<Vec3> = self
@@ -744,13 +745,13 @@ fn setup_pipboy(
         (
             Camera2d,
             Camera {
-                target: RenderTarget::from(target.clone()),
                 order,
-                hdr: true,
                 clear_color: ClearColorConfig::Custom(Color::NONE),
                 is_active: false,
                 ..default()
             },
+            RenderTarget::from(target.clone()),
+            Hdr,
             Tonemapping::None,
             DebandDither::Disabled,
             Msaa::Off,
@@ -979,13 +980,13 @@ pub struct Mouse<'w, 's> {
     /// of the viewer by clearing `buttons` every frame, which also drops
     /// what `buttons` would say about a button let go later, so the
     /// Pip-Boy reads the presses and releases themselves.
-    events: EventReader<'w, 's, bevy::input::mouse::MouseButtonInput>,
+    events: MessageReader<'w, 's, bevy::input::mouse::MouseButtonInput>,
     scroll: ResMut<'w, bevy::input::mouse::AccumulatedMouseScroll>,
     /// A connected pad, for its sticks on DATA's maps.
     pads: Query<'w, 's, &'static Gamepad>,
     /// The keys' own events, for the number keys (hot keys), which the
     /// Pip-Boy clears from `ButtonInput` while it's up.
-    keyboard: EventReader<'w, 's, bevy::input::keyboard::KeyboardInput>,
+    keyboard: MessageReader<'w, 's, bevy::input::keyboard::KeyboardInput>,
     /// The view, for the player's facing (drops land in front of it).
     view: Query<'w, 's, &'static Transform, With<FlyCamera>>,
     /// `--menu-pointer` and `--menu-click` (for testing: screenshots have
@@ -2566,7 +2567,7 @@ pub(crate) fn update_pipboy(
     if let (Some(fx), Some(handle)) = (pipboy.effects.as_mut(), pipboy.material.as_ref()) {
         let p = fx.params(now * 1000.0);
         let tint = pipboy_colour(&game.0);
-        if let Some(m) = screens.get_mut(handle) {
+        if let Some(mut m) = screens.get_mut(handle) {
             m.u = ScreenUniform {
                 params: Vec4::new(p.blur_intensity, p.scroll, 1.0, p.scanline_frequency),
                 distort: p.distort.map_or(Vec4::ZERO, |(v, progress, h)| {
@@ -2646,7 +2647,7 @@ pub(crate) fn update_pipboy(
     // there).
     if let (Some(piece), Some(screen)) = (arm.screen, pipboy.screen.as_ref()) {
         if let Ok(handle) = piece_materials.get(piece) {
-            if let Some(m) = spawner.lit_materials.get_mut(&handle.0) {
+            if let Some(mut m) = spawner.lit_materials.get_mut(&handle.0) {
                 m.base.base_color_texture = Some(screen.clone());
             }
             arm.screen = None;
@@ -3045,7 +3046,7 @@ fn draw_knobs(arm: &mut Arm, knobs: &Knobs, meshes: &mut Assets<Mesh>, handles: 
         }
         let mut all = true;
         for p in arm.knob_pieces.iter().filter(|p| p.knob == k) {
-            let Some(mesh) = handles
+            let Some(mut mesh) = handles
                 .get(p.entity)
                 .ok()
                 .and_then(|h| meshes.get_mut(&h.0))
@@ -3272,7 +3273,7 @@ fn pose_arm(
         ch, -sh, 0.0, 0.0, sh, ch, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, feet[0], feet[1], feet[2], 1.0,
     ];
     let world_root = Mat4::from_cols_array(&space::matrix(&game));
-    let local = camera_transform.compute_matrix().inverse() * world_root;
+    let local = camera_transform.to_matrix().inverse() * world_root;
     if let Ok(mut t) = transforms.get_mut(arm.root) {
         *t = Transform::from_matrix(local);
     }

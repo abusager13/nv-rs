@@ -96,7 +96,6 @@ fn placement(feet: [f32; 3], heading: f32, scale: f32) -> Transform {
 /// what to play; `actors::animate_actors` poses it after.
 #[allow(clippy::too_many_arguments)]
 pub fn update_player_body(
-    mut commands: Commands,
     game: Res<GameFiles>,
     state: Res<crate::dialogue::DialogueState>,
     player: Res<Player>,
@@ -159,7 +158,7 @@ pub fn update_player_body(
         });
         let weapon_changed = body.built.as_ref().map(|b| b.weapon) != Some(wanted.weapon);
         if let Some(old) = body.holder.take() {
-            if let Ok(mut e) = commands.get_entity(old) {
+            if let Ok(mut e) = spawner.commands.get_entity(old) {
                 e.despawn();
             }
         }
@@ -172,7 +171,8 @@ pub fn update_player_body(
             return;
         };
         let scene = game.0.actor_scene(&look);
-        let holder = commands
+        let holder = spawner
+            .commands
             .spawn((Transform::IDENTITY, Visibility::Hidden))
             .id();
         body.holder = Some(holder);
@@ -220,7 +220,7 @@ pub fn update_player_body(
         rig.weapon_kind = weapon
             .as_ref()
             .map(|w| world::animation::groups::weapon_kind(w.animation));
-        commands.entity(root).insert(rig);
+        spawner.commands.entity(root).insert(rig);
         body.root = Some(root);
         return;
     }

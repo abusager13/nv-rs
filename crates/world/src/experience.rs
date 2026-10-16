@@ -111,6 +111,7 @@ pub fn reward(order: &LoadOrder, state: &mut GameState, amount: f64) -> f64 {
     }
     let total = now + value;
     state.actor_values.insert((PLAYER_REF, XP), total);
+    crate::scripting::record_coop_player_actor_value(order, state, XP);
     if value > 0.0 {
         // The HUD's meter: `sStatsXP` and the gain (`0077c4e0`).
         let label =

@@ -11,9 +11,9 @@
 // Both MaskColors and Colors are the menus' picture here. The result is
 // what the game's 8-bit render target would hold (clamped to 0..1), handed
 // on decoded to linear light, since the arm's material encodes what it
-// samples back to stored values (`game_lit.wgsl`).
+// samples back to stored values (`game_lit.wesl`).
 
-#import bevy_sprite::mesh2d_vertex_output::VertexOutput
+import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 
 struct Screen {
     // Params: blur intensity, scroll, 1, scanline frequency.

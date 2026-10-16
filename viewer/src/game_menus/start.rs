@@ -96,6 +96,7 @@ fn initial_settings(game: &Game) -> HashMap<Setting, f32> {
         ini(game, "GamePlay", "bGeneralSubtitles", 0.0),
     );
     m.insert(Brightness, ini(game, "Display", "fGamma", 1.0));
+    m.insert(MetalFx, 0.0);
     m.insert(HudOpacity, ini(game, "Interface", "fHudOpacity", 1.0));
     m.insert(TextureSize, ini(game, "Display", "iTexMipMapSkip", 0.0));
     m.insert(MasterVolume, v.master);
@@ -188,7 +189,7 @@ pub fn to_index(settings: &HashMap<Setting, f32>, s: Setting, count: i32) -> (i3
         SaveOnRest | SaveOnWait | SaveOnTravel | TrueIronSights | Crosshair | DialogueSubtitles => {
             (values::bool_to_index(v != 0.0), 1)
         }
-        GeneralSubtitles | InvertY => (values::bool_to_index(v != 0.0), 0),
+        GeneralSubtitles | InvertY | MetalFx => (values::bool_to_index(v != 0.0), 0),
         // `007d19c0`: gamma between `fGammaMin` 1.4 and `fGammaMax` 0.6.
         Brightness => (
             values::gamma_to_index(v, 1.4, 0.6, count),
@@ -225,7 +226,7 @@ pub fn from_index(s: Setting, index: i32, count: i32) -> f32 {
     match s {
         KillCam | Difficulty | TextureSize | HudColor | PipboyColor => index as f32,
         Hardcore | SaveOnRest | SaveOnWait | SaveOnTravel | TrueIronSights | Crosshair
-        | DialogueSubtitles | GeneralSubtitles | InvertY | Controller | Rumble => {
+        | DialogueSubtitles | GeneralSubtitles | InvertY | Controller | Rumble | MetalFx => {
             f32::from(u8::from(values::index_to_bool(index)))
         }
         Brightness => values::index_to_gamma(index, 1.4, 0.6, count),
@@ -335,6 +336,25 @@ pub fn open(
         settings.loaded = true;
     }
     let mut menu = StartMenu::new(0, &screen.ui);
+    if crate::metalfx::is_available() {
+        // Keep the platform-specific control at the top of Display so it
+        // is visible without scrolling past the game's many fade settings.
+        menu.user_items.insert(
+            0,
+            ui::menus::start::Item {
+                label: "MetalFX Upscaling".to_string(),
+                pages: ui::menus::start::page::DISPLAY,
+                kind: ui::menus::start::Kind::Toggle {
+                    setting: Setting::MetalFx,
+                    values: vec!["Off".to_string(), "On".to_string()],
+                    wrap: true,
+                    spacing: 0.0,
+                },
+                value: 0,
+                default: 0,
+            },
+        );
+    }
     let tile = match screen.load(game, start::FILE, &mut menu) {
         Ok(t) => t,
         Err(e) => {

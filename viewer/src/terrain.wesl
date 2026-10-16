@@ -26,12 +26,12 @@
 // Past the loaded area's inner part the game blends each quarter toward
 // the distant land's texture in a second pass (see `lod_blend` below).
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     forward_io::FragmentOutput,
     mesh_functions,
     view_transformations::position_world_to_clip,
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
 
 struct TerrainVertex {
     @builtin(instance_index) instance_index: u32,
@@ -65,7 +65,7 @@ struct GameLight {
     color: vec4<f32>,
 }
 
-// The same uniform as `game_lit.wgsl`'s; the terrain uses its ambient,
+// The same uniform as `game_lit.wesl`'s; the terrain uses its ambient,
 // sun, fog, scale and lights.
 struct GameLighting {
     ambient: vec4<f32>,
@@ -103,30 +103,30 @@ struct SharedLight {
     fog_range: vec4<f32>,
 }
 
-@group(2) @binding(100) var<uniform> game: GameLighting;
-@group(2) @binding(101) var base_0: texture_2d<f32>;
-@group(2) @binding(102) var base_1: texture_2d<f32>;
-@group(2) @binding(103) var base_2: texture_2d<f32>;
-@group(2) @binding(104) var base_3: texture_2d<f32>;
-@group(2) @binding(105) var base_4: texture_2d<f32>;
-@group(2) @binding(106) var base_5: texture_2d<f32>;
-@group(2) @binding(107) var base_6: texture_2d<f32>;
-@group(2) @binding(108) var normal_0: texture_2d<f32>;
-@group(2) @binding(109) var normal_1: texture_2d<f32>;
-@group(2) @binding(110) var normal_2: texture_2d<f32>;
-@group(2) @binding(111) var normal_3: texture_2d<f32>;
-@group(2) @binding(112) var normal_4: texture_2d<f32>;
-@group(2) @binding(113) var normal_5: texture_2d<f32>;
-@group(2) @binding(114) var normal_6: texture_2d<f32>;
-@group(2) @binding(115) var terrain_sampler: sampler;
-@group(2) @binding(116) var<uniform> land_blend: LandBlend;
-@group(2) @binding(117) var lod_base: texture_2d<f32>;
-@group(2) @binding(118) var lod_normal: texture_2d<f32>;
-@group(2) @binding(119) var lod_noise: texture_2d<f32>;
-@group(2) @binding(120) var lod_sampler: sampler;
-@group(2) @binding(121) var<storage, read> shared_light: SharedLight;
+@group(3) @binding(100) var<uniform> game: GameLighting;
+@group(3) @binding(101) var base_0: texture_2d<f32>;
+@group(3) @binding(102) var base_1: texture_2d<f32>;
+@group(3) @binding(103) var base_2: texture_2d<f32>;
+@group(3) @binding(104) var base_3: texture_2d<f32>;
+@group(3) @binding(105) var base_4: texture_2d<f32>;
+@group(3) @binding(106) var base_5: texture_2d<f32>;
+@group(3) @binding(107) var base_6: texture_2d<f32>;
+@group(3) @binding(108) var normal_0: texture_2d<f32>;
+@group(3) @binding(109) var normal_1: texture_2d<f32>;
+@group(3) @binding(110) var normal_2: texture_2d<f32>;
+@group(3) @binding(111) var normal_3: texture_2d<f32>;
+@group(3) @binding(112) var normal_4: texture_2d<f32>;
+@group(3) @binding(113) var normal_5: texture_2d<f32>;
+@group(3) @binding(114) var normal_6: texture_2d<f32>;
+@group(3) @binding(115) var terrain_sampler: sampler;
+@group(3) @binding(116) var<uniform> land_blend: LandBlend;
+@group(3) @binding(117) var lod_base: texture_2d<f32>;
+@group(3) @binding(118) var lod_normal: texture_2d<f32>;
+@group(3) @binding(119) var lod_noise: texture_2d<f32>;
+@group(3) @binding(120) var lod_sampler: sampler;
+@group(3) @binding(121) var<storage, read> shared_light: SharedLight;
 
-// As `game_lit.wgsl`'s: the length of the position after the game's
+// As `game_lit.wesl`'s: the length of the position after the game's
 // projection (x and y scaled by it, depth from its near plane), then
 // saturate((d - near) / (far - near)) ^ power.
 fn fog_amount(p: vec3<f32>) -> f32 {

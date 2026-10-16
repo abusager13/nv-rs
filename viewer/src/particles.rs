@@ -1,6 +1,6 @@
 //! Particle systems in placed models (`cellview::particles`), run as the
 //! game runs them (`world::particles`) and drawn with its particle shaders
-//! (`particles.wgsl`). Every frame each placed object's systems are moved on
+//! (`particles.wesl`). Every frame each placed object's systems are moved on
 //! to the seconds since it appeared, with the sequences it plays driving
 //! controllers a controller manager owns; then each system's quads, facing
 //! the camera, become its mesh, sorted back to front when blended. The fog
@@ -12,17 +12,18 @@
 // reports as unused.
 #![allow(dead_code)]
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
+use bevy::camera::visibility::NoFrustumCulling;
 use bevy::pbr::{
     ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
 };
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
 use bevy::render::render_resource::{
-    AsBindGroup, CompareFunction, RenderPipelineDescriptor, ShaderRef, ShaderType,
+    AsBindGroup, CompareFunction, RenderPipelineDescriptor, ShaderType,
     SpecializedMeshPipelineError,
 };
-use bevy::render::view::NoFrustumCulling;
+use bevy::shader::ShaderRef;
 use cellview::particles::{corners_for_drawing, quad_indices, ParticleData, ParticleLook};
 use cellview::{space, Blend, ViewerScene};
 use world::particles::{CameraBasis, PlacedParticles};
@@ -30,11 +31,11 @@ use world::particles::{CameraBasis, PlacedParticles};
 use crate::dialogue::DialogueState;
 use crate::FlyCamera;
 
-const SHADER: Handle<Shader> = weak_handle!("2b8e5f17-4c3a-4d6e-9a1b-7f0c2d8e4a61");
+const SHADER: Handle<Shader> = uuid_handle!("2b8e5f17-4c3a-4d6e-9a1b-7f0c2d8e4a61");
 
 pub type ParticleMaterial = ExtendedMaterial<StandardMaterial, ParticleShader>;
 
-/// What the particle shader reads (`particles.wgsl`).
+/// What the particle shader reads (`particles.wesl`).
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Reflect)]
 pub struct ParticleParams {
     /// `MaterialColor`.
@@ -88,9 +89,9 @@ impl MaterialExtension for ParticleShader {
     ) -> Result<(), SpecializedMeshPipelineError> {
         let draw = key.bind_group_data;
         if let Some(depth) = descriptor.depth_stencil.as_mut() {
-            depth.depth_write_enabled = draw.depth_write;
+            depth.depth_write_enabled = Some(draw.depth_write);
             if !draw.depth_test {
-                depth.depth_compare = CompareFunction::Always;
+                depth.depth_compare = Some(CompareFunction::Always);
             }
         }
         if descriptor.vertex.shader != SHADER {
@@ -109,11 +110,11 @@ pub struct ParticlesPlugin;
 
 impl Plugin for ParticlesPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "particles.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "particles.wesl", Shader::from_wesl);
         app.add_plugins(MaterialPlugin::<ParticleMaterial>::default())
             .add_systems(
                 PostUpdate,
-                run_particles.before(bevy::transform::TransformSystem::TransformPropagate),
+                run_particles.before(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -138,7 +139,7 @@ pub struct ParticleEmitter {
     systems: Vec<Option<Drawn>>,
 }
 
-/// How the colour reaches the picture (`particles.wgsl`'s `mode.x`).
+/// How the colour reaches the picture (`particles.wesl`'s `mode.x`).
 fn output_mode(look: &ParticleLook) -> f32 {
     match look.blend {
         Blend::Add if look.adds_alpha => 1.0,
@@ -363,7 +364,7 @@ fn run_particles(
                 (wanted.color.x, wanted.color.y, wanted.color.z) = (r, g, b);
             }
             if wanted != current {
-                if let Some(m) = materials.get_mut(&d.material) {
+                if let Some(mut m) = materials.get_mut(&d.material) {
                     m.extension.params = wanted;
                 }
             }
@@ -376,7 +377,7 @@ fn run_particles(
                 .iter()
                 .map(|&p| (Vec3::from(space::point(p)) - origin).into())
                 .collect();
-            if let Some(mesh) = meshes.get_mut(&d.mesh) {
+            if let Some(mut mesh) = meshes.get_mut(&d.mesh) {
                 mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
                 mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
                 mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);

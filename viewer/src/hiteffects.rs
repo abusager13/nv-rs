@@ -32,7 +32,7 @@ use esm::FormId;
 use world::dialogue::{Speaker, PLAYER_REF};
 use world::impacts::{self, CombatVoice, DeathCry, Impact, Material};
 
-use bevy::render::primitives::Frustum;
+use bevy::camera::primitives::Frustum;
 use cellview::space;
 use world::decals::DecalRolls;
 
@@ -174,7 +174,7 @@ pub struct HitParams<'w, 's> {
 fn in_view(frusta: &Query<&Frustum, With<FlyCamera>>, point: [f32; 3], radius: f32) -> bool {
     frusta.single().is_ok_and(|f| {
         f.intersects_sphere(
-            &bevy::render::primitives::Sphere {
+            &bevy::camera::primitives::Sphere {
                 center: Vec3::from(space::point(point)).into(),
                 radius: radius * space::METERS_PER_UNIT,
             },

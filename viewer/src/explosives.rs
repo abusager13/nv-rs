@@ -61,9 +61,16 @@ pub(crate) enum Aim {
 #[derive(Debug, Clone)]
 pub(crate) struct Launch {
     pub thrower: FormId,
+    /// Co-op owner when a guest launched this host-simulated throw.
+    pub coop_player: Option<u8>,
+    /// The guest's combat stats at launch, retained until a delayed blast.
+    pub combat_profile: Option<crate::coop::CombatProfile>,
     pub weapon: Weapon,
     pub origin: [f32; 3],
     pub aim: Aim,
+    /// Remote player inventory is owned by that client for now, so host
+    /// simulation must not consume the host's single-player inventory.
+    pub consume_item: bool,
 }
 
 /// Throws asked for this frame. The attacks are in systems that can't take
@@ -73,7 +80,14 @@ static QUEUE: Mutex<Vec<Launch>> = Mutex::new(Vec::new());
 /// Projectiles that went off where they struck (`bolts`: a missile with
 /// an explosion and no alt. trigger explodes at its impact, `009c3190`):
 /// who fired, with what, the projectile and where.
-type Detonation = (Cause, Option<Weapon>, ProjectileRecord, [f32; 3]);
+type Detonation = (
+    Cause,
+    Option<Weapon>,
+    ProjectileRecord,
+    [f32; 3],
+    Option<u8>,
+    Option<crate::coop::CombatProfile>,
+);
 
 /// An explosion's actor cause (none for a placed mine) and whom its hit
 /// reports name as the attacker.
@@ -81,9 +95,23 @@ type Cause = (Option<FormId>, FormId);
 static DETONATIONS: Mutex<Vec<Detonation>> = Mutex::new(Vec::new());
 
 /// Queues an explosion at an impact for [`fly_thrown`].
-pub(crate) fn detonate(by: FormId, weapon: Weapon, projectile: ProjectileRecord, at: [f32; 3]) {
+pub(crate) fn detonate(
+    by: FormId,
+    coop_player: Option<u8>,
+    combat_profile: Option<crate::coop::CombatProfile>,
+    weapon: Weapon,
+    projectile: ProjectileRecord,
+    at: [f32; 3],
+) {
     if let Ok(mut q) = DETONATIONS.lock() {
-        q.push(((Some(by), by), Some(weapon), projectile, at));
+        q.push((
+            (Some(by), by),
+            Some(weapon),
+            projectile,
+            at,
+            coop_player,
+            combat_profile,
+        ));
     }
 }
 
@@ -98,6 +126,8 @@ pub(crate) fn throw(launch: Launch) {
 /// what its proximity test remembers (`world::mines::Mine`).
 struct InFlight {
     thrower: FormId,
+    coop_player: Option<u8>,
+    combat_profile: Option<crate::coop::CombatProfile>,
     weapon: Weapon,
     flight: Flight,
     settings: FlightSettings,
@@ -316,7 +346,12 @@ fn ai_throw(
 }
 
 /// One of the weapon used up by a throw; the last one leaves the hand.
-fn use_up(order: &esm::LoadOrder, state: &mut world::scripting::GameState, who: FormId, w: FormId) {
+pub(crate) fn use_up(
+    order: &esm::LoadOrder,
+    state: &mut world::scripting::GameState,
+    who: FormId,
+    w: FormId,
+) {
     state.stock(order, who);
     let n = state.items.entry((who, w)).or_insert(0);
     *n = (*n - 1).max(0);
@@ -381,7 +416,9 @@ pub fn fly_thrown(
                 }
             }
         };
-        use_up(order, state, l.thrower, l.weapon.form_id);
+        if l.consume_item {
+            use_up(order, state, l.thrower, l.weapon.form_id);
+        }
         println!(
             "{:.1} s: {} throws the {} at {speed:.0} units a second ({:.1} s fuse).",
             time.elapsed_secs(),
@@ -401,6 +438,8 @@ pub fn fly_thrown(
         });
         thrown.0.push(InFlight {
             thrower: l.thrower,
+            coop_player: l.coop_player,
+            combat_profile: l.combat_profile,
             weapon: l.weapon,
             flight: Flight::launch(projectile, l.origin, dir, speed),
             settings,
@@ -444,28 +483,48 @@ pub fn fly_thrown(
                     Some(f.weapon.clone()),
                     f.flight.projectile.clone(),
                     at,
+                    f.coop_player,
+                    f.combat_profile.clone(),
                 ));
                 false
             }
         });
-    for (cause, weapon, projectile, at) in going_off {
+    for (cause, weapon, projectile, at, coop_player, combat_profile) in going_off {
         let Some(e) = projectile
             .explosion
             .and_then(|e| ExplosionRecord::load(order, e))
         else {
             continue;
         };
-        explode(
-            order,
-            &scripts.0,
-            state,
-            collider,
-            &talkers,
-            feet,
-            (cause, weapon.as_ref(), &e, at),
-            &mut sounds,
-            &mut hits,
-        );
+        if let Some(profile) = combat_profile.as_ref() {
+            crate::coop::with_combat_profile(order, state, profile, |state| {
+                explode(
+                    order,
+                    &scripts.0,
+                    state,
+                    collider,
+                    &talkers,
+                    feet,
+                    (cause, weapon.as_ref(), &e, at),
+                    coop_player,
+                    &mut sounds,
+                    &mut hits,
+                );
+            });
+        } else {
+            explode(
+                order,
+                &scripts.0,
+                state,
+                collider,
+                &talkers,
+                feet,
+                (cause, weapon.as_ref(), &e, at),
+                coop_player,
+                &mut sounds,
+                &mut hits,
+            );
+        }
     }
 }
 
@@ -544,6 +603,8 @@ fn tend_mines(
                 None,
                 p.mine.projectile.clone(),
                 p.mine.position,
+                None,
+                None,
             ));
         }
     }
@@ -574,9 +635,12 @@ fn explode(
     talkers: &Talkers,
     player_feet: [f32; 3],
     (cause, weapon, e, at): (Cause, Option<&Weapon>, &ExplosionRecord, [f32; 3]),
+    coop_player: Option<u8>,
     sounds: &mut SoundRequests,
     hits: &mut crate::hiteffects::HitReports,
 ) {
+    let previous_coop_player = state.coop_player_context;
+    state.coop_player_context = coop_player;
     sounds.0.extend(e.sound);
     sounds.0.extend(e.sound2);
     // The actor that caused it (none for a placed mine) and what the hit
@@ -690,6 +754,7 @@ fn explode(
             killed,
         });
     }
+    state.coop_player_context = previous_coop_player;
 }
 
 #[cfg(test)]
@@ -775,9 +840,12 @@ mod tests {
         };
         throw(Launch {
             thrower: PLAYER_REF,
+            coop_player: None,
+            combat_profile: None,
             weapon: w,
             origin: [0.0; 3],
             aim: Aim::Along([0.0, 1.0, 0.0]),
+            consume_item: true,
         });
         let taken: Vec<Launch> = std::mem::take(&mut *QUEUE.lock().unwrap());
         assert_eq!(taken.len(), 1);

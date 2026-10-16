@@ -20,6 +20,12 @@ USAGE:
 OPTIONS:
     --coop-host ADDR       host a local co-op experiment session
     --coop-join ADDR       join a co-op session (start in the same cell)
+    --coop-private-quests QUEST[,QUEST...]
+                            host only: quest editor IDs or hex form IDs whose
+                            progress stays private to each player
+    --coop-private-globals GLOBAL[,GLOBAL...]
+                            host only: GLOB editor IDs or hex form IDs kept
+                            private to each player
     --official              load only FalloutNV.esm and the official DLC
     --plugins FILE          read the active plugin list from FILE
     --ini FILE              read the archive list (SArchiveList) from FILE
@@ -303,6 +309,10 @@ pub struct Args {
     pub box_answers: Vec<usize>,
     /// The local co-op experiment's host or client network role.
     pub coop: Option<CoopMode>,
+    /// Quest IDs whose progress remains local to each player in co-op.
+    pub coop_private_quests: Vec<String>,
+    /// Global IDs whose values remain local to each player in co-op.
+    pub coop_private_globals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -375,6 +385,8 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
     let mut background = false;
     let mut coop_host = None;
     let mut coop_join = None;
+    let mut coop_private_quests = Vec::new();
+    let mut coop_private_globals = Vec::new();
     let mut pipboy = None;
     let mut pipboy_keys = Vec::new();
     let mut pad = false;
@@ -431,6 +443,30 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
                 coop_join = Some(v.parse::<SocketAddr>().map_err(|_| {
                     format!("--coop-join expects an address such as 127.0.0.1:39000, got '{v}'")
                 })?);
+            }
+            "--coop-private-quests" => {
+                let v = value("--coop-private-quests")?;
+                coop_private_quests.extend(
+                    v.split(',')
+                        .map(str::trim)
+                        .filter(|quest| !quest.is_empty())
+                        .map(str::to_owned),
+                );
+                if coop_private_quests.is_empty() {
+                    return Err("--coop-private-quests needs at least one quest ID".into());
+                }
+            }
+            "--coop-private-globals" => {
+                let v = value("--coop-private-globals")?;
+                coop_private_globals.extend(
+                    v.split(',')
+                        .map(str::trim)
+                        .filter(|global| !global.is_empty())
+                        .map(str::to_owned),
+                );
+                if coop_private_globals.is_empty() {
+                    return Err("--coop-private-globals needs at least one global ID".into());
+                }
             }
             "--talk" => talk = true,
             "--choose" => {
@@ -599,6 +635,12 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
         (None, None) => None,
         (Some(_), Some(_)) => unreachable!(),
     };
+    if !coop_private_quests.is_empty() && !matches!(coop, Some(CoopMode::Host(_))) {
+        return Err("--coop-private-quests can only be used with --coop-host".into());
+    }
+    if !coop_private_globals.is_empty() && !matches!(coop, Some(CoopMode::Host(_))) {
+        return Err("--coop-private-globals can only be used with --coop-host".into());
+    }
     if coop.is_some() && load_fos.is_some() {
         return Err(
             "co-op experiment starts from the same explicit cell; --load-fos is not available yet"
@@ -655,6 +697,8 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
             answer_boxes,
             box_answers,
             coop,
+            coop_private_quests,
+            coop_private_globals,
         })),
         [] | [_] => Err("expected the Data folder and a cell".into()),
         [_, _, extra, ..] => Err(format!("unexpected argument '{extra}'")),

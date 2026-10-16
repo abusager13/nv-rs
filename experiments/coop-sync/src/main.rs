@@ -142,7 +142,17 @@ fn run_host(bind: SocketAddr) -> io::Result<()> {
                         | Packet::WorldKeyframeChunk { .. }
                         | Packet::WorldKeyframeAck { .. }
                         | Packet::DialogueUpdate { .. }
-                        | Packet::DialogueListen { .. } => {}
+                        | Packet::DialogueChoice { .. }
+                        | Packet::DialogueChoiceResult { .. }
+                        | Packet::DialogueListen { .. }
+                        | Packet::CampaignSync { .. }
+                        | Packet::CampaignSyncAck { .. }
+                        | Packet::PlayerAttack { .. }
+                        | Packet::PlayerAttackResult { .. }
+                        | Packet::PlayerInventory { .. }
+                        | Packet::PlayerInventoryAck { .. }
+                        | Packet::PlayerProfile { .. }
+                        | Packet::PlayerProfileAck { .. } => {}
                     }
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,

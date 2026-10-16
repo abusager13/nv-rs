@@ -40,14 +40,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::audio::{AudioSinkPlayback, Volume};
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Hdr;
+use bevy::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
-use bevy::render::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::render::render_resource::{BlendState, WgpuFeatures};
 use bevy::render::renderer::RenderDevice;
-use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use cellview::lockpick::{LockpickScene, MenuCamera};
 use cellview::space;
@@ -431,7 +432,7 @@ pub struct MenuInput<'w, 's> {
     keys: ResMut<'w, ButtonInput<KeyCode>>,
     buttons: ResMut<'w, ButtonInput<MouseButton>>,
     motion: ResMut<'w, AccumulatedMouseMotion>,
-    typed: EventReader<'w, 's, KeyboardInput>,
+    typed: MessageReader<'w, 's, KeyboardInput>,
 }
 
 /// Opens the menu when asked, and runs it each frame: the keyboard and
@@ -864,12 +865,12 @@ pub(crate) fn menu_layer(
     commands.spawn((
         Camera2d,
         Camera {
-            target: RenderTarget::from(layer.clone()),
             order: -4,
-            hdr: true,
             clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         },
+        RenderTarget::from(layer.clone()),
+        Hdr,
         Tonemapping::None,
         DebandDither::Disabled,
         Msaa::Off,
@@ -1025,17 +1026,17 @@ fn show_lockpicking(
                 .spawn((
                     Camera3d::default(),
                     Camera {
-                        target: RenderTarget::from(target.clone()),
                         order: scene_order,
-                        hdr: true,
                         clear_color: ClearColorConfig::Custom(Color::NONE),
                         output_mode: scene_output,
                         ..default()
                     },
+                    RenderTarget::from(target.clone()),
+                    Hdr,
                     Tonemapping::None,
                     DebandDither::Disabled,
                     // No light clusters: nothing here is lit by Bevy's lights.
-                    bevy::pbr::ClusterConfig::None,
+                    bevy::light::cluster::ClusterConfig::Single,
                     Projection::from(PerspectiveProjection {
                         fov: camera.vertical_fov(),
                         near: camera.near * space::METERS_PER_UNIT,
@@ -1057,13 +1058,13 @@ fn show_lockpicking(
                 .spawn((
                     Camera2d,
                     Camera {
-                        target: RenderTarget::from(target),
                         order: pictures_order,
-                        hdr: true,
                         clear_color: ClearColorConfig::Custom(Color::NONE),
                         output_mode: blend_over,
                         ..default()
                     },
+                    RenderTarget::from(target),
+                    Hdr,
                     Tonemapping::None,
                     DebandDither::Disabled,
                     Msaa::Off,

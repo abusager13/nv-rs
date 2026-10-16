@@ -32,35 +32,33 @@
 // reports as unused.
 #![allow(dead_code)]
 
-use bevy::asset::{load_internal_asset, weak_handle};
-use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
-use bevy::core_pipeline::fullscreen_vertex_shader::fullscreen_shader_vertex_state;
-use bevy::ecs::query::QueryItem;
+use bevy::asset::{load_internal_asset, uuid_handle};
+use bevy::core_pipeline::tonemapping::tonemapping;
+use bevy::core_pipeline::upscaling::upscaling;
+use bevy::core_pipeline::{Core3d, Core3dSystems, FullscreenShader};
 use bevy::prelude::*;
 use bevy::render::extract_component::{
     ComponentUniforms, DynamicUniformIndex, ExtractComponent, ExtractComponentPlugin,
     UniformComponentPlugin,
 };
 use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_graph::{
-    NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
-};
 use bevy::render::render_resource::binding_types::{sampler, texture_2d, uniform_buffer};
 use bevy::render::render_resource::*;
-use bevy::render::renderer::{RenderContext, RenderDevice};
+use bevy::render::renderer::{RenderContext, RenderDevice, ViewQuery};
 use bevy::render::sync_world::MainEntity;
 use bevy::render::texture::{CachedTexture, FallbackImageZero, GpuImage, TextureCache};
 use bevy::render::view::ViewTarget;
-use bevy::render::{Render, RenderApp, RenderSet};
+use bevy::render::{Render, RenderApp, RenderSystems};
 use std::collections::HashMap;
 
-const SHADER: Handle<Shader> = weak_handle!("6d1f3a52-8c47-4e0b-9a61-2f5c7e9b1d34");
+const SHADER: Handle<Shader> = uuid_handle!("6d1f3a52-8c47-4e0b-9a61-2f5c7e9b1d34");
 
 /// What a camera's final passes use, as the shader reads it. Every camera
 /// needs one: the last pass also turns the picture's stored values into
 /// linear light ([`ImageSpaceGrade::NEUTRAL`] when the cell has no image
 /// space); cameras without one skip the passes.
 #[derive(Component, Clone, Copy, Debug, PartialEq, ExtractComponent, ShaderType)]
+#[extract_app(RenderApp)]
 pub struct ImageSpaceGrade {
     /// Tint color, and how much of it.
     pub tint: Vec4,
@@ -95,6 +93,7 @@ pub struct ImageSpaceGrade {
 /// its `ImageSpaceGrade` (everything that sets the grade sets it there);
 /// the later camera's is copied from it each frame.
 #[derive(Component, Clone, Copy, Default, ExtractComponent)]
+#[extract_app(RenderApp)]
 pub struct GradeDeferred;
 
 impl ImageSpaceGrade {
@@ -295,7 +294,7 @@ pub struct GradePlugin;
 
 impl Plugin for GradePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "grade.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "grade.wesl", Shader::from_wesl);
         app.add_plugins((
             ExtractComponentPlugin::<ImageSpaceGrade>::default(),
             ExtractComponentPlugin::<GradeDeferred>::default(),
@@ -311,16 +310,14 @@ impl Plugin for GradePlugin {
             .init_resource::<HeldBackgrounds>()
             .add_systems(
                 Render,
-                prepare_bloom_textures.in_set(RenderSet::PrepareResources),
+                prepare_bloom_textures.in_set(RenderSystems::PrepareResources),
             )
-            .add_render_graph_node::<ViewNodeRunner<GradeNode>>(Core3d, GradeLabel)
-            .add_render_graph_edges(
+            .add_systems(
                 Core3d,
-                (
-                    Node3d::Tonemapping,
-                    GradeLabel,
-                    Node3d::EndMainPassPostProcessing,
-                ),
+                grade
+                    .after(tonemapping)
+                    .before(upscaling)
+                    .in_set(Core3dSystems::PostProcess),
             );
     }
 
@@ -395,7 +392,7 @@ fn prepare_bloom_textures(
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
-                format: ViewTarget::TEXTURE_FORMAT_HDR,
+                format: TextureFormat::Rgba16Float,
                 usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -435,7 +432,7 @@ fn prepare_bloom_textures(
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: TextureDimension::D2,
-                    format: ViewTarget::TEXTURE_FORMAT_HDR,
+                    format: TextureFormat::Rgba16Float,
                     usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 })
@@ -465,7 +462,7 @@ fn prepare_bloom_textures(
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: TextureDimension::D2,
-                    format: ViewTarget::TEXTURE_FORMAT_HDR,
+                    format: TextureFormat::Rgba16Float,
                     usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },
@@ -497,133 +494,127 @@ fn prepare_bloom_textures(
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct GradeLabel;
-
-#[derive(Default)]
-struct GradeNode;
-
-impl ViewNode for GradeNode {
-    type ViewQuery = (
+fn grade(
+    view: ViewQuery<(
         &'static ViewTarget,
         &'static MainEntity,
         &'static DynamicUniformIndex<ImageSpaceGrade>,
         &'static BloomTextures,
         Option<&'static GradeDeferred>,
         &'static ImageSpaceGrade,
-    );
-
-    fn run(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext,
-        (view_target, main, grade_index, textures, deferred, values): QueryItem<Self::ViewQuery>,
-        world: &World,
-    ) -> Result<(), NodeRunError> {
-        if deferred.is_some() {
-            return Ok(());
-        }
-        let Some(averages) = world.resource::<EyeAverages>().0.get(main) else {
-            return Ok(());
-        };
-        let grade_pipeline = world.resource::<GradePipeline>();
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let ids = &grade_pipeline.pipelines;
-        let Some(pipelines) = [
-            ids.down,
-            ids.average,
-            ids.bright,
-            ids.blur,
-            ids.last,
-            ids.blur_down,
-            ids.blur_across,
-            ids.copy,
-        ]
-        .map(|id| pipeline_cache.get_render_pipeline(id))
-        .into_iter()
-        .collect::<Option<Vec<_>>>() else {
-            return Ok(());
-        };
-        let uniforms = world.resource::<ComponentUniforms<ImageSpaceGrade>>();
-        let Some(binding) = uniforms.uniforms().binding() else {
-            return Ok(());
-        };
-        // The HUD's picture (`hud`), or nothing.
-        let overlay = world
-            .get_resource::<crate::hud::HudLayer>()
-            .and_then(|layer| world.resource::<RenderAssets<GpuImage>>().get(&layer.0))
-            .map_or(
-                &world.resource::<FallbackImageZero>().texture_view,
-                |image| &image.texture_view,
-            );
-        let pass = Pass {
-            layout: &grade_pipeline.layout,
-            sampler: &grade_pipeline.sampler,
-            uniform: binding,
-            offset: grade_index.index(),
-            overlay,
-        };
-        let [down, average, bright, blur, last, blur_down, blur_across, copy] = pipelines[..]
-        else {
-            return Ok(());
-        };
-
-        // Bloom and the average brightness, from the finished scene.
-        let scene = view_target.main_texture_view();
-        let avg = &averages.views[averages.written];
-        let previous = &averages.views[1 - averages.written];
-        let mut source = scene;
-        for level in &textures.levels {
-            pass.draw(render_context, down, source, avg, &level.default_view);
-            source = &level.default_view;
-        }
-        let vertical = &textures.vertical.default_view;
-        let horizontal = &textures.horizontal.default_view;
-        // The average pass eases from the last frame's average.
-        pass.draw(render_context, average, source, previous, avg);
-        pass.draw(
-            render_context,
-            bright,
-            &textures.levels[0].default_view,
-            avg,
-            vertical,
-        );
-        pass.draw(render_context, blur, vertical, avg, horizontal);
-
-        // The final pass reads the current picture and writes the adjusted
-        // one; the view target swaps to it afterwards.
-        let post_process = view_target.post_process_write();
-        // The modifiers' blur (`world::menu_background`), down then across;
-        // with the menus' background held, the picture captured once, then
-        // shown as it is.
-        let blurring = values.background.x >= 1.0;
-        let [blur_a, blur_b] = &textures.blurred;
-        let (blur_a, blur_b) = (&blur_a.default_view, &blur_b.default_view);
-        let mut picture = post_process.source;
-        if let Some(h) = world.resource::<HeldBackgrounds>().0.get(main) {
-            if h.capture {
-                if blurring {
-                    pass.draw(render_context, blur_down, picture, avg, blur_a);
-                    pass.draw(render_context, blur_across, blur_a, avg, &h.view);
-                } else {
-                    pass.draw(render_context, copy, picture, avg, &h.view);
-                }
-            }
-            picture = &h.view;
-        } else if blurring {
-            pass.draw(render_context, blur_down, picture, avg, blur_a);
-            pass.draw(render_context, blur_across, blur_a, avg, blur_b);
-            picture = blur_b;
-        }
-        pass.draw(
-            render_context,
-            last,
-            picture,
-            horizontal,
-            post_process.destination,
-        );
-        Ok(())
+    )>,
+    mut render_context: RenderContext,
+    averages: Res<EyeAverages>,
+    grade_pipeline: Res<GradePipeline>,
+    pipeline_cache: Res<PipelineCache>,
+    uniforms: Res<ComponentUniforms<ImageSpaceGrade>>,
+    hud_layer: Option<Res<crate::hud::HudLayer>>,
+    metalfx: Option<Res<crate::metalfx::MetalFxSetting>>,
+    images: Res<RenderAssets<GpuImage>>,
+    fallback: Res<FallbackImageZero>,
+    held_backgrounds: Res<HeldBackgrounds>,
+) {
+    let (view_target, main, grade_index, textures, deferred, values) = view.into_inner();
+    if deferred.is_some() {
+        return;
     }
+    let Some(averages) = averages.0.get(main) else {
+        return;
+    };
+    let ids = &grade_pipeline.pipelines;
+    let Some(pipelines) = [
+        ids.down,
+        ids.average,
+        ids.bright,
+        ids.blur,
+        ids.last,
+        ids.blur_down,
+        ids.blur_across,
+        ids.copy,
+    ]
+    .map(|id| pipeline_cache.get_render_pipeline(id))
+    .into_iter()
+    .collect::<Option<Vec<_>>>() else {
+        return;
+    };
+    let Some(binding) = uniforms.uniforms().binding() else {
+        return;
+    };
+    // The HUD's picture (`hud`), or nothing.
+    let metalfx_enabled = metalfx.is_some_and(|setting| setting.enabled);
+    let overlay = if metalfx_enabled {
+        &fallback.texture_view
+    } else {
+        hud_layer
+            .as_ref()
+            .and_then(|layer| images.get(&layer.0))
+            .map_or(&fallback.texture_view, |image| &image.texture_view)
+    };
+    let pass = Pass {
+        layout: &grade_pipeline.layout,
+        sampler: &grade_pipeline.sampler,
+        uniform: binding,
+        offset: grade_index.index(),
+        overlay,
+    };
+    let [down, average, bright, blur, last, blur_down, blur_across, copy] = pipelines[..] else {
+        return;
+    };
+
+    // Bloom and the average brightness, from the finished scene.
+    let scene = view_target.main_texture_view();
+    let avg = &averages.views[averages.written];
+    let previous = &averages.views[1 - averages.written];
+    let mut source = scene;
+    for level in &textures.levels {
+        pass.draw(&mut render_context, down, source, avg, &level.default_view);
+        source = &level.default_view;
+    }
+    let vertical = &textures.vertical.default_view;
+    let horizontal = &textures.horizontal.default_view;
+    // The average pass eases from the last frame's average.
+    pass.draw(&mut render_context, average, source, previous, avg);
+    pass.draw(
+        &mut render_context,
+        bright,
+        &textures.levels[0].default_view,
+        avg,
+        vertical,
+    );
+    pass.draw(&mut render_context, blur, vertical, avg, horizontal);
+
+    // The final pass reads the current picture and writes the adjusted
+    // one; the view target swaps to it afterwards.
+    let post_process = view_target.post_process_write();
+    // The modifiers' blur (`world::menu_background`), down then across;
+    // with the menus' background held, the picture captured once, then
+    // shown as it is.
+    let blurring = values.background.x >= 1.0;
+    let [blur_a, blur_b] = &textures.blurred;
+    let (blur_a, blur_b) = (&blur_a.default_view, &blur_b.default_view);
+    let mut picture = post_process.source;
+    if let Some(h) = held_backgrounds.0.get(main) {
+        if h.capture {
+            if blurring {
+                pass.draw(&mut render_context, blur_down, picture, avg, blur_a);
+                pass.draw(&mut render_context, blur_across, blur_a, avg, &h.view);
+            } else {
+                pass.draw(&mut render_context, copy, picture, avg, &h.view);
+            }
+        }
+        picture = &h.view;
+    } else if blurring {
+        pass.draw(&mut render_context, blur_down, picture, avg, blur_a);
+        pass.draw(&mut render_context, blur_across, blur_a, avg, blur_b);
+        picture = blur_b;
+    }
+    pass.draw(
+        &mut render_context,
+        last,
+        picture,
+        horizontal,
+        post_process.destination,
+    );
 }
 
 /// What every pass binds besides its textures.
@@ -663,10 +654,12 @@ impl Pass<'_> {
                 view: target,
                 resolve_target: None,
                 ops: Operations::default(),
+                depth_slice: None,
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         render_pass.set_render_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group, &[self.offset]);
@@ -695,7 +688,8 @@ struct GradePipeline {
 impl FromWorld for GradePipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
-        let layout = render_device.create_bind_group_layout(
+        let fullscreen_shader = world.resource::<FullscreenShader>().clone();
+        let layout_descriptor = BindGroupLayoutDescriptor::new(
             "image_space_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
@@ -708,6 +702,8 @@ impl FromWorld for GradePipeline {
                 ),
             ),
         );
+        let layout = render_device
+            .create_bind_group_layout(layout_descriptor.label.as_ref(), &layout_descriptor.entries);
         // Bilinear and clamped, as the game samples these pictures.
         let sampler = render_device.create_sampler(&SamplerDescriptor {
             mag_filter: FilterMode::Linear,
@@ -719,15 +715,16 @@ impl FromWorld for GradePipeline {
                 .resource_mut::<PipelineCache>()
                 .queue_render_pipeline(RenderPipelineDescriptor {
                     label: Some(format!("image_space_{entry}").into()),
-                    layout: vec![layout.clone()],
-                    vertex: fullscreen_shader_vertex_state(),
+                    layout: vec![layout_descriptor.clone()],
+                    vertex: fullscreen_shader.to_vertex_state(),
                     fragment: Some(FragmentState {
                         shader: SHADER,
                         shader_defs: vec![],
-                        entry_point: entry.into(),
+                        entry_point: Some(entry.into()),
+                        constants: vec![],
                         // Every picture here is in the camera's HDR format.
                         targets: vec![Some(ColorTargetState {
-                            format: ViewTarget::TEXTURE_FORMAT_HDR,
+                            format: TextureFormat::Rgba16Float,
                             blend: None,
                             write_mask: ColorWrites::ALL,
                         })],
@@ -735,7 +732,7 @@ impl FromWorld for GradePipeline {
                     primitive: PrimitiveState::default(),
                     depth_stencil: None,
                     multisample: MultisampleState::default(),
-                    push_constant_ranges: vec![],
+                    immediate_size: 0,
                     zero_initialize_workgroup_memory: false,
                 })
         };

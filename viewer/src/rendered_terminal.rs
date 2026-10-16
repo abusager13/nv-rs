@@ -36,12 +36,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Hdr;
+use bevy::camera::{Exposure, RenderTarget};
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
-use bevy::render::camera::{Exposure, RenderTarget};
 use bevy::render::render_resource::WgpuFeatures;
 use bevy::render::renderer::RenderDevice;
-use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use cellview::rendered_terminal::{self, Fade, Hit, Settings, TerminalScene};
 use cellview::space;
@@ -296,7 +297,7 @@ fn show_terminal(
     };
 
     // The model's fade.
-    if let Some(m) = assets.tiles.get_mut(&s.composite) {
+    if let Some(mut m) = assets.tiles.get_mut(&s.composite) {
         let want = Vec4::new(1.0, 1.0, 1.0, fade.alpha);
         if m.params.tint != want {
             m.params.tint = want;
@@ -313,7 +314,7 @@ fn show_terminal(
         return;
     };
     let p = s.effects.params(now_ms);
-    if let Some(m) = assets.screens.get_mut(&s.effect) {
+    if let Some(mut m) = assets.screens.get_mut(&s.effect) {
         m.u = ScreenUniform {
             params: Vec4::new(p.blur_intensity, p.scroll, 1.0, p.scanline_frequency),
             distort: p.distort.map_or(Vec4::ZERO, |(v, progress, h)| {
@@ -352,15 +353,15 @@ fn put_up(
         (
             Camera2d,
             Camera {
-                target: RenderTarget::from(target.clone()),
                 order,
-                hdr: true,
                 // The rendered menu's background colour (`007faa20`: black;
                 // its alpha of 0 is opaque here, as the game's screen is
                 // drawn opaque whatever its texture's alpha).
                 clear_color: ClearColorConfig::Custom(Color::BLACK),
                 ..default()
             },
+            RenderTarget::from(target.clone()),
+            Hdr,
             Tonemapping::None,
             DebandDither::Disabled,
             Msaa::Off,
@@ -445,12 +446,12 @@ fn put_up(
             .spawn((
                 Camera3d::default(),
                 Camera {
-                    target: RenderTarget::from(scene.clone()),
                     order: -10,
-                    hdr: true,
                     clear_color: ClearColorConfig::Custom(Color::NONE),
                     ..default()
                 },
+                RenderTarget::from(scene.clone()),
+                Hdr,
                 Tonemapping::None,
                 DebandDither::Disabled,
                 Projection::from(PerspectiveProjection {

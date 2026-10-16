@@ -183,7 +183,7 @@ pub fn follow_the_clock(
     };
     daylight.switched = true;
     for id in lit_handles {
-        if let Some(m) = lit.lit.get_mut(id) {
+        if let Some(mut m) = lit.lit.get_mut(id) {
             fields.apply(&mut m.extension.lighting);
             m.extension.lighting.scale.z = 1.0;
         }
@@ -214,7 +214,7 @@ pub fn follow_the_clock(
     clear.0 = Color::linear_rgb(r, g, b);
     let bright = |c: f32| crate::srgb_decode(c * sky_brightness);
     for (mesh, weights) in &lit.domes {
-        if let Some(m) = lit.meshes.get_mut(&mesh.0) {
+        if let Some(mut m) = lit.meshes.get_mut(&mesh.0) {
             let colors: Vec<[f32; 4]> = weights
                 .0
                 .iter()
@@ -230,7 +230,7 @@ pub fn follow_the_clock(
         let c = weather
             .cloud_color_at(cloud.layer, &clock, hour)
             .map(|v| bright(v / 255.0));
-        if let Some(m) = lit.meshes.get_mut(&mesh.0) {
+        if let Some(mut m) = lit.meshes.get_mut(&mesh.0) {
             let colors: Vec<[f32; 4]> = cloud
                 .alphas
                 .iter()
@@ -246,7 +246,7 @@ pub fn follow_the_clock(
         .color_at(world::weather::SkyColor::Stars, &clock, hour)
         .map(|v| bright(v / 255.0));
     for (mesh, stars) in &lit.stars {
-        if let Some(m) = lit.meshes.get_mut(&mesh.0) {
+        if let Some(mut m) = lit.meshes.get_mut(&mesh.0) {
             let colors: Vec<[f32; 4]> = stars
                 .fade
                 .iter()
@@ -270,7 +270,7 @@ pub fn follow_the_clock(
         } else {
             Visibility::Hidden
         };
-        if let Some(m) = lit.meshes.get_mut(&mesh.0) {
+        if let Some(mut m) = lit.meshes.get_mut(&mesh.0) {
             // Kept the size it has as seen from the eye.
             let size = 2.0 * disk.half_size * cellview::game::SUN_DISTANCE / distance;
             m.insert_attribute(Mesh::ATTRIBUTE_POSITION, crate::sun_square(now.disc, size));

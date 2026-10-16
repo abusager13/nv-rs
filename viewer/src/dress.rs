@@ -330,7 +330,7 @@ impl Spawner<'_, '_> {
                 MeshMaterial3d(material),
                 Transform::IDENTITY,
                 crate::actors::skinned(bind, crate::actors::skin_joints(data, joints)),
-                bevy::render::view::NoFrustumCulling,
+                bevy::camera::visibility::NoFrustumCulling,
                 ChildOf(root),
             ));
             if let Some(part) = part {

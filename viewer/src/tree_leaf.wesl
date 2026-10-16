@@ -27,12 +27,12 @@
 // game's `ATOC` with the alpha test on turns the test into coverage (the
 // alpha reference, which the levels' cross-fade sets, then has no effect).
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     forward_io::FragmentOutput,
     mesh_functions,
     view_transformations::position_world_to_clip,
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
 
 struct LeafVertex {
     @builtin(instance_index) instance_index: u32,
@@ -58,7 +58,7 @@ struct Leaves {
     // Toward the sun, the world's (game) axes.
     sun_direction: vec4<f32>,
     // x: SunDimmer.x (the image space's tree dimmer); y: the luminance
-    // shown at full brightness (see `game_lit.wgsl`).
+    // shown at full brightness (see `game_lit.wesl`).
     dimmer: vec4<f32>,
     // BillboardRight, BillboardUp: the camera's axes in the game's.
     billboard_right: vec4<f32>,
@@ -77,9 +77,9 @@ struct Leaves {
     leaf_base: array<vec4<f32>, 48>,
 }
 
-@group(2) @binding(100) var<uniform> leaves: Leaves;
-@group(2) @binding(101) var leaf_texture: texture_2d<f32>;
-@group(2) @binding(102) var leaf_sampler: sampler;
+@group(3) @binding(100) var<uniform> leaves: Leaves;
+@group(3) @binding(101) var leaf_texture: texture_2d<f32>;
+@group(3) @binding(102) var leaf_sampler: sampler;
 
 // The shader compiler's range reduction before `sincos`.
 fn reduced(x: f32, k: f32) -> f32 {
@@ -88,7 +88,7 @@ fn reduced(x: f32, k: f32) -> f32 {
 
 // A Bevy world position's length after the game's projection, in meters:
 // x and y scaled as the projection does, the depth from the near plane (as
-// `grass.wgsl`).
+// `grass.wesl`).
 fn projected_length(world: vec3<f32>) -> f32 {
     let v = view_bindings::view.view_from_world * vec4<f32>(world, 1.0);
     let projection = view_bindings::view.clip_from_view;

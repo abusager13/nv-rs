@@ -4,6 +4,7 @@
 //! Bevy. Sounds aren't placed in the world yet (no distance falloff or
 //! direction), and music (MP3 files) isn't played.
 
+use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,23 +41,28 @@ pub struct PcmDecoder {
 }
 
 impl Iterator for PcmDecoder {
-    type Item = i16;
-    fn next(&mut self) -> Option<i16> {
-        let s = self.sound.samples.get(self.at).copied();
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        let s = self
+            .sound
+            .samples
+            .get(self.at)
+            .copied()
+            .map(|sample| f32::from(sample) / 32768.0);
         self.at += 1;
         s
     }
 }
 
 impl Source for PcmDecoder {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         None
     }
-    fn channels(&self) -> u16 {
-        self.sound.channels
+    fn channels(&self) -> NonZeroU16 {
+        NonZeroU16::new(self.sound.channels).unwrap_or(NonZeroU16::MIN)
     }
-    fn sample_rate(&self) -> u32 {
-        self.sound.rate
+    fn sample_rate(&self) -> NonZeroU32 {
+        NonZeroU32::new(self.sound.rate).unwrap_or(NonZeroU32::MIN)
     }
     fn total_duration(&self) -> Option<Duration> {
         let frames = self.sound.samples.len() as f64 / f64::from(self.sound.channels.max(1));
@@ -67,7 +73,6 @@ impl Source for PcmDecoder {
 }
 
 impl Decodable for PcmSound {
-    type DecoderItem = i16;
     type Decoder = PcmDecoder;
     fn decoder(&self) -> PcmDecoder {
         PcmDecoder {

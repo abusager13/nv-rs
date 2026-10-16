@@ -40,11 +40,11 @@ pub mod vigor;
 
 use std::collections::HashMap;
 
+use bevy::camera::CameraOutputMode;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::input::ButtonState;
 use bevy::prelude::*;
-use bevy::render::camera::CameraOutputMode;
 use bevy::render::render_resource::BlendState;
 use bevy::window::PrimaryWindow;
 use cellview::{Game, TextureData};
@@ -1004,7 +1004,7 @@ pub struct MenuInput<'w, 's> {
     scroll: Res<'w, AccumulatedMouseScroll>,
     motion: Res<'w, AccumulatedMouseMotion>,
     keys: ResMut<'w, ButtonInput<KeyCode>>,
-    typed: EventReader<'w, 's, KeyboardInput>,
+    typed: MessageReader<'w, 's, KeyboardInput>,
     time: Res<'w, Time<bevy::time::Real>>,
     fixed: Res<'w, FixedPointer>,
     clicks: ResMut<'w, FixedClicks>,
@@ -1615,9 +1615,10 @@ pub(crate) fn start_menu_frame(
     mut saves: ResMut<start::SaveFiles>,
     mut virt: ResMut<Time<Virtual>>,
     time: Res<Time<bevy::time::Real>>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
     mut music: ResMut<crate::music::Music>,
     mut sounds: ResMut<crate::sounds::SoundRequests>,
+    mut metalfx: ResMut<crate::metalfx::MetalFxSetting>,
     state: Res<crate::dialogue::DialogueState>,
 ) {
     let Some(screen) = menus.screen.as_deref_mut() else {
@@ -1646,6 +1647,7 @@ pub(crate) fn start_menu_frame(
             Setting::MasterVolume => crate::music::set_volumes(&mut music, |vol| vol.master = v),
             Setting::MusicVolume => crate::music::set_volumes(&mut music, |vol| vol.music = v),
             Setting::RadioVolume => crate::music::set_volumes(&mut music, |vol| vol.radio = v),
+            Setting::MetalFx => metalfx.enabled = v != 0.0,
             _ => {}
         }
     }

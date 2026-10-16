@@ -29,7 +29,7 @@ priorities.
   branch conditions and a regression test for each behavioral fix.
 - Rules belong in world/physics/preview/cellview; viewer handles presentation
   and input. Menus use game XML through ui. Core crates have no external
-  libraries. Viewer is its own workspace, pinned to Bevy 0.16; consult 0.16.1.
+libraries. Viewer is its own workspace, pinned to Bevy 0.20; consult 0.20.0.
 - Preserve the player/camera, aim/head, action-input and per-view boundaries
   in `docs/VR.md`. VR feature adaptations there are proposals.
 - Never redistribute game files or modify the user's installation.

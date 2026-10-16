@@ -8,7 +8,7 @@
 // `mode.x` is 1 for TILE1001 (the compass), 0 for TILE1000 (the scroll is
 // then (0, 0, 1, 1)).
 
-#import bevy_sprite::mesh2d_vertex_output::VertexOutput
+import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 
 struct TileParams {
     tint: vec4<f32>,
@@ -29,9 +29,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     if params.mode.x > 0.5 {
         c.a = c.a * mask;
     }
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS)
     // A model piece's corners' alpha (the local map's fog of war).
     c = c * mesh.color;
-#endif
     return c;
 }

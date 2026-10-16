@@ -1,4 +1,4 @@
-//! The terrain's material: the game's landscape shader (`terrain.wgsl`),
+//! The terrain's material: the game's landscape shader (`terrain.wesl`),
 //! blending up to seven textures by per-vertex weights, as an extension of
 //! the standard material (which only supplies Bevy's pipeline here).
 
@@ -6,7 +6,7 @@
 // reports as unused.
 #![allow(dead_code)]
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
 use bevy::pbr::{
     ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
 };
@@ -15,14 +15,14 @@ use bevy::render::mesh::{
     Indices, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology,
 };
 use bevy::render::render_resource::{
-    AsBindGroup, RenderPipelineDescriptor, ShaderRef, ShaderType, SpecializedMeshPipelineError,
-    VertexFormat,
+    AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError, VertexFormat,
 };
+use bevy::shader::ShaderRef;
 use cellview::{space, TerrainData};
 
 use crate::lighting::GameLighting;
 
-const SHADER: Handle<Shader> = weak_handle!("8d1f0c52-3a6e-4b97-a1d4-6e2b9c0f7a31");
+const SHADER: Handle<Shader> = uuid_handle!("8d1f0c52-3a6e-4b97-a1d4-6e2b9c0f7a31");
 
 /// The weights of the first four textures, and of the next three (`w`
 /// unused).
@@ -89,10 +89,10 @@ pub struct Terrain {
     /// The hour's light outdoors (`crate::shared_light::BUFFER`): the
     /// ambient, the sun and the fog.
     #[storage(121, read_only)]
-    pub shared: Handle<bevy::render::storage::ShaderStorageBuffer>,
+    pub shared: Handle<bevy::render::storage::ShaderBuffer>,
 }
 
-/// `terrain.wgsl`'s `LandBlend`: the middle of the player's cell (Bevy x
+/// `terrain.wesl`'s `LandBlend`: the middle of the player's cell (Bevy x
 /// and z), where the blend is full and how far it ramps (meters); the
 /// quarter's corner in the chunk's texture, and 1 when it blends at all.
 #[derive(Clone, Copy, Debug, Default, PartialEq, ShaderType, Reflect)]
@@ -264,7 +264,7 @@ pub struct TerrainPlugin;
 
 impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "terrain.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "terrain.wesl", Shader::from_wesl);
         app.add_plugins(MaterialPlugin::<TerrainMaterial>::default());
     }
 }

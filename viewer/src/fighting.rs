@@ -946,9 +946,12 @@ fn ranged(
         let p = walker.position;
         crate::explosives::throw(crate::explosives::Launch {
             thrower: walker.reference,
+            coop_player: None,
+            combat_profile: None,
             weapon: w.clone(),
             origin: [p[0], p[1], p[2] + crate::explosives::THROW_HEIGHT],
             aim: crate::explosives::Aim::At(goal),
+            consume_item: true,
         });
     } else if shoots {
         // Its firing sound and muzzle flash (`weapon_fx`, `0083ac30`).

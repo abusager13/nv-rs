@@ -202,6 +202,8 @@ pub enum Setting {
     MouseSensitivity,
     Controller,
     Rumble,
+    /// Viewer-only MetalFX toggle; not a FalloutNV.exe preference.
+    MetalFx,
 }
 
 /// How a user option shows its value (`007d6350`'s type, `+0x1c`).

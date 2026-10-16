@@ -1,4 +1,4 @@
-//! Water, drawn with the game's water shaders (`water.wgsl`; the records
+//! Water, drawn with the game's water shaders (`water.wesl`; the records
 //! and rules are `world::water`, the surfaces `cellview::water`).
 //!
 //! The game's water pixel shader mixes four inputs besides its own values;
@@ -17,7 +17,7 @@
 //! - **Reflection**: the game renders the scene mirrored in the water's
 //!   plane into a 1024 × 1024 target (`iWaterReflectWidth`/`Height`, 4×
 //!   multisampled), then blurs it (`bUseWaterReflectionBlur`, radius
-//!   `iWaterBlurAmount` + 1 = 5; `water_blur.wgsl`). Here a second camera
+//!   `iWaterBlurAmount` + 1 = 5; `water_blur.wesl`). Here a second camera
 //!   does: placed at the mirror image of the eye with a mirrored transform,
 //!   the water plane as its near plane (an oblique projection: nothing
 //!   under the water shows), its picture flipped left to right so
@@ -29,7 +29,7 @@
 //!   outdoors and four inside, one per height, and distant water samples
 //!   the sea level's). Not done: its silhouette and low-detail modes (off
 //!   in this install), the player's own body in it.
-//! - **Ripples**: worked out in the shader (see `water.wgsl`).
+//! - **Ripples**: worked out in the shader (see `water.wesl`).
 //!
 //! Distant water (`DistantWater`): the water shapes of the distant-land
 //! chunks around the player (`cellview::water::lod_water`), drawn with
@@ -55,37 +55,38 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
-use bevy::core_pipeline::core_3d::graph::{Core3d, Node3d};
-use bevy::core_pipeline::fullscreen_vertex_shader::fullscreen_shader_vertex_state;
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::{CameraProjection, Exposure, Hdr, RenderTarget, SubCameraView};
+use bevy::core_pipeline::core_3d::{main_opaque_pass_3d, main_transparent_pass_3d};
+use bevy::core_pipeline::tonemapping::tonemapping;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
-use bevy::ecs::query::QueryItem;
+use bevy::core_pipeline::upscaling::upscaling;
+use bevy::core_pipeline::{Core3d, Core3dSystems, FullscreenShader};
 use bevy::ecs::system::SystemParam;
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::math::Vec3A;
 use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
-use bevy::render::camera::{CameraProjection, Exposure, RenderTarget, SubCameraView};
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
 use bevy::render::mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_graph::{
-    NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
-};
 use bevy::render::render_resource::binding_types::{sampler, texture_2d};
 use bevy::render::render_resource::*;
-use bevy::render::renderer::{RenderContext, RenderDevice};
+use bevy::render::renderer::{RenderContext, RenderDevice, ViewQuery};
 use bevy::render::texture::GpuImage;
-use bevy::render::view::{RenderLayers, ViewDepthTexture, ViewTarget};
+use bevy::render::view::{ViewDepthStencilTexture, ViewTarget};
 use bevy::render::RenderApp;
-use bevy::transform::TransformSystem;
+use bevy::shader::ShaderDefVal;
+use bevy::shader::ShaderRef;
+use bevy::transform::TransformSystems;
 use cellview::{space, ViewerScene, WaterData};
 use world::water::placed_flags;
 
 use crate::grade::ImageSpaceGrade;
 
-const SHADER: Handle<Shader> = weak_handle!("2f6b8d14-9c3e-4a75-b1e0-7d4a5c9e3f62");
-const BLUR_SHADER: Handle<Shader> = weak_handle!("8a3c5e71-4d2b-4f96-a0c8-1e7b9d6f2a43");
+const SHADER: Handle<Shader> = uuid_handle!("2f6b8d14-9c3e-4a75-b1e0-7d4a5c9e3f62");
+const BLUR_SHADER: Handle<Shader> = uuid_handle!("8a3c5e71-4d2b-4f96-a0c8-1e7b9d6f2a43");
 
 /// The render layer water is drawn on (the main camera sees it; the
 /// reflection camera doesn't).
@@ -98,7 +99,7 @@ pub const SKY_LAYER: usize = 21;
 /// water is cut off at the far end.
 const OBLIQUE_SCALE: f32 = 0.5;
 
-/// The water shader's constants, as `water.wgsl` reads them.
+/// The water shader's constants, as `water.wesl` reads them.
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType)]
 pub struct WaterParams {
     pub shallow: Vec4,
@@ -159,6 +160,14 @@ impl From<&WaterMaterial> for WaterKey {
 }
 
 impl Material for WaterMaterial {
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+
     fn vertex_shader() -> ShaderRef {
         SHADER.into()
     }
@@ -185,7 +194,7 @@ impl Material for WaterMaterial {
     }
 
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayoutRef,
         key: MaterialPipelineKey<Self>,
@@ -249,6 +258,7 @@ pub struct WaterTargets {
 
 /// On the main camera: where its depth is copied to for the water.
 #[derive(Component, Clone, ExtractComponent)]
+#[extract_app(RenderApp)]
 pub struct WaterDepthTarget(pub Handle<Image>);
 
 /// The camera drawing the reflection.
@@ -328,14 +338,10 @@ pub struct WaterPlugin;
 
 impl Plugin for WaterPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "water.wgsl", Shader::from_wgsl);
-        load_internal_asset!(app, BLUR_SHADER, "water_blur.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "water.wesl", Shader::from_wesl);
+        load_internal_asset!(app, BLUR_SHADER, "water_blur.wesl", Shader::from_wesl);
         app.add_plugins((
-            MaterialPlugin::<WaterMaterial> {
-                prepass_enabled: false,
-                shadows_enabled: false,
-                ..default()
-            },
+            MaterialPlugin::<WaterMaterial>::default(),
             ExtractComponentPlugin::<WaterDepthTarget>::default(),
             ExtractComponentPlugin::<ReflectionBlur>::default(),
         ))
@@ -356,7 +362,7 @@ impl Plugin for WaterPlugin {
         )
         .add_systems(
             PostUpdate,
-            place_reflection_camera.before(TransformSystem::TransformPropagate),
+            place_reflection_camera.before(TransformSystems::Propagate),
         );
         let blur = app
             .world()
@@ -369,23 +375,18 @@ impl Plugin for WaterPlugin {
             render_app.insert_resource(BlurRadius(radius));
         }
         render_app
-            .add_render_graph_node::<ViewNodeRunner<DepthCopyNode>>(Core3d, WaterDepthLabel)
-            .add_render_graph_edges(
+            .add_systems(
                 Core3d,
-                (
-                    Node3d::MainOpaquePass,
-                    WaterDepthLabel,
-                    Node3d::MainTransmissivePass,
-                ),
+                copy_water_depth
+                    .after(main_opaque_pass_3d)
+                    .before(main_transparent_pass_3d),
             )
-            .add_render_graph_node::<ViewNodeRunner<BlurNode>>(Core3d, WaterBlurLabel)
-            .add_render_graph_edges(
+            .add_systems(
                 Core3d,
-                (
-                    Node3d::Tonemapping,
-                    WaterBlurLabel,
-                    Node3d::EndMainPassPostProcessing,
-                ),
+                blur_reflection
+                    .after(tonemapping)
+                    .before(upscaling)
+                    .in_set(Core3dSystems::PostProcess),
             );
     }
 
@@ -401,96 +402,74 @@ impl Plugin for WaterPlugin {
 
 /// The scene's depth copied for the water, after the opaque pass and
 /// before the transmissive one (where water is drawn).
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct WaterDepthLabel;
-
-#[derive(Default)]
-struct DepthCopyNode;
-
-impl ViewNode for DepthCopyNode {
-    type ViewQuery = (&'static ViewDepthTexture, &'static WaterDepthTarget);
-
-    fn run(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext,
-        (depth, target): QueryItem<Self::ViewQuery>,
-        world: &World,
-    ) -> Result<(), NodeRunError> {
-        let images = world.resource::<RenderAssets<GpuImage>>();
-        let Some(image) = images.get(&target.0) else {
-            return Ok(());
-        };
-        let (from, to) = (&depth.texture, &image.texture);
-        if from.size() != to.size()
-            || from.sample_count() != to.sample_count()
-            || from.format() != to.format()
-        {
-            return Ok(());
-        }
-        render_context.command_encoder().copy_texture_to_texture(
-            from.as_image_copy(),
-            to.as_image_copy(),
-            from.size(),
-        );
-        Ok(())
+fn copy_water_depth(
+    view: ViewQuery<(&'static ViewDepthStencilTexture, &'static WaterDepthTarget)>,
+    mut render_context: RenderContext,
+    images: Res<RenderAssets<GpuImage>>,
+) {
+    let (depth, target) = view.into_inner();
+    let Some(image) = images.get(&target.0) else {
+        return;
+    };
+    let (from, to) = (depth.texture(), &image.texture);
+    if from.size() != to.size()
+        || from.sample_count() != to.sample_count()
+        || from.format() != to.format()
+    {
+        return;
     }
+    render_context.command_encoder().copy_texture_to_texture(
+        from.as_image_copy(),
+        to.as_image_copy(),
+        from.size(),
+    );
 }
 
-/// On the reflection camera: its picture is blurred (see `water_blur.wgsl`).
+/// On the reflection camera: its picture is blurred (see `water_blur.wesl`).
 #[derive(Component, Clone, Copy, ExtractComponent)]
+#[extract_app(RenderApp)]
 pub struct ReflectionBlur;
 
 /// The reflection's blur, after the reflection camera's main pass.
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct WaterBlurLabel;
-
-#[derive(Default)]
-struct BlurNode;
-
-impl ViewNode for BlurNode {
-    type ViewQuery = (&'static ViewTarget, &'static ReflectionBlur);
-
-    fn run(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext,
-        (view_target, _): QueryItem<Self::ViewQuery>,
-        world: &World,
-    ) -> Result<(), NodeRunError> {
-        let Some(blur) = world.get_resource::<BlurPipeline>() else {
-            return Ok(());
-        };
-        let cache = world.resource::<PipelineCache>();
-        let (Some(horizontal), Some(vertical)) = (
-            cache.get_render_pipeline(blur.horizontal),
-            cache.get_render_pipeline(blur.vertical),
-        ) else {
-            return Ok(());
-        };
-        for pipeline in [horizontal, vertical] {
-            let post = view_target.post_process_write();
-            let bind_group = render_context.render_device().create_bind_group(
-                "water_blur_bind_group",
-                &blur.layout,
-                &BindGroupEntries::sequential((post.source, &blur.sampler)),
-            );
-            let mut pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-                label: Some("water_blur_pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: post.destination,
-                    resolve_target: None,
-                    ops: Operations::default(),
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_render_pipeline(pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.draw(0..3, 0..1);
-        }
-        Ok(())
+fn blur_reflection(
+    view: ViewQuery<(&'static ViewTarget, &'static ReflectionBlur)>,
+    mut render_context: RenderContext,
+    blur: Option<Res<BlurPipeline>>,
+    cache: Res<PipelineCache>,
+) {
+    let (view_target, _) = view.into_inner();
+    let Some(blur) = blur else {
+        return;
+    };
+    let (Some(horizontal), Some(vertical)) = (
+        cache.get_render_pipeline(blur.horizontal),
+        cache.get_render_pipeline(blur.vertical),
+    ) else {
+        return;
+    };
+    for pipeline in [horizontal, vertical] {
+        let post = view_target.post_process_write();
+        let bind_group = render_context.render_device().create_bind_group(
+            "water_blur_bind_group",
+            &blur.layout,
+            &BindGroupEntries::sequential((post.source, &blur.sampler)),
+        );
+        let mut pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
+            label: Some("water_blur_pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: post.destination,
+                resolve_target: None,
+                ops: Operations::default(),
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_render_pipeline(pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
     }
 }
 
@@ -511,7 +490,7 @@ impl FromWorld for BlurPipeline {
     fn from_world(world: &mut World) -> Self {
         let radius = world.get_resource::<BlurRadius>().map_or(1, |r| r.0);
         let device = world.resource::<RenderDevice>();
-        let layout = device.create_bind_group_layout(
+        let layout_descriptor = BindGroupLayoutDescriptor::new(
             "water_blur_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
@@ -521,6 +500,9 @@ impl FromWorld for BlurPipeline {
                 ),
             ),
         );
+        let layout = device
+            .create_bind_group_layout(layout_descriptor.label.as_ref(), &layout_descriptor.entries);
+        let fullscreen_shader = world.resource::<FullscreenShader>().clone();
         // Bilinear and clamped.
         let sampler = device.create_sampler(&SamplerDescriptor {
             mag_filter: FilterMode::Linear,
@@ -532,14 +514,15 @@ impl FromWorld for BlurPipeline {
                 .resource_mut::<PipelineCache>()
                 .queue_render_pipeline(RenderPipelineDescriptor {
                     label: Some(format!("water_blur_{entry}").into()),
-                    layout: vec![layout.clone()],
-                    vertex: fullscreen_shader_vertex_state(),
+                    layout: vec![layout_descriptor.clone()],
+                    vertex: fullscreen_shader.to_vertex_state(),
                     fragment: Some(FragmentState {
                         shader: BLUR_SHADER,
                         shader_defs: vec![ShaderDefVal::UInt("BLUR_RADIUS".into(), radius)],
-                        entry_point: entry.into(),
+                        entry_point: Some(entry.into()),
+                        constants: vec![],
                         targets: vec![Some(ColorTargetState {
-                            format: ViewTarget::TEXTURE_FORMAT_HDR,
+                            format: TextureFormat::Rgba16Float,
                             blend: None,
                             write_mask: ColorWrites::ALL,
                         })],
@@ -547,7 +530,7 @@ impl FromWorld for BlurPipeline {
                     primitive: PrimitiveState::default(),
                     depth_stencil: None,
                     multisample: MultisampleState::default(),
-                    push_constant_ranges: vec![],
+                    immediate_size: 0,
                     zero_initialize_workgroup_memory: false,
                 })
         };
@@ -566,6 +549,7 @@ impl FromWorld for BlurPipeline {
 fn depth_image(size: UVec2, samples: u32) -> Image {
     Image {
         data: None,
+        data_order: default(),
         texture_descriptor: TextureDescriptor {
             label: Some("water_depth"),
             size: Extent3d {
@@ -586,6 +570,7 @@ fn depth_image(size: UVec2, samples: u32) -> Image {
         sampler: ImageSampler::Default,
         texture_view_descriptor: None,
         asset_usage: RenderAssetUsages::RENDER_WORLD,
+        copy_on_resize: false,
     }
 }
 
@@ -599,6 +584,7 @@ fn setup_water(
     let (w, h) = settings.reflection_size;
     let reflection = images.add(Image {
         data: None,
+        data_order: default(),
         texture_descriptor: TextureDescriptor {
             label: Some("water_reflection"),
             size: Extent3d {
@@ -626,6 +612,7 @@ fn setup_water(
         texture_view_descriptor: None,
         // Kept in the main world too: a camera's target size is read there.
         asset_usage: RenderAssetUsages::default(),
+        copy_on_resize: false,
     });
     let samples = 4;
     let depth = images.add(depth_image(UVec2::ONE, samples));
@@ -641,17 +628,14 @@ fn setup_water(
         _ => Msaa::Sample4,
     };
     let mut camera = commands.spawn((
-        Camera3d {
-            screen_space_specular_transmission_steps: 0,
-            ..default()
-        },
+        Camera3d { ..default() },
         Camera {
-            target: RenderTarget::from(reflection),
             // Before the main camera.
             order: -1,
-            hdr: true,
             ..default()
         },
+        RenderTarget::from(reflection),
+        Hdr,
         Projection::custom(MirrorProjection {
             clip_from_view: Mat4::IDENTITY,
             far: 5000.0,
@@ -660,7 +644,7 @@ fn setup_water(
         // Stored values, as the scene's: no tone mapping or dithering.
         Tonemapping::None,
         // No light clusters: nothing here is lit by Bevy's lights.
-        bevy::pbr::ClusterConfig::None,
+        bevy::light::cluster::ClusterConfig::Single,
         DebandDither::Disabled,
         msaa,
         Exposure::default(),
@@ -746,7 +730,7 @@ fn tag_sky(
 }
 
 /// The water constants for a surface, before the hour's sun and fog
-/// outdoors (`00b864d0`; see `water.wgsl`). `None` without the type's
+/// outdoors (`00b864d0`; see `water.wesl`). `None` without the type's
 /// visual data.
 pub fn water_params(
     data: &WaterData,
@@ -979,7 +963,7 @@ fn light_water(
         if surface.interior {
             continue;
         }
-        let Some(m) = materials.get_mut(&surface.material) else {
+        let Some(mut m) = materials.get_mut(&surface.material) else {
             continue;
         };
         let p = &mut m.params;
@@ -1069,7 +1053,7 @@ fn place_reflection_camera(
         return;
     };
     let h = surface.mirror * space::METERS_PER_UNIT;
-    let view = eye.compute_matrix();
+    let view = eye.to_matrix();
     *transform = Transform::from_matrix(mirror_in(h) * view);
     let plane = view.transpose() * Vec4::new(0.0, -1.0, 0.0, h);
     let base = main_perspective.get_clip_from_view();
@@ -1098,10 +1082,8 @@ fn water_in_view(
     projection: &Projection,
     surfaces: &Query<(&WaterSurface, &Visibility)>,
 ) -> bool {
-    use bevy::render::camera::CameraProjection;
-    use bevy::render::primitives::{Aabb, Frustum};
-    let clip_from_world = projection.get_clip_from_view() * eye.compute_matrix().inverse();
-    let frustum = Frustum::from_clip_from_world(&clip_from_world);
+    use bevy::camera::primitives::Aabb;
+    let frustum = projection.compute_frustum(&GlobalTransform::from(*eye));
     surfaces.iter().any(|(s, visibility)| {
         if *visibility == Visibility::Hidden {
             return false;
@@ -1414,9 +1396,9 @@ mod tests {
         // scale-rotation-translation form.
         let camera = Transform::from_xyz(1.0, 10.0, 4.0)
             .looking_to(Vec3::new(0.3, -0.5, -1.0), Vec3::Y)
-            .compute_matrix();
+            .to_matrix();
         let mirrored = m * camera;
-        let back = Transform::from_matrix(mirrored).compute_matrix();
+        let back = Transform::from_matrix(mirrored).to_matrix();
         assert!(back.abs_diff_eq(mirrored, 1e-4), "{back:?} {mirrored:?}");
     }
 }

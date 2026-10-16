@@ -14,7 +14,10 @@ use world::lod::{LodNode, LodSettings, TerrainSettings};
 use world::{square_of, WorldGrid};
 
 use crate::grade::ImageSpaceGrade;
-use crate::lod::{choose_shown, high_detail, ChunkState, LodLandParams, SpawnedChunk};
+use crate::lod::{
+    choose_shown, high_detail, material_data, material_data_mut, ChunkState, LodLandParams,
+    SpawnedChunk,
+};
 use crate::walk::{game_point, CellCollision, Doors, Player};
 use crate::{FlyCamera, GameFiles, Grading, SceneEntity, Spawner};
 
@@ -378,7 +381,7 @@ pub fn stream_squares(
                     exterior.lod_params = Some(crate::lod_params(&scene, spawner.brightness()));
                 }
                 // The terrain blends toward the distant land, with its
-                // noise (`lod_land.wgsl`'s).
+                // noise (`lod_land.wesl`'s).
                 let noise = exterior
                     .noise
                     .get_or_insert_with(|| game.0.lod_noise().and_then(|t| spawner.upload(&t)))
@@ -417,7 +420,7 @@ pub fn stream_squares(
         for state in exterior.squares.values() {
             if let Square::Loaded { spawned, .. } = state {
                 for m in &spawned.terrain {
-                    if let Some(m) = spawner.terrain_materials.get_mut(m) {
+                    if let Some(mut m) = spawner.terrain_materials.get_mut(m) {
                         m.extension.land_blend.move_to(here);
                     }
                 }
@@ -661,8 +664,8 @@ pub fn stream_distant_land(
         exterior.lod_here = Some(here);
         for chunk in exterior.chunks.values() {
             if let Chunk::Loaded { spawned, .. } = chunk {
-                if let Some(m) = spawner.lod_materials.get_mut(&spawned.material) {
-                    m.extension.params.high_detail = detail;
+                if let Some(mut m) = spawner.lod_materials.get_mut(&spawned.material) {
+                    material_data_mut(&mut *m).params.high_detail = detail;
                 }
             }
         }
@@ -705,11 +708,12 @@ pub fn stream_distant_land(
         else {
             continue;
         };
-        if let Some(m) = spawner.lod_materials.get_mut(&spawned.material) {
+        if let Some(mut m) = spawner.lod_materials.get_mut(&spawned.material) {
             let [u, v] = node.offset_in_parent(parent);
-            m.extension.chunk = Vec4::new(m.extension.chunk.x, u, v, 0.0);
-            m.extension.parent_base = base.clone();
-            m.extension.parent_normals = normals.clone();
+            let m = material_data_mut(&mut *m);
+            m.chunk = Vec4::new(m.chunk.x, u, v, 0.0);
+            m.parent_base = base.clone();
+            m.parent_normals = normals.clone();
             *fading_since = Some(now);
         }
     }
@@ -743,7 +747,7 @@ pub fn stream_distant_land(
         let Some(m) = spawner.lod_materials.get(&spawned.material) else {
             continue;
         };
-        let mut chunk_values = m.extension.chunk;
+        let mut chunk_values = material_data(m).chunk;
         chunk_values.x = morph;
         let mut done = false;
         match fade {
@@ -754,12 +758,13 @@ pub fn stream_distant_land(
             }
             None => {}
         }
-        if chunk_values != m.extension.chunk || done {
-            if let Some(m) = spawner.lod_materials.get_mut(&spawned.material) {
-                m.extension.chunk = chunk_values;
+        if chunk_values != material_data(m).chunk || done {
+            if let Some(mut m) = spawner.lod_materials.get_mut(&spawned.material) {
+                let m = material_data_mut(&mut *m);
+                m.chunk = chunk_values;
                 if done {
-                    m.extension.parent_base = None;
-                    m.extension.parent_normals = None;
+                    m.parent_base = None;
+                    m.parent_normals = None;
                 }
             }
         }

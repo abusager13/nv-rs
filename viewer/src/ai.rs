@@ -673,6 +673,7 @@ pub fn move_actors(
     game: Res<GameFiles>,
     mut state: ResMut<DialogueState>,
     conversation: Res<Conversation>,
+    coop: Res<crate::coop::CoOpSession>,
     mut nav: ResMut<CellNav>,
     mut talkers: ResMut<Talkers>,
     exterior: Option<Res<crate::exterior::Exterior>>,
@@ -727,7 +728,11 @@ pub fn move_actors(
     // time stands still in them (`scripts`). The hardcore question after
     // Doc Mitchell's farewell is one.
     let menu_mode = menus.as_deref().is_some_and(crate::menus::Menus::is_open);
-    let frozen = frozen_ai.0 || in_menu || menu_mode;
+    // In the single-player game, dialogue and menus stop the world. A co-op
+    // host keeps NPC simulation running while its local UI is open, so the
+    // speaker can remain exposed and the shared world keeps moving. Clients
+    // still treat their menu as an overlay over host-owned simulation.
+    let frozen = frozen_ai.0 || ((in_menu || menu_mode) && !coop.is_host());
     let speaker = conversation.0.as_ref().map(|t| t.speaker());
     let menu_speaker = speaker.filter(|_| in_menu);
     // The dialogue menu closed: the speaker's package is looked at again at
@@ -801,6 +806,7 @@ pub fn move_actors(
         _ => [0.0; 3],
     };
     last.player = state.player_position;
+    let remote_player_positions = coop.remote_player_positions();
     let (others, obstacles) = seen(order, state, &attack, now, &actors, player_velocity);
     let bodies = bodies(state, &actors);
     // The world camera, for `MobileObject::Move`'s far rule (`world::ground`).
@@ -1179,7 +1185,10 @@ pub fn move_actors(
         // more from the player.
         let near_player = state
             .player_position
-            .is_some_and(|p| distance(p, walker.position) < world::combat_ai::DETECTION_RANGE);
+            .is_some_and(|p| distance(p, walker.position) < world::combat_ai::DETECTION_RANGE)
+            || remote_player_positions.iter().any(|&position| {
+                distance(position, walker.position) < world::combat_ai::DETECTION_RANGE
+            });
         if now >= walker.detect_at && near_player {
             let in_combat = state.combat.contains_key(&me);
             let unit = crate::fighting::Dice::new(state).unit();

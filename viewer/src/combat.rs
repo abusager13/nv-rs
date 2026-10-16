@@ -630,7 +630,7 @@ pub fn setup_hud(mut commands: Commands) {
     commands.spawn((
         Text::new(String::new()),
         TextFont {
-            font_size: 18.0,
+            font_size: FontSize::Px(18.0),
             ..default()
         },
         TextColor(Color::srgb(0.95, 0.75, 0.3)),
@@ -718,6 +718,7 @@ pub fn player_attack(
     ),
     (talkers, cell_scripts, collision): (Res<Talkers>, Res<CellScripts>, Res<CellCollision>),
     mut attack: ResMut<PlayerAttack>,
+    mut coop: ResMut<crate::coop::CoOpSession>,
     mut sounds: ResMut<SoundRequests>,
     mut hits: ResMut<crate::hiteffects::HitReports>,
     cameras: Query<&Transform, With<FlyCamera>>,
@@ -1028,6 +1029,7 @@ pub fn player_attack(
     if readying {
         return;
     }
+    let mut fired_ammo = None;
     // Ammunition: each shot uses the weapon's ammo use from what's carried
     // (the clip counts down; an empty clip reloads first).
     if let Some(w) = weapon.as_ref() {
@@ -1043,6 +1045,7 @@ pub fn player_attack(
                 return;
             }
             attack.in_clip = Some(clip - use_);
+            fired_ammo = Some((ammo, use_));
             if let Some(n) = state.items.get_mut(&(PLAYER_REF, ammo)) {
                 *n -= use_ as i32;
             }
@@ -1178,12 +1181,25 @@ pub fn player_attack(
     // Grenades and thrown weapons leave the hand instead (`explosives`;
     // `00523150`: animation types 10–13).
     if let Some(w) = weapon.as_ref().filter(|w| world::explosions::is_thrown(w)) {
-        crate::explosives::throw(crate::explosives::Launch {
-            thrower: PLAYER_REF,
-            weapon: w.clone(),
-            origin: eye,
-            aim: crate::explosives::Aim::Along(view),
-        });
+        match coop.request_player_attack(id, None, 0, attack.attack_group, attack.power) {
+            crate::coop::PlayerAttackStatus::Local => {
+                crate::explosives::throw(crate::explosives::Launch {
+                    thrower: PLAYER_REF,
+                    coop_player: state.coop_player_context,
+                    combat_profile: state
+                        .coop_player_context
+                        .and_then(|_| crate::coop::combat_profile_snapshot(order, state)),
+                    weapon: w.clone(),
+                    origin: eye,
+                    aim: crate::explosives::Aim::Along(view),
+                    consume_item: true,
+                });
+            }
+            // The client consumes its own thrown item when the host accepts
+            // the launch, so a rejected or lost request does not eat it.
+            crate::coop::PlayerAttackStatus::Queued => {}
+            crate::coop::PlayerAttackStatus::Full => {}
+        }
         return;
     }
     let melee = weapon.as_ref().is_none_or(|w| w.is_melee());
@@ -1191,9 +1207,11 @@ pub fn player_attack(
     // share of the damage, flying within the weapon's cone (`world::combat::
     // Weapon::shot`); melee: the weapon's reach between the bodies' edges
     // (from the eye's axis, so with the player's own radius added).
-    let ammo = weapon
-        .as_ref()
-        .and_then(|w| w.ammo_in_use(order, state, PLAYER_REF));
+    let ammo = fired_ammo.map(|(ammo, _)| ammo).or_else(|| {
+        weapon
+            .as_ref()
+            .and_then(|w| w.ammo_in_use(order, state, PLAYER_REF))
+    });
     let (count, cone, reach) = match &weapon {
         Some(w) if !melee => {
             let (count, cone) = w.shot(order, ammo);
@@ -1210,10 +1228,22 @@ pub fn player_attack(
         // The ammunition's own projectile when it names one (the rockets'
         // HE and HV loads, `world::combat::fired_projectile`).
         if !melee {
-            w.projectile = world::combat::fired_projectile(order, state, PLAYER_REF, &w);
+            w.projectile = world::combat::fired_projectile_with_ammo(order, &w, ammo);
         }
         w
     });
+    let ammo_use = weapon.as_ref().map_or(0, |w| {
+        if w.ammo.is_empty() {
+            0
+        } else {
+            u32::from(w.ammo_use.max(1))
+        }
+    });
+    if coop.request_player_attack(id, ammo, ammo_use, attack.attack_group, attack.power)
+        != crate::coop::PlayerAttackStatus::Local
+    {
+        return;
+    }
     let heading = view[0].atan2(view[1]);
     let pitch = view[2].clamp(-1.0, 1.0).asin();
     // A swing (`world::melee`, `008990f0`): from the player's feet, facing

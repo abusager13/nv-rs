@@ -922,7 +922,7 @@ pub fn setup_notices(mut commands: Commands) {
     commands.spawn((
         Text::new(String::new()),
         TextFont {
-            font_size: 18.0,
+            font_size: FontSize::Px(18.0),
             ..default()
         },
         TextColor(Color::srgb(0.95, 0.85, 0.55)),

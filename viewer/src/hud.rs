@@ -29,20 +29,22 @@
 
 use std::collections::HashMap;
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Hdr;
+use bevy::camera::RenderTarget;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
-use bevy::render::camera::RenderTarget;
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_resource::{
-    AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat, TextureUsages,
-    WgpuFeatures,
+    AsBindGroup, Extent3d, ShaderType, TextureDimension, TextureFormat, TextureUsages, WgpuFeatures,
 };
 use bevy::render::renderer::RenderDevice;
-use bevy::render::view::RenderLayers;
-use bevy::sprite::{AlphaMode2d, Material2d, Material2dPlugin};
+use bevy::render::RenderApp;
+use bevy::shader::ShaderRef;
+use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::window::PrimaryWindow;
 use cellview::{Game, TextureData};
 use ui::draw::{DrawItem, DrawKind, Textures};
@@ -53,13 +55,14 @@ use world::dialogue::PLAYER_REF;
 use crate::dialogue::{Conversation, DialogueState, TalkTarget, Talkers};
 use crate::{FlyCamera, GameFiles};
 
-const SHADER: Handle<Shader> = weak_handle!("3c8e51d2-7a4f-4b19-9e06-5d2b8f17a6c3");
+const SHADER: Handle<Shader> = uuid_handle!("3c8e51d2-7a4f-4b19-9e06-5d2b8f17a6c3");
 
 /// The render layer only the HUD's camera sees.
 pub(crate) const HUD_LAYER: usize = 23;
 
 /// The HUD's picture, which the image space pass lays over the scene.
 #[derive(Resource, Clone, ExtractResource)]
+#[extract_app(RenderApp)]
 pub struct HudLayer(pub Handle<Image>);
 
 /// The HUD's camera (it writes the HUD's picture each frame; while a menu's
@@ -69,6 +72,10 @@ pub struct HudLayer(pub Handle<Image>);
 /// overlay camera has cleared it (`scope::update_scope`).
 #[derive(Component)]
 pub struct HudCamera;
+
+/// Full-resolution HUD sprite shown after MetalFX has upscaled the scene.
+#[derive(Component)]
+struct MetalFxHudOverlay;
 
 /// Whether the game's HUD is drawn (`--no-hud` turns it off).
 #[derive(Resource)]
@@ -153,7 +160,7 @@ pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "hud.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "hud.wesl", Shader::from_wesl);
         app.add_plugins((
             Material2dPlugin::<TileMaterial>::default(),
             ExtractResourcePlugin::<HudLayer>::default(),
@@ -161,6 +168,7 @@ impl Plugin for HudPlugin {
         .init_resource::<HudMessages>()
         .init_resource::<GameHud>()
         .add_systems(Startup, setup_hud_layer)
+        .add_systems(Update, sync_metalfx_hud_overlay)
         // The HUD's update is the interface idle's
         // (`Main::OnIdle_DoInterfaceIdle`), the AI threads' first call with
         // threads > 1 (`crate::frame_order::AiSet`), after the scripts (stage
@@ -269,9 +277,10 @@ impl Material2d for TileMaterial {
     }
 
     fn specialize(
+        _pipeline: &bevy::sprite_render::Material2dPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
         _layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
-        key: bevy::sprite::Material2dKey<Self>,
+        key: bevy::sprite_render::Material2dKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         use bevy::render::render_resource::{BlendComponent, BlendOperation, BlendState};
         if let (Some((src, dst)), Some(fragment)) =
@@ -339,6 +348,22 @@ fn setup_hud_layer(
     mut hud: ResMut<GameHud>,
     windows: Query<&Window, With<PrimaryWindow>>,
 ) {
+    // Keep Bevy UI on a native-resolution camera that draws after the reduced-
+    // resolution 3D camera and MetalFX. This prevents text and menus from being
+    // included in the low-resolution image that MetalFX upscales.
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 2,
+            // Start with transparent pixels so this later camera composites
+            // UI over the completed game frame rather than exposing undefined
+            // intermediate contents (which appear pink on Metal).
+            clear_color: ClearColorConfig::Custom(Color::NONE),
+            ..default()
+        },
+        IsDefaultUiCamera,
+    ));
+
     if !show.0 {
         return;
     }
@@ -362,6 +387,19 @@ fn setup_hud_layer(
         TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
     let layer = images.add(image);
     commands.insert_resource(HudLayer(layer.clone()));
+    let logical_size = windows
+        .single()
+        .map(|window| Vec2::new(window.width(), window.height()))
+        .unwrap_or(Vec2::new(1920.0, 1080.0));
+    commands.spawn((
+        Sprite {
+            image: layer.clone(),
+            custom_size: Some(logical_size),
+            ..default()
+        },
+        Visibility::Hidden,
+        MetalFxHudOverlay,
+    ));
     // The scope's overlay is drawn onto the picture first and clears it
     // while a scope is up (`scope`); the HUD's pieces go over it. The rest
     // of the time the HUD's camera clears it.
@@ -369,7 +407,6 @@ fn setup_hud_layer(
     commands.spawn((
         Camera2d,
         Camera {
-            target: RenderTarget::from(layer),
             // Before the main camera, whose last pass reads the picture,
             // and before the lockpicking menu's cameras, which draw onto it
             // (`lockpick`).
@@ -377,10 +414,11 @@ fn setup_hud_layer(
             // A float picture: stored values kept as they are, blended as
             // they are. Cleared here, or by the scope's camera while it's
             // on (`scope::update_scope`).
-            hdr: true,
             clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         },
+        RenderTarget::from(layer),
+        Hdr,
         Tonemapping::None,
         DebandDither::Disabled,
         Msaa::Off,
@@ -400,6 +438,41 @@ fn setup_hud_layer(
     );
     white.sampler = sampler(false, false);
     hud.white = Some(images.add(white));
+}
+
+/// Present the composited game HUD at full window resolution after MetalFX.
+/// The ordinary image-space pass keeps drawing the HUD when MetalFX is off.
+fn sync_metalfx_hud_overlay(
+    hud_layer: Option<Res<HudLayer>>,
+    setting: Res<crate::metalfx::MetalFxSetting>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut overlays: Query<(&mut Sprite, &mut Visibility), With<MetalFxHudOverlay>>,
+) {
+    let Some(hud_layer) = hud_layer else {
+        return;
+    };
+    let size = windows
+        .single()
+        .ok()
+        .map(|window| Vec2::new(window.width(), window.height()));
+    for (mut sprite, mut visibility) in &mut overlays {
+        if sprite.image != hud_layer.0 {
+            sprite.image = hud_layer.0.clone();
+        }
+        if let Some(size) = size {
+            if sprite.custom_size != Some(size) {
+                sprite.custom_size = Some(size);
+            }
+        }
+        let target_visibility = if setting.enabled {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        if *visibility != target_visibility {
+            *visibility = target_visibility;
+        }
+    }
 }
 
 /// Bilinear, the top level only (the game's `MIPFILTER` none), repeating
@@ -1082,7 +1155,7 @@ fn update_hud(
             .get(&layer.0)
             .is_some_and(|i| i.texture_descriptor.size != wanted)
         {
-            if let Some(image) = images.get_mut(&layer.0) {
+            if let Some(mut image) = images.get_mut(&layer.0) {
                 image.texture_descriptor.size = wanted;
             }
         }

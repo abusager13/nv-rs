@@ -1080,7 +1080,7 @@ fn draw(
         if clutter.world.find(placed.0).is_some() {
             commands.entity(entity).insert(Simulated {
                 reference: placed.0,
-                rest: transform.compute_matrix(),
+                rest: transform.to_matrix(),
             });
         }
     }

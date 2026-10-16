@@ -40,6 +40,12 @@ their own immediate movement and projectile visuals, but the host resolves
 collisions, damage, AP costs, item transfers, and shared-world effects.
 Authoritative updates reconcile client predictions.
 
+In the viewer experiment, the host now keeps NPC AI moving while its dialogue
+or menu overlay is open and runs NPC detection near connected guests. The
+single-player pause remains unchanged, and clients continue to render
+host-owned simulation. NPCs can still target only the host player;
+guest-targeted combat and its authoritative damage path are outstanding.
+
 Use sequenced, replaceable snapshots for transient movement and aim, and
 reliable ordered events for quest changes, inventory transfers, actor/object
 mutations, and cell transitions. Snapshots can send deltas from a named
@@ -58,10 +64,23 @@ validated at commit time against the latest player and shared-world state.
   target and queued attack; the host validates target eligibility, offered
   body part, weapon data, attack kind, and expected AP cost, then reserves AP
   once and rolls each shot before playback. The host applies hits through the
-  nv-rs combat runner and replicates actor health. The effective chance still
-  comes from the client, and combat uses the host's single `PLAYER_REF` stats
-  because player character state is not split yet. General projectile attacks
-  remain client-side. No world pause or client-declared hit result.
+  nv-rs combat runner and replicates actor health. Protocol 16 sends an
+  acknowledged guest profile of level, current/permanent actor values, and
+  perk ranks; the host temporarily applies it while calculating hit chance,
+  costs, AP limits, regeneration, and damage. Protocol 15 checks the selected
+  weapon and ammunition against the guest's acknowledged combat-inventory
+  mirror. The host uses the guest's selected ammo form for damage effects and
+  reduces its mirrored count after an accepted shot. The visibility estimate
+  does not account for body-part occlusion. Protocol 17 death events from
+  host-resolved hitscan, melee, and V.A.T.S. carry the assigned guest ID.
+  The translated game death event, kill rewards, karma, stats, and ragdoll
+  nudge still use the single `PLAYER_REF`. Flying bolts and thrown explosives
+  retain the guest ID and combat profile from launch through delayed impact.
+  Attacker profile-changing script side effects are not retained per guest. Thrown
+  weapons use host flight and impact
+  simulation; the host decrements the guest weapon count after accepting a
+  throw, and the guest consumes its matching local item. No world pause or
+  client-declared hit result.
 - **Moving platforms:** model platforms such as elevators and the monorail
   as authoritative parent physics frames. Players and objects riding one
   replicate a transform relative to that frame, with the host resolving
@@ -92,11 +111,49 @@ handshake includes a fingerprint of the ordered plugin names and complete
 plugin contents, so peers with different form data cannot join; archives and
 loose assets are not fingerprinted. Each running client has
 its own local `GameState`, so its local scripts can make personal faction
-choices. The client now reports quest stages, stage completion, objective
-completion, quest status, and faction fame/infamy to a host ledger stored per
-peer. That ledger is not shared with other clients, and the host does not yet
-use it to run guest quest scripts or AI. Guest movement still uses the host's
-player stats and movement settings. The viewer wires movement, V.A.T.S.,
+choices. A client reports quest stages, stage completion, objective
+completion, and quest status to its per-peer host ledger. Shared-scope quest
+changes are applied to an ordered shared ledger and replayed to all clients;
+the host can explicitly keep selected faction quests private. Valid record IDs
+are checked. For a shared stage report, the host runs `Runner::set_stage` on
+host state, and clients run the accepted stage during replay. Stage-done,
+objective, and status reports propagate only when the host's state already
+matches after its own stage processing. The stage report itself still
+originates from the guest. Protocol 19 sends dialogue selections as sequenced
+requests containing the client's offer and selected topic/INFO pair. The
+client retransmits until acknowledged, and the host caches the last result so
+a retransmit cannot run a script twice. The host validates loaded records and
+the current speaker, then mirrors shared begin/end scripts; INFO records
+attached to explicitly private quests remain client-local. Campaign events
+also carry indexed quest-script variables. Shared variables are committed only
+when the host's simulation already has the reported value; private-quest
+variables are stored in the peer ledger. Protocol 24 carries learned dialogue
+topics, said INFO records, and talked-to speaker IDs in the acknowledged
+campaign stream, and replays the peer's history while host scripts run.
+Protocol 24 also replicates changed `GLOB` values. Globals are shared by
+default; the host can scope selected values per player with
+`--coop-private-globals GLOBAL[,GLOBAL...]`. Shared-global reports are
+committed only when the host simulation already matches; private values are
+stored in the peer ledger. Dialogue menus remain local, but the host
+recomputes whether a selected topic/INFO pair is currently available against
+the guest's synchronized state and combat profile. Explicit `TCLT` menus carry
+the source INFO so the host can rebuild the same choice set. Protocol 24 also
+replicates guest gender and item counts, with a marker for the complete initial
+inventory snapshot; the host waits for that snapshot before approving dialogue
+choices. Other unsupported player-specific conditions may still differ. While
+running a guest's shared dialogue script, the host
+overlays that peer's configured private quest stages, objectives, status,
+globals, and reputation from its per-peer campaign ledger, then stores private
+changes back to that ledger and restores the host's values. Unconfigured
+globals remain shared. Protocol 24 sends each guest's initial misc-stat
+baseline to the host, resolves stat reads and writes in that guest's context,
+and replays targeted XP, karma, and stat changes through the acknowledged
+campaign stream. The host updates the guest's cached combat profile so later
+attacks use the new actor values. Guest attacks and mirrored dialogue reports
+wait for the initial campaign, inventory, and profile updates to be acknowledged.
+Challenge progress still uses shared state.
+Guest movement still uses
+the host's player stats and movement settings. The viewer wires movement, V.A.T.S.,
 dialogue, AI, and many script
 conditions to one `PLAYER_REF`; `world::scripting::GameState` also mixes world
 facts with player-specific facts. Bevy's ECS is a good fit for separate player
@@ -106,16 +163,36 @@ player context and explicit state scope to use those entities consistently.
 In co-op mode, frame scheduling keeps world and AI gates open while a local
 menu or dialogue overlay is up, while the local player's movement gate and
 interface still see the overlay. V.A.T.S. leaves virtual time at normal speed.
-The host validates each queued attack's weapon data, kind, selected body part,
-reload surcharge, and AP price, then reserves AP once. Version 10 numbers each
-shot separately; the host rolls each shot using the effective probability the
-guest reported, caches the result for retransmits, and applies a hit through
-nv-rs's combat runner. It replicates loaded actors' nonfatal health alongside
-death/destruction events and in keyframes. AP capacity, combat perks, and
-damage calculations still use the host's single `PLAYER_REF`, and the chance
-is client-reported. Guest weapon ownership is not checked. General weapons and
-projectiles still resolve locally; kill rewards and attack cancellation are
-not reconciled.
+The host validates each queued V.A.T.S. attack's weapon data, kind, selected
+body part, reload surcharge, and AP price, then reserves AP once. Protocol 11
+numbers each shot separately; the host calculates and rolls each shot from
+game data, caches the result for retransmits, and applies a hit through nv-rs's
+combat runner. Its visibility estimate uses a ray to the target center. Guest
+V.A.T.S. weapon and ammunition ownership are checked against the acknowledged
+combat-inventory mirror. Protocol 16 adds a reliably acknowledged combat
+profile; hit chance, AP cost, and damage calculation temporarily use that
+guest's actor values and perk ranks. A shared death event includes the guest
+ID for host-resolved V.A.T.S., hitscan, melee, bolt, and thrown-weapon kills.
+Delayed bolts and thrown explosives retain the guest's launch-time combat
+profile through impact. Kill rewards, karma, stats, ragdoll nudge, and
+profile-changing script side effects still run through the shared `PLAYER_REF`
+and do not persist as guest-owned changes. The host checks finite values and loaded perk records,
+but a peer can still falsify its reported character stats because UDP peers
+are unauthenticated.
+Protocol 13 also routes guest hitscan shots and melee swings through the host,
+which resolves them against current cell geometry and applies actor damage to
+shared host state. Aim, weapon, and selected ammo remain guest reports, but the
+host requires each to match the guest's latest acknowledged combat-inventory
+snapshot. It decrements ammo counts after accepted shots. The host applies the
+guest's acknowledged combat profile during damage calculations. Direct combat
+death events include a guest ID, while game kill rewards and profile-changing
+script effects still use the host's single `PLAYER_REF`. Flying
+bolts and thrown weapons resolve on the host; the host tracks the guest's
+thrown count and the guest consumes its local item only after acceptance.
+Actor health replicates through the existing world journal
+and keyframes, but guest hit effects and attack cancellation are not
+reconciled. The host replicates loaded actors' nonfatal health alongside
+death/destruction events and in keyframes.
 
 The host's world journal repeats up to 80 recent events in movement snapshots.
 On join or a gap, clients request a baseline containing loaded actor health
@@ -132,17 +209,44 @@ viewport aspect; the host bounds the aspect, derives the horizontal and
 vertical frustum from the game's FOV, and checks the target's bounding sphere
 from the player's eye point. These camera values remain client-reported, so
 this is geometry validation rather than camera authentication. Each shot waits
-for a fresh eligibility result. Dialogue updates send the current speaker name, spoken
-line, and up to eight offered topics; the host forwards the nearest
-conversation within 512 game units as a read-only overlay at 10 Hz. Each
-player keeps their own dialogue menu and choice input. The world continues
-while a speaker is in the menu, but dialogue outcomes are not host-authoritative.
-Campaign reports remain in each peer's host ledger and are not shared with
-other players, scripts, or AI. The host validates quest, stage, objective, and
-reputation IDs but not causal transitions. Reports omit globals and quest
-script variables; each client retains up to 4096 pending events, with no
-recovery after overflow. Outside co-op, the viewer keeps its original pause
-behavior.
+for a fresh eligibility result. Dialogue updates report the current speaker,
+an `INFO` record and response index, or up to eight `DIAL`/`INFO` choice pairs.
+The host checks these references against loaded dialogue records, then runs the
+same view caster used by the local crosshair with the guest's last reported
+camera direction and host cell geometry. It accepts only a loaded, living
+speaker that the pick selects. It forwards the nearest conversation within 512
+game units as a read-only overlay, and listeners resolve the text from their
+local game records. Reports expire when updates stop. Protocol 19 adds a
+reliable acknowledged request carrying the selected topic/INFO pair and its
+client-reported offer. The host validates the pair against loaded records and
+the current speaker, then runs the selected begin script once. It runs an
+active line's end script when the conversation advances or closes, or when
+dialogue reports expire; a record-listed follow-up can also be mirrored from
+a fresh dialogue snapshot.
+Private-quest INFO scripts remain local. The host installs the peer's private
+campaign facts, globals, reputation, and dialogue history while shared scripts
+run, then restores its own values. Unconfigured globals remain shared. The host
+recomputes the selected response against the guest's state, but does not
+reproduce every detail of local menu presentation. Other `PLAYER_REF` script
+effects remain shared-state risks. Each player keeps a local dialogue menu
+and choice input. The world continues while a speaker is in the menu.
+The host now orders shared quest stage, stage-done, objective, and status
+changes, applies them to its `GameState`, and replays them to clients until
+acknowledged. Reputation remains private. Quest progress is shared by default;
+the host can mark faction-specific QUST records private with
+`--coop-private-quests`. Scope is explicit because quest names and conditions
+do not reliably identify a faction path. The host checks record IDs and runs
+shared stage reports through its script runner. Stage-done, objective, and
+status reports propagate only when host state already matches. Clients still
+initiate stage reports. Protocol 19 carries dialogue choices reliably and
+quest script locals in campaign events. The host mirrors shared line scripts
+while loading the peer's configured private quest state and preserving its
+own player state. The host recomputes selected topic/INFO availability from
+that peer's campaign and profile state but does not reproduce every detail of
+local menu presentation or isolate every script effect. Stage execution uses
+the host's single `PLAYER_REF`; non-quest script locals are not synchronized.
+Each client retains up to 4096 pending events, with no recovery after overflow.
+Outside co-op, the viewer keeps its original pause behavior.
 
 ## Implementation path
 
@@ -153,23 +257,25 @@ behavior.
    a join or event gap.
 2. Send guest movement through the host's existing character collision
    controller, then reconcile each guest toward the host's 20 Hz pose snapshots.
-   A macOS movement run was exercised on protocol 7; protocol 10 aim geometry,
-   host damage, and health convergence still need a live check.
-3. Keep client campaign changes in a per-peer host ledger (quest stages,
-   stage completion, status, and reputation are now mirrored); split the rest
-   of player-owned quest/faction and character data from shared world state,
-   then pass `PlayerId` through player-initiated scripts and actions.
+   A macOS movement run was exercised on protocol 7; the current V.A.T.S.,
+   hitscan, and melee host damage paths and health convergence still need a
+   live check.
+3. Keep client campaign changes in a per-peer host ledger; shared-scope quest
+   stages, stage completion, objectives, and status now replay from a shared
+   ledger, while the host can keep selected faction quests private. Split the
+   rest of player-owned quest/faction and character data from shared world
+   state, then pass `PlayerId` through player-initiated scripts and actions.
 4. Keep world time running during local V.A.T.S., dialogue, and menus (the
    co-op frame and clock policy is in place); nearby players can now listen to
    a read-only dialogue overlay while the speaker keeps local choice control.
-   V.A.T.S. damage now runs on the host; verify it and the speaker's
-   vulnerability live, then move dialogue outcomes and normal combat to the
-   host.
+   V.A.T.S., hitscan, melee, and projectile damage now run on the host; verify
+   them and the speaker's vulnerability live, then expand the combat-inventory
+   mirror into full player-owned inventory and combat attribution, and isolate
+   dialogue conditions and remaining `PLAYER_REF` script effects by player.
 5. Extend world replication beyond actor health and death/destruction flags,
-   then add authoritative
-   combat, projectiles, item transfers, moving physics frames, and world
-   deltas; expand from one cell to multiple active regions and support four
-   players.
+   then add authoritative projectiles, item transfers, moving physics frames,
+   and world deltas; expand from one cell to multiple active regions and
+   support four players.
 
 This path is not complete until the same session is exercised with multiple
 viewer instances and checks show that shared-world changes converge while

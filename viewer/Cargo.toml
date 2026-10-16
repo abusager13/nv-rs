@@ -12,11 +12,13 @@ publish = false
 
 [dependencies]
 # Pinned: Bevy's API changes between releases.
-bevy = "0.16"
+bevy = "0.20"
+bevy_metalfx = { path = "metalfx", default-features = false, features = ["spatial"] }
+wgpu-ffx = { path = "fsr31" }
 coop-sync-experiment = { path = "../experiments/coop-sync" }
 # Bevy's own wgpu (the same version, no features of its own): the window's
 # surface asked which present modes it takes (`present`).
-wgpu = { version = "24", default-features = false }
+wgpu = { version = "30", default-features = false }
 cellview = { path = "../crates/cellview" }
 physics = { path = "../crates/physics" }
 world = { path = "../crates/world" }

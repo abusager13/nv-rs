@@ -296,7 +296,7 @@ pub fn animate_faces(
             mesh.0 = meshes.add(copy);
             piece.own_mesh = true;
         }
-        if let Some(m) = meshes.get_mut(&mesh.0) {
+        if let Some(mut m) = meshes.get_mut(&mesh.0) {
             m.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         }
     }

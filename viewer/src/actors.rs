@@ -1,7 +1,7 @@
 //! People and creatures moving: each placed actor gets a root entity where
 //! it stands and one joint entity per bone of its skeleton; its pieces are
 //! skinned meshes on those joints (the lit shader skins them, `SKINNED` in
-//! `game_lit.wgsl`), and every frame the joints take the pose its
+//! `game_lit.wesl`), and every frame the joints take the pose its
 //! animations give.
 //!
 //! The animations are played as the game plays them

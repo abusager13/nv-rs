@@ -1,5 +1,5 @@
 //! Distant land: the game's pre-built terrain chunks drawn past the loaded
-//! cells, with its distant-land shader (`lod_land.wgsl`), at the levels of
+//! cells, with its distant-land shader (`lod_land.wesl`), at the levels of
 //! the game's quadtree (`world::lod`): which chunks show, the parent's
 //! texture fading out of newly split quarters, and the geomorph factor.
 
@@ -9,24 +9,26 @@
 
 use std::collections::HashSet;
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
-use bevy::pbr::{
-    ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
-};
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
+#[cfg(not(target_os = "macos"))]
+use bevy::pbr::ExtendedMaterial;
+use bevy::pbr::{MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline};
+#[cfg(target_os = "macos")]
+use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
 use bevy::render::mesh::{
     Indices, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology,
 };
 use bevy::render::render_resource::{
-    AsBindGroup, RenderPipelineDescriptor, ShaderRef, ShaderType, SpecializedMeshPipelineError,
-    VertexFormat,
+    AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError, VertexFormat,
 };
+use bevy::shader::ShaderRef;
 use cellview::{space, LodChunk};
 use world::lod::{LodNode, LodSettings};
 
 use crate::{SceneEntity, Spawner};
 
-const SHADER: Handle<Shader> = weak_handle!("5c7e9a13-2b4d-4f86-9e01-3a8d6c2b7f45");
+const SHADER: Handle<Shader> = uuid_handle!("5c7e9a13-2b4d-4f86-9e01-3a8d6c2b7f45");
 
 /// How far distant land inside the loaded cells is lowered, in game units:
 /// the game's `fLODLandDropAmount` (230 in `Fallout_default.ini`), which
@@ -43,6 +45,12 @@ pub const GAME_FAR_CLIP: f32 = 352_000.0;
 pub const ATTRIBUTE_MORPH_HEIGHT: MeshVertexAttribute =
     MeshVertexAttribute::new("LodMorphHeight", 990_412_771, VertexFormat::Float32);
 
+/// The distant-land shader supplies every stage itself, so it does not use
+/// `StandardMaterial`. Keeping it standalone also avoids inheriting its
+/// unused PBR texture and sampler bindings.
+#[cfg(target_os = "macos")]
+pub type LodLandMaterial = LodLand;
+#[cfg(not(target_os = "macos"))]
 pub type LodLandMaterial = ExtendedMaterial<StandardMaterial, LodLand>;
 
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Reflect)]
@@ -90,7 +98,7 @@ pub struct LodLand {
     /// The hour's light (`crate::shared_light::BUFFER`): the ambient, the
     /// sun and the fog (the params' own copies aren't read).
     #[storage(113, read_only)]
-    pub shared: Handle<bevy::render::storage::ShaderStorageBuffer>,
+    pub shared: Handle<bevy::render::storage::ShaderBuffer>,
 }
 
 impl MaterialExtension for LodLand {
@@ -117,6 +125,56 @@ impl MaterialExtension for LodLand {
             ATTRIBUTE_MORPH_HEIGHT.at_shader_location(3),
         ])?];
         Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Material for LodLand {
+    fn vertex_shader() -> ShaderRef {
+        SHADER.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        SHADER.into()
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        if descriptor.vertex.shader != SHADER {
+            return Ok(());
+        }
+        descriptor.vertex.buffers = vec![layout.0.get_layout(&[
+            Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+            Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
+            ATTRIBUTE_MORPH_HEIGHT.at_shader_location(3),
+        ])?];
+        Ok(())
+    }
+}
+
+pub(crate) fn material_data(material: &LodLandMaterial) -> &LodLand {
+    #[cfg(target_os = "macos")]
+    {
+        material
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        &material.extension
+    }
+}
+
+pub(crate) fn material_data_mut(material: &mut LodLandMaterial) -> &mut LodLand {
+    #[cfg(target_os = "macos")]
+    {
+        material
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        &mut material.extension
     }
 }
 
@@ -198,19 +256,23 @@ impl Spawner<'_, '_> {
     ) -> SpawnedChunk {
         let base = chunk.diffuse.as_ref().and_then(|t| self.upload(t));
         let normals = chunk.normals.as_ref().and_then(|t| self.upload(t));
+        let extension = LodLand {
+            shared: crate::shared_light::BUFFER,
+            params,
+            base: base.clone(),
+            normals: normals.clone(),
+            noise,
+            chunk: Vec4::new(1.0, 0.0, 0.0, 1.0),
+            parent_base: None,
+            parent_normals: None,
+            clip: Vec4::new(GAME_FAR_CLIP * space::METERS_PER_UNIT, 0.0, 0.0, 0.0),
+        };
+        #[cfg(target_os = "macos")]
+        let material = self.lod_materials.add(extension);
+        #[cfg(not(target_os = "macos"))]
         let material = self.lod_materials.add(LodLandMaterial {
             base: StandardMaterial::default(),
-            extension: LodLand {
-                shared: crate::shared_light::BUFFER,
-                params,
-                base: base.clone(),
-                normals: normals.clone(),
-                noise,
-                chunk: Vec4::new(1.0, 0.0, 0.0, 1.0),
-                parent_base: None,
-                parent_normals: None,
-                clip: Vec4::new(GAME_FAR_CLIP * space::METERS_PER_UNIT, 0.0, 0.0, 0.0),
-            },
+            extension,
         });
         let mesh = self.meshes.add(chunk_mesh(chunk));
         let entity = self
@@ -352,7 +414,7 @@ pub struct LodPlugin;
 
 impl Plugin for LodPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "lod_land.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "lod_land.wesl", Shader::from_wesl);
         app.add_plugins(MaterialPlugin::<LodLandMaterial>::default());
     }
 }

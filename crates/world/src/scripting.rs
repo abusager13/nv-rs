@@ -281,6 +281,20 @@ pub struct GameState {
     pub level_up_pending: bool,
     /// The player's companions (`SetPlayerTeammate`).
     pub teammates: HashSet<FormId>,
+    /// The co-op player whose host-resolved action is running (`PLAYER_REF`
+    /// remains the identity used by translated single-player combat rules).
+    /// This transient context is not saved.
+    pub coop_player_context: Option<u8>,
+    /// Co-op player credited with each shared actor's latest death. Not saved.
+    pub coop_killers: HashMap<FormId, u8>,
+    /// Guest-owned actor values changed while the host runs an action for
+    /// that player. The network layer drains these into targeted campaign
+    /// updates after the action completes.
+    pub coop_actor_value_updates: HashMap<(u8, u16), (f32, f32)>,
+    /// Guest-owned miscellaneous-stat changes awaiting network replication.
+    pub coop_misc_stat_updates: HashMap<(u8, u8), u32>,
+    /// Per-guest miscellaneous stats installed while their scripts run.
+    pub coop_misc_stats: HashMap<(u8, u8), u32>,
     /// Damage the player and teammates have done to each person, for the
     /// experience a kill gives (not saved: the game keeps it on the
     /// person's AI process).
@@ -1876,6 +1890,30 @@ fn variable_name(order: &LoadOrder, script: FormId, index: u32) -> Option<String
     None
 }
 
+/// Keep the latest guest-owned actor value for host-to-client replication.
+pub fn record_coop_player_actor_value(order: &LoadOrder, state: &mut GameState, av: u16) {
+    let Some(player) = state.coop_player_context else {
+        return;
+    };
+    let facts = Facts {
+        order,
+        state,
+        speaker: None,
+    };
+    let (Some(current), Some(permanent)) = (
+        facts.current_actor_value(PLAYER_REF, av),
+        facts.permanent_actor_value(PLAYER_REF, av),
+    ) else {
+        return;
+    };
+    let (current, permanent) = (current as f32, permanent as f32);
+    if current.is_finite() && permanent.is_finite() {
+        state
+            .coop_actor_value_updates
+            .insert((player, av), (current, permanent));
+    }
+}
+
 /// The game's questions about the state, as functions by number.
 pub struct Facts<'a> {
     pub order: &'a LoadOrder,
@@ -2794,6 +2832,72 @@ impl ScriptCache {
     }
 }
 
+/// The number of locals owned by a quest's script, when it has a parsed
+/// script record.
+pub fn quest_script_variable_count(
+    order: &LoadOrder,
+    scripts: &ScriptCache,
+    quest: FormId,
+) -> Option<usize> {
+    let script = script_of(order, quest).and_then(|id| scripts.script(order, id))?;
+    Some(script.variables.len())
+}
+
+/// The default value stored in a loaded GLOB record.
+pub fn global_default(order: &LoadOrder, global: FormId) -> Option<f32> {
+    let rr = order
+        .get(global)
+        .filter(|record| record.entry.header.kind == GLOB)?;
+    let record = rr.record().ok()?;
+    let value = record
+        .get(FLTV)
+        .filter(|value| value.data.len() >= 4)
+        .map(|value| le_f32(&value.data, 0))?;
+    value.is_finite().then_some(value)
+}
+
+/// Read one quest-script local by its stable index in the loaded script.
+/// Missing locals have the game's default value of zero.
+pub fn quest_script_variable(
+    order: &LoadOrder,
+    scripts: &ScriptCache,
+    state: &GameState,
+    quest: FormId,
+    index: u16,
+) -> Option<f64> {
+    let script = script_of(order, quest).and_then(|id| scripts.script(order, id))?;
+    let (_, name) = script.variables.get(usize::from(index))?;
+    Some(
+        state
+            .variables
+            .get(&quest)
+            .and_then(|locals| locals.get(name))
+            .unwrap_or(0.0),
+    )
+}
+
+/// Set one quest-script local by its stable index in the loaded script.
+pub fn set_quest_script_variable(
+    order: &LoadOrder,
+    scripts: &ScriptCache,
+    state: &mut GameState,
+    quest: FormId,
+    index: u16,
+    value: f64,
+) -> bool {
+    let Some(script) = script_of(order, quest).and_then(|id| scripts.script(order, id)) else {
+        return false;
+    };
+    let Some((_, name)) = script.variables.get(usize::from(index)) else {
+        return false;
+    };
+    let locals = state
+        .variables
+        .entry(quest)
+        .or_insert_with(|| Locals::new(&script));
+    locals.set(name, value)
+}
+
 /// A runner of quest scripts other than this crate's interpreter (the
 /// game's own, `host::quest_vm`). [`Runner::update`] offers it each
 /// quest's `GameMode` run; the quests it declines run as before.
@@ -3478,6 +3582,21 @@ impl<'a> Runner<'a> {
         part: Option<u8>,
         blow: crate::melee::Blow,
     ) -> Option<crate::combat::Hit> {
+        self.blow_at_with_ammo(attacker, target, weapon, part, blow, None)
+    }
+
+    /// [`Self::blow_at`] using the ammunition selected by the attacking
+    /// player. Network hosts use this after checking the player's inventory
+    /// mirror; local attacks keep using [`Self::blow_at`].
+    pub fn blow_at_with_ammo(
+        &mut self,
+        attacker: FormId,
+        target: FormId,
+        weapon: Option<&crate::combat::Weapon>,
+        part: Option<u8>,
+        blow: crate::melee::Blow,
+        ammo_override: Option<FormId>,
+    ) -> Option<crate::combat::Hit> {
         let power = blow.power;
         let order = self.order;
         let names = |b: &script::Block, id: Option<FormId>| match b.args.first() {
@@ -3550,7 +3669,8 @@ impl<'a> Runner<'a> {
             damage +=
                 crate::combat::critical_damage(order, self.state, attacker, weapon, target, damage);
         }
-        let ammo = weapon.and_then(|w| w.ammo_in_use(order, self.state, attacker));
+        let ammo = ammo_override
+            .or_else(|| weapon.and_then(|w| w.ammo_in_use(order, self.state, attacker)));
         let armoured = crate::combat::armour_hit(
             order,
             self.state,
@@ -4305,6 +4425,7 @@ impl<'a> Runner<'a> {
             "ResurrectActor" => {
                 let who = target?;
                 self.state.dead.remove(&who);
+                self.state.coop_killers.remove(&who);
                 self.state.deaths.remove(&who);
                 self.state.damage.remove(&who);
             }

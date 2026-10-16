@@ -1,0 +1,42 @@
+[package]
+name = "bevy_metalfx"
+version = "0.4.2-nv.1"
+edition = "2021"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Local Bevy 0.20 adaptation of bevy_metalfx spatial upscaling"
+readme = "README.md"
+
+[features]
+default = ["spatial"]
+spatial = []
+temporal = ["spatial", "objc2-metal-fx/MTLFXTemporalScaler"]
+frame-interpolation = ["temporal", "objc2-metal-fx/MTLFXFrameInterpolator"]
+
+[dependencies]
+bevy = { version = "0.20", default-features = false, features = [
+    "bevy_camera",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_window",
+] }
+log = "0.4"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = "30"
+wgpu-hal = { version = "30", features = ["metal"] }
+raw-window-handle = "0.6"
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSObject"] }
+objc2-metal = { version = "0.3", features = [
+    "MTLDevice",
+    "MTLTexture",
+    "MTLCommandBuffer",
+    "MTLPixelFormat",
+    "MTLDrawable",
+    "block2",
+    "objc2-core-foundation",
+] }
+objc2-metal-fx = { version = "0.3", default-features = false, features = ["MTLFXSpatialScaler"] }

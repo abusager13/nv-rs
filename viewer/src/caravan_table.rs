@@ -20,12 +20,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Hdr;
+use bevy::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
-use bevy::render::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::render::render_resource::WgpuFeatures;
 use bevy::render::renderer::RenderDevice;
-use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use cellview::caravan::{CaravanModels, Part};
 use cellview::space;
@@ -160,7 +161,7 @@ impl FileFrustum {
     }
 }
 
-impl bevy::render::camera::CameraProjection for FileFrustum {
+impl bevy::camera::CameraProjection for FileFrustum {
     /// Bevy's reversed, infinite-far depth (as its own perspective), off
     /// centre as the file's sides say.
     fn get_clip_from_view(&self) -> Mat4 {
@@ -178,7 +179,7 @@ impl bevy::render::camera::CameraProjection for FileFrustum {
         )
     }
 
-    fn get_clip_from_view_for_sub(&self, _sub: &bevy::render::camera::SubCameraView) -> Mat4 {
+    fn get_clip_from_view_for_sub(&self, _sub: &bevy::camera::SubCameraView) -> Mat4 {
         self.get_clip_from_view()
     }
 
@@ -292,11 +293,9 @@ fn show_table(
             .spawn((
                 Camera3d::default(),
                 Camera {
-                    target: RenderTarget::from(target),
                     // Before the HUD's camera (−4), which draws the menus'
                     // pictures over it.
                     order: -5,
-                    hdr: true,
                     clear_color: ClearColorConfig::Custom(Color::NONE),
                     // The picture cleared, the table written into it.
                     output_mode: CameraOutputMode::Write {
@@ -305,6 +304,8 @@ fn show_table(
                     },
                     ..default()
                 },
+                RenderTarget::from(target),
+                Hdr,
                 Tonemapping::None,
                 DebandDither::Disabled,
                 Projection::custom(projection),
@@ -394,7 +395,7 @@ fn show_table(
         s.lights = lights.clone();
         let lighting = crate::lockpick::menu_lighting(&lights, settings.brightness);
         for m in &s.materials {
-            if let Some(mat) = materials.get_mut(m) {
+            if let Some(mut mat) = materials.get_mut(m) {
                 mat.extension.lighting = lighting;
             }
         }
@@ -451,7 +452,7 @@ fn show_table(
                         })
                     })
                     .clone();
-                if let (Some(h), Some(mat)) = (handle, materials.get_mut(&piece.material)) {
+                if let (Some(h), Some(mut mat)) = (handle, materials.get_mut(&piece.material)) {
                     if mat.base.base_color_texture.as_ref() != Some(&h) {
                         mat.base.base_color_texture = Some(h);
                     }
@@ -515,7 +516,7 @@ fn spawn_pieces(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::render::camera::CameraProjection;
+    use bevy::camera::CameraProjection;
 
     /// The file's frustum is Bevy's own perspective at 16:9, and stays so
     /// whatever the window: on a 4:3 or 21:9 window it's stretched.

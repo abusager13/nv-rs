@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 use bevy::render::mesh::VertexAttributeValues;
 use cellview::ActorData;
-use coop_sync_experiment::DialogueSnapshot;
+use coop_sync_experiment::{DialogueChoice, DialogueLine, DialogueSnapshot};
 use esm::FormId;
 use world::dialogue::{self, Choice, GameState, Info, Speaker, Topic};
 use world::dialogue_view::{self as view_rules, Focus, FocusInput, MenuZoom, ViewSettings};
@@ -216,56 +216,84 @@ impl Talk {
     }
 
     fn coop_snapshot(&self) -> DialogueSnapshot {
-        let (text, topics) = match &self.choices {
-            Some(choices) => (
-                String::new(),
+        let line = self
+            .choices
+            .is_none()
+            .then(|| {
+                u16::try_from(self.response)
+                    .ok()
+                    .map(|response| DialogueLine {
+                        info: self.info.form_id.0,
+                        response,
+                    })
+            })
+            .flatten();
+        let topics = self
+            .choices
+            .as_ref()
+            .map(|choices| {
                 choices
                     .iter()
                     .take(coop_sync_experiment::MAX_DIALOGUE_TOPICS)
-                    .map(|choice| {
-                        bounded_coop_dialogue_text(
-                            &choice.label,
-                            coop_sync_experiment::MAX_DIALOGUE_TOPIC_BYTES,
-                        )
+                    .map(|choice| DialogueChoice {
+                        topic: choice.topic.form_id.0,
+                        info: choice.info.form_id.0,
                     })
-                    .collect(),
-            ),
-            None => (
-                self.info
-                    .responses
-                    .get(self.response)
-                    .map_or_else(String::new, |response| {
-                        bounded_coop_dialogue_text(
-                            &response.text,
-                            coop_sync_experiment::MAX_DIALOGUE_TEXT_BYTES,
-                        )
-                    }),
-                Vec::new(),
-            ),
-        };
+                    .collect()
+            })
+            .unwrap_or_default();
         DialogueSnapshot {
             speaker: self.speaker.reference.0,
-            speaker_name: bounded_coop_dialogue_text(
-                &self.name,
-                coop_sync_experiment::MAX_DIALOGUE_NAME_BYTES,
-            ),
-            text,
+            line,
             topics,
         }
     }
 }
 
-fn bounded_coop_dialogue_text(text: &str, max_bytes: usize) -> String {
-    let mut end = text.len().min(max_bytes);
-    while !text.is_char_boundary(end) {
-        end -= 1;
+#[derive(Clone, Debug, Default)]
+pub struct ListenerDialogueView {
+    pub speaker_name: String,
+    pub text: String,
+    pub topics: Vec<String>,
+}
+
+/// Resolve a network dialogue snapshot only from the local game's records.
+/// Choice labels use only record text. Speaker-specific skill and Intelligence
+/// labels are omitted because those values are not replicated to listeners.
+pub fn resolve_listener_dialogue(
+    order: &esm::LoadOrder,
+    snapshot: &DialogueSnapshot,
+) -> Option<ListenerDialogueView> {
+    let speaker_ref = FormId(snapshot.speaker);
+    let base = world::scripting::base_of(order, speaker_ref)?;
+    let speaker = Speaker::load(order, speaker_ref, base)?;
+    let mut view = ListenerDialogueView {
+        speaker_name: speaker
+            .name
+            .unwrap_or_else(|| format!("Speaker {:#x}", snapshot.speaker)),
+        ..default()
+    };
+
+    if let Some(line) = snapshot.line {
+        let info = Info::load(order, FormId(line.info))?;
+        view.text = info.responses.get(usize::from(line.response))?.text.clone();
     }
-    text[..end].to_owned()
+    for choice in &snapshot.topics {
+        let topic = Topic::load(order, FormId(choice.topic))?;
+        let info = Info::load(order, FormId(choice.info))?;
+        let label = info
+            .prompt
+            .filter(|prompt| !prompt.is_empty())
+            .or_else(|| topic.label())
+            .unwrap_or_else(|| format!("Topic {:#x}", choice.topic));
+        view.topics.push(label);
+    }
+    Some(view)
 }
 
 /// A nearby player's dialogue displayed as a passive listener overlay.
 #[derive(Resource, Default)]
-pub struct ListenerDialogue(pub Option<(coop_sync_experiment::PlayerId, DialogueSnapshot)>);
+pub struct ListenerDialogue(pub Option<(coop_sync_experiment::PlayerId, ListenerDialogueView)>);
 
 #[derive(Component)]
 pub struct ListenerDialogueText;
@@ -274,7 +302,7 @@ pub fn setup_listener_dialogue_text(mut commands: Commands) {
     commands.spawn((
         Text::new(String::new()),
         TextFont {
-            font_size: 18.0,
+            font_size: FontSize::Px(18.0),
             ..default()
         },
         TextColor(Color::srgb(0.95, 0.85, 0.55)),
@@ -335,7 +363,7 @@ pub fn setup_dialogue_text(mut commands: Commands) {
     commands.spawn((
         Text::new(String::new()),
         TextFont {
-            font_size: 20.0,
+            font_size: FontSize::Px(20.0),
             ..default()
         },
         TextColor(Color::srgb(0.95, 0.85, 0.55)),
@@ -456,6 +484,37 @@ fn begin_line(
     }
 }
 
+/// Apply one networked conversation line's player-side script on the host.
+/// The caller validates the line against the peer's latest offered topics;
+/// this function performs the record-backed state changes and scripts.
+pub(crate) fn run_coop_line_script(
+    order: &esm::LoadOrder,
+    scripts: &ScriptCache,
+    state: &mut GameState,
+    speaker: FormId,
+    info_id: FormId,
+    begin: bool,
+) -> bool {
+    let Some(info) = Info::load(order, info_id) else {
+        return false;
+    };
+    let Some(base) = world::scripting::base_of(order, speaker) else {
+        return false;
+    };
+    if Speaker::load(order, speaker, base).is_none() {
+        return false;
+    }
+    if begin {
+        dialogue::line_begins(state, &info, speaker);
+        if dialogue::menu_runs_begin_script(&info) {
+            run_line_script(order, scripts, state, info.begin_script.as_deref(), speaker);
+        }
+    } else if dialogue::menu_runs_end_script(&info) {
+        run_line_script(order, scripts, state, info.end_script.as_deref(), speaker);
+    }
+    true
+}
+
 /// What `talk` uses besides: `--talk`, scripts, scripted talking, the
 /// menus, and the people (who flees).
 type TalkExtras<'w, 's> = (
@@ -493,6 +552,7 @@ pub fn talk(
         mut lines,
     ): TalkExtras<'_, '_>,
     mut conversation: ResMut<Conversation>,
+    mut coop: ResMut<crate::coop::CoOpSession>,
     mut player: ResMut<Player>,
     mut audio: ResMut<Assets<crate::sounds::PcmSound>>,
     voices: Query<(), With<AudioPlayer<crate::sounds::PcmSound>>>,
@@ -706,6 +766,36 @@ pub fn talk(
             });
             match picked {
                 Some(i) if i < list.len() => {
+                    let selected = &list[i];
+                    let mut offered: Vec<_> = list
+                        .iter()
+                        .take(coop_sync_experiment::MAX_DIALOGUE_TOPICS)
+                        .map(|choice| DialogueChoice {
+                            topic: choice.topic.form_id.0,
+                            info: choice.info.form_id.0,
+                        })
+                        .collect();
+                    if !offered.iter().any(|choice| {
+                        choice.topic == selected.topic.form_id.0
+                            && choice.info == selected.info.form_id.0
+                    }) {
+                        offered = vec![DialogueChoice {
+                            topic: selected.topic.form_id.0,
+                            info: selected.info.form_id.0,
+                        }];
+                    }
+                    let offer = DialogueSnapshot {
+                        speaker: talk.speaker.reference.0,
+                        line: None,
+                        topics: offered,
+                    };
+                    let source = (!talk.info.choices.is_empty()).then_some(talk.info.form_id.0);
+                    let _ = coop.request_dialogue_choice(
+                        offer,
+                        source,
+                        selected.topic.form_id.0,
+                        selected.info.form_id.0,
+                    );
                     let info = list[i].info.clone();
                     begin_line(
                         order,
@@ -1148,7 +1238,7 @@ fn head_bound(
             .joints
             .iter()
             .zip(inverse.iter())
-            .map(|(&e, bind)| joints.get(e).ok().map(|g| g.compute_matrix() * *bind))
+            .map(|(&e, bind)| joints.get(e).ok().map(|g| g.to_matrix() * *bind))
             .collect();
         for ((p, js), ws) in positions.iter().zip(indices).zip(weights) {
             let v = Vec3::from(*p);

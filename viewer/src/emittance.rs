@@ -90,7 +90,7 @@ pub fn follow_emittance(
     let regions: Vec<FormId> = chosen.iter().filter_map(|(_, l)| l.region).collect();
     let colors = EmittanceNow::new(order, w, hour, regions);
     for (id, link) in chosen {
-        if let Some(m) = materials.get_mut(id) {
+        if let Some(mut m) = materials.get_mut(id) {
             let [r, g, b] = link.glow(&colors);
             let e = &mut m.extension.lighting.emissive;
             (e.x, e.y, e.z) = (r, g, b);

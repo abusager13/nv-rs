@@ -25,26 +25,25 @@
 // reports as unused.
 #![allow(dead_code)]
 
-use bevy::asset::weak_handle;
+use bevy::asset::{uuid_handle, RenderAssetUsages};
 use bevy::image::Image;
 use bevy::prelude::*;
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
-use bevy::render::render_asset::{RenderAssetUsages, RenderAssets};
+use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_resource::{
     encase, BufferUsages, Extent3d, Origin3d, ShaderType, TexelCopyBufferLayout,
     TexelCopyTextureInfo, TextureAspect, TextureDimension, TextureFormat, TextureUsages,
 };
 use bevy::render::renderer::RenderQueue;
-use bevy::render::storage::{GpuShaderStorageBuffer, ShaderStorageBuffer};
+use bevy::render::storage::{GpuShaderBuffer, ShaderBuffer};
 use bevy::render::texture::GpuImage;
-use bevy::render::{Render, RenderApp, RenderSet};
+use bevy::render::{Render, RenderApp, RenderSystems};
 
 /// The buffer every outdoor surface's material binds.
-pub const BUFFER: Handle<ShaderStorageBuffer> =
-    weak_handle!("8d2c1f6a-4e7b-4b9a-a3d5-61c0e9f2b7d4");
+pub const BUFFER: Handle<ShaderBuffer> = uuid_handle!("8d2c1f6a-4e7b-4b9a-a3d5-61c0e9f2b7d4");
 
 /// The same, as five texels (`GameLit` reads it texel by texel).
-pub const TEXTURE: Handle<Image> = weak_handle!("2f7d0b8e-91c4-4f3a-b6e2-7a5c3d9e4f10");
+pub const TEXTURE: Handle<Image> = uuid_handle!("2f7d0b8e-91c4-4f3a-b6e2-7a5c3d9e4f10");
 
 /// The hour's light, in the materials' units (`crate::LightFields`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, ShaderType)]
@@ -59,6 +58,7 @@ pub struct SharedLight {
 
 /// The light now (set by `crate::daylight`).
 #[derive(Resource, Clone, Copy, Default, ExtractResource)]
+#[extract_app(RenderApp)]
 pub struct SharedLightNow(pub SharedLight);
 
 /// A 3D menu's piece (lockpicking, the Caravan table), lit by its menu's
@@ -76,7 +76,7 @@ impl Plugin for SharedLightPlugin {
         if let Some(render) = app.get_sub_app_mut(RenderApp) {
             render.add_systems(
                 Render,
-                (write_buffer, write_texture).in_set(RenderSet::PrepareResources),
+                (write_buffer, write_texture).in_set(RenderSystems::PrepareResources),
             );
         }
     }
@@ -89,10 +89,12 @@ fn bytes(light: &SharedLight) -> Vec<u8> {
 }
 
 /// The buffer, made once (writable in place).
-fn make_buffer(mut buffers: ResMut<Assets<ShaderStorageBuffer>>, now: Res<SharedLightNow>) {
-    let mut buffer = ShaderStorageBuffer::new(&bytes(&now.0), RenderAssetUsages::default());
-    buffer.buffer_description.usage = BufferUsages::STORAGE | BufferUsages::COPY_DST;
-    buffers.insert(BUFFER.id(), buffer);
+fn make_buffer(mut buffers: ResMut<Assets<ShaderBuffer>>, now: Res<SharedLightNow>) {
+    let mut buffer = ShaderBuffer::new(bytes(&now.0), RenderAssetUsages::default());
+    buffer.buffer_usage = BufferUsages::STORAGE | BufferUsages::COPY_DST;
+    buffers
+        .insert(BUFFER.id(), buffer)
+        .expect("UUID shared-light buffer asset ID is valid");
 }
 
 /// The five vectors as texels (RGBA, 32-bit floats).
@@ -124,7 +126,9 @@ fn make_texture(mut images: ResMut<Assets<Image>>, now: Res<SharedLightNow>) {
         RenderAssetUsages::default(),
     );
     image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST;
-    images.insert(TEXTURE.id(), image);
+    images
+        .insert(TEXTURE.id(), image)
+        .expect("UUID shared-light texture asset ID is valid");
 }
 
 /// The light into the texture when it changed, or the texture is new on
@@ -168,7 +172,7 @@ fn write_texture(
 /// GPU).
 fn write_buffer(
     now: Res<SharedLightNow>,
-    buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
+    buffers: Res<RenderAssets<GpuShaderBuffer>>,
     queue: Res<RenderQueue>,
     mut written: Local<Option<SharedLight>>,
 ) {

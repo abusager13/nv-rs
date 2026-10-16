@@ -1592,6 +1592,10 @@ fn play(
             .is_some_and(|p| p.shots_left > 0 && clock >= p.next_shot);
     let attack_approval = if due {
         let weapon = vats.weapon.as_ref().map(|weapon| weapon.form_id);
+        let ammo = vats
+            .weapon
+            .as_ref()
+            .and_then(|weapon| weapon.ammo_in_use(order, state, PLAYER_REF));
         vats.playing.as_ref().and_then(|playing| {
             coop.target_is_validated(playing.attack.target).then(|| {
                 coop.request_vats_attack(
@@ -1600,12 +1604,12 @@ fn play(
                         - playing.shots_left) as u16,
                     playing.attack.target,
                     weapon,
+                    ammo,
                     playing.attack.kind,
                     playing.attack.reload,
                     playing.attack.slot,
                     playing.attack.part_av,
                     playing.attack.ap,
-                    playing.attack.hit_chance,
                 )
             })
         })

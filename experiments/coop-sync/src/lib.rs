@@ -1,15 +1,18 @@
 //! Small versioned wire protocol shared by the co-op experiment and viewer.
 //!
 //! This protocol is still experimental. It carries player input, pose
-//! snapshots, a bounded replay of shared death/destruction/health changes,
-//! chunked world keyframes for recovery, and owner-scoped campaign changes sent
-//! to the host. It does not authenticate peers.
+//! snapshots, host-resolved V.A.T.S. and ordinary hitscan/melee attacks,
+//! acknowledged combat inventory and actor-value/perk profiles, a bounded
+//! replay of shared death/destruction/health changes, chunked world keyframes
+//! for recovery, and owner-scoped campaign changes sent to the host, plus
+//! replayed host-authoritative shared quest changes. It does not authenticate
+//! peers.
 
 use std::collections::HashSet;
 use std::fmt;
 
 const MAGIC: &[u8; 4] = b"NVCE";
-const VERSION: u8 = 10;
+const VERSION: u8 = 24;
 const HELLO: u8 = 1;
 const INPUT: u8 = 2;
 const WELCOME: u8 = 3;
@@ -25,6 +28,16 @@ const WORLD_KEYFRAME_ACK: u8 = 12;
 const DIALOGUE_UPDATE: u8 = 13;
 const DIALOGUE_LISTEN: u8 = 14;
 const WORLD_UPDATE: u8 = 15;
+const CAMPAIGN_SYNC: u8 = 16;
+const CAMPAIGN_SYNC_ACK: u8 = 17;
+const PLAYER_ATTACK: u8 = 18;
+const PLAYER_ATTACK_RESULT: u8 = 19;
+const PLAYER_INVENTORY: u8 = 20;
+const PLAYER_INVENTORY_ACK: u8 = 21;
+const PLAYER_PROFILE: u8 = 22;
+const PLAYER_PROFILE_ACK: u8 = 23;
+const DIALOGUE_CHOICE: u8 = 24;
+const DIALOGUE_CHOICE_RESULT: u8 = 25;
 pub const MAX_PLAYERS: usize = 4;
 pub const MAX_PACKET_BYTES: usize = 1200;
 /// Camera viewport aspect ratios accepted on the wire for aim validation.
@@ -39,13 +52,16 @@ pub const MAX_WORLD_UPDATE_EVENTS: usize = 64;
 pub const MAX_WORLD_KEYFRAME_ENTRIES: usize = 130;
 /// Bound the memory a malformed keyframe declaration can reserve.
 pub const MAX_WORLD_KEYFRAME_CHUNKS: usize = 4096;
-/// Text bounds keep the complete dialogue view under one UDP datagram.
-pub const MAX_DIALOGUE_NAME_BYTES: usize = 64;
-pub const MAX_DIALOGUE_TEXT_BYTES: usize = 700;
+/// Dialogue topic references kept under one UDP datagram.
 pub const MAX_DIALOGUE_TOPICS: usize = 8;
-pub const MAX_DIALOGUE_TOPIC_BYTES: usize = 48;
-/// Private campaign changes sent from each player to the host.
+/// Campaign changes sent to or replayed by the host.
 pub const MAX_CAMPAIGN_EVENTS: usize = 64;
+/// Combat-relevant inventory entries carried in one player's baseline.
+pub const MAX_PLAYER_INVENTORY_ENTRIES: usize = 128;
+/// Actor values included in a guest's combat profile (the game's AV table).
+pub const MAX_PLAYER_PROFILE_ACTOR_VALUES: usize = 77;
+/// Perks included in a guest's combat profile.
+pub const MAX_PLAYER_PROFILE_PERKS: usize = 96;
 
 /// A session-assigned player identity. Zero is reserved for the host.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -58,6 +74,28 @@ pub struct PlayerPose {
     pub position: [f32; 3],
     /// Radians clockwise from north.
     pub heading: f32,
+}
+
+/// A positive count of one of a player's reported combat inventory forms.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InventoryEntry {
+    pub form: u32,
+    pub count: u32,
+}
+
+/// A guest's current and permanent value for one actor value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ActorValueEntry {
+    pub actor_value: u8,
+    pub current: f32,
+    pub permanent: f32,
+}
+
+/// A guest's owned perk and its current rank.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PerkEntry {
+    pub form: u32,
+    pub rank: u8,
 }
 
 /// Latest movement intent from a client. Axes are in game-world X/Y space.
@@ -77,11 +115,24 @@ pub struct PlayerInput {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WorldChange {
-    ActorDied { reference: u32 },
-    ActorRevived { reference: u32 },
-    ActorHealth { reference: u32, health_milli: i32 },
-    ReferenceDestroyed { reference: u32 },
-    ReferenceRestored { reference: u32 },
+    ActorDied {
+        reference: u32,
+        /// Co-op player who delivered the host-resolved killing hit, if any.
+        player: Option<u8>,
+    },
+    ActorRevived {
+        reference: u32,
+    },
+    ActorHealth {
+        reference: u32,
+        health_milli: i32,
+    },
+    ReferenceDestroyed {
+        reference: u32,
+    },
+    ReferenceRestored {
+        reference: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,16 +151,28 @@ pub struct WorldStateEntry {
     pub health_milli: Option<i32>,
 }
 
-/// Read-only conversation details replicated to nearby players.
+/// A game-data-backed response being spoken in a conversation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DialogueLine {
+    pub info: u32,
+    pub response: u16,
+}
+
+/// A game-data-backed response offered to the speaker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DialogueChoice {
+    pub topic: u32,
+    pub info: u32,
+}
+
+/// Read-only conversation references replicated to nearby players.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueSnapshot {
     pub speaker: u32,
-    pub speaker_name: String,
-    /// Current spoken line, or empty while the speaker offers topics.
-    pub text: String,
+    pub line: Option<DialogueLine>,
     /// Offered topics while the speaker waits for a choice; listeners cannot
     /// select them.
-    pub topics: Vec<String>,
+    pub topics: Vec<DialogueChoice>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -134,6 +197,46 @@ pub enum CampaignChange {
         completed: bool,
         failed: bool,
     },
+    QuestVariable {
+        quest: u32,
+        index: u16,
+        value: f32,
+    },
+    GlobalValue {
+        global: u32,
+        value: f32,
+    },
+    DialogueFact {
+        kind: DialogueFactKind,
+        form: u32,
+        learned: bool,
+    },
+    PlayerSex {
+        female: Option<bool>,
+    },
+    PlayerItemCount {
+        form: u32,
+        count: u32,
+    },
+    PlayerItemsInitialized,
+    /// Host-authored current and permanent actor value for one player.
+    PlayerActorValue {
+        player: u8,
+        actor_value: u8,
+        current: f32,
+        permanent: f32,
+    },
+    /// Miscellaneous stat report or host-authoritative update for one player.
+    PlayerMiscStat {
+        player: u8,
+        stat: u8,
+        value: u32,
+        authoritative: bool,
+    },
+    /// Client's initial per-player miscellaneous-stat baseline.
+    PlayerMiscStatsInitialized {
+        player: u8,
+    },
     Reputation {
         reputation: u32,
         fame: f32,
@@ -145,6 +248,14 @@ pub enum CampaignChange {
 pub struct CampaignEvent {
     pub revision: u32,
     pub change: CampaignChange,
+}
+
+/// Player-owned dialogue knowledge carried through the campaign event stream.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DialogueFactKind {
+    Topic,
+    Said,
+    TalkedTo,
 }
 
 /// Versioned messages used by the host and clients.
@@ -188,10 +299,29 @@ pub enum Packet {
     WorldKeyframeAck {
         transfer_id: u32,
     },
-    /// A client reports its current local dialogue state to the host.
+    /// A client reports its current local dialogue state to the host. The
+    /// viewer accepts it only for a loaded, living speaker in interaction
+    /// range with clear line of sight.
     DialogueUpdate {
         sequence: u32,
         dialogue: Option<DialogueSnapshot>,
+    },
+    /// A speaker's locally chosen response, paired with the choice list that
+    /// was visible when it was selected. `source` identifies the line whose
+    /// explicit `TCLT` choices produced the menu. The host rebuilds the choice
+    /// set from loaded game data and that guest's synchronized player state.
+    DialogueChoice {
+        sequence: u32,
+        offer: DialogueSnapshot,
+        /// The line whose explicit `TCLT` list produced this menu, when any.
+        source: Option<u32>,
+        topic: u32,
+        info: u32,
+    },
+    /// Acknowledgement for a reliable dialogue-choice request.
+    DialogueChoiceResult {
+        sequence: u32,
+        accepted: bool,
     },
     /// The host sends one nearby speaker's read-only dialogue state to a
     /// listener. `player` identifies the speaker's player, not the NPC.
@@ -200,10 +330,18 @@ pub enum Packet {
         sequence: u32,
         dialogue: Option<DialogueSnapshot>,
     },
-    /// Owner-scoped quest and faction state. The host records it under the
-    /// sender's assigned player ID and does not broadcast it to other peers.
+    /// A client's quest and faction progress report. The host records it
+    /// under the sender's player ID, then republishes shared-scope quests.
     CampaignUpdate {
         events: Vec<CampaignEvent>,
+    },
+    /// Host-authoritative shared quest changes, delivered reliably by replay.
+    CampaignSync {
+        events: Vec<CampaignEvent>,
+    },
+    /// Highest contiguous shared campaign event applied by a client.
+    CampaignSyncAck {
+        revision: u32,
     },
     /// Guest observations of shared-world changes. The host acknowledges an
     /// event only when its own authoritative state already has that value; it
@@ -224,19 +362,21 @@ pub enum Packet {
         accepted: bool,
     },
     /// Ask the host to validate and reserve one queued V.A.T.S. attack, then
-    /// roll its hit/miss from the reported effective hit probability.
+    /// calculate and roll its hit/miss from host-owned game data.
     VatsAttack {
         sequence: u32,
         attack_id: u64,
         shot_index: u16,
         target: u32,
         weapon: u32,
+        inventory_revision: u32,
+        profile_revision: u32,
+        ammo: u32,
         kind: u8,
         reload: bool,
         slot: i8,
         part_av: i32,
         action_points: f32,
-        hit_chance: f32,
     },
     /// Idempotent answer for a V.A.T.S. AP reservation and host hit roll.
     VatsAttackResult {
@@ -246,6 +386,46 @@ pub enum Packet {
         accepted: bool,
         action_points: f32,
         hit: bool,
+    },
+    /// Ask the host to resolve one hitscan shot, non-thrown flying projectile,
+    /// or melee swing from the sender's latest host-tracked pose and aim.
+    /// The inventory revision must name the sender's latest acknowledged
+    /// combat-inventory snapshot. The host rejects unreported weapons and
+    /// ammunition.
+    PlayerAttack {
+        sequence: u32,
+        inventory_revision: u32,
+        profile_revision: u32,
+        weapon: u32,
+        ammo: u32,
+        attack_group: u8,
+        power: bool,
+    },
+    /// Acknowledge a player attack request. The world result is replicated in
+    /// the normal authoritative health/death stream.
+    PlayerAttackResult {
+        sequence: u32,
+        accepted: bool,
+    },
+    /// Replace the sender's host-side combat weapon and ammunition mirror.
+    PlayerInventory {
+        revision: u32,
+        entries: Vec<InventoryEntry>,
+    },
+    /// Confirm that a combat-inventory baseline is installed on the host.
+    PlayerInventoryAck {
+        revision: u32,
+    },
+    /// Replace the sender's host-side combat actor values and perk list.
+    PlayerProfile {
+        revision: u32,
+        level: u16,
+        actor_values: Vec<ActorValueEntry>,
+        perks: Vec<PerkEntry>,
+    },
+    /// Confirm that a combat profile is installed on the host.
+    PlayerProfileAck {
+        revision: u32,
     },
 }
 
@@ -272,6 +452,10 @@ pub enum DecodeError {
     TooManyWorldKeyframeEntries,
     InvalidDialogue,
     TooManyDialogueTopics,
+    InvalidAttack,
+    TooManyInventoryEntries,
+    InvalidInventory,
+    InvalidProfile,
 }
 
 impl fmt::Display for DecodeError {
@@ -308,18 +492,28 @@ impl fmt::Display for DecodeError {
             }
             Self::InvalidDialogue => f.write_str("dialogue packet contains invalid data"),
             Self::TooManyDialogueTopics => f.write_str("dialogue packet contains too many topics"),
+            Self::InvalidAttack => f.write_str("player attack packet contains invalid data"),
+            Self::TooManyInventoryEntries => {
+                f.write_str("player inventory exceeds its entry limit")
+            }
+            Self::InvalidInventory => f.write_str("player inventory contains invalid data"),
+            Self::InvalidProfile => f.write_str("player combat profile contains invalid data"),
         }
     }
 }
 
 impl std::error::Error for DecodeError {}
 
-fn encode_world_event(out: &mut Vec<u8>, event: WorldEvent) {
+fn encode_world_event(out: &mut Vec<u8>, event: WorldEvent) -> Result<(), DecodeError> {
     out.extend_from_slice(&event.revision.to_be_bytes());
     match event.change {
-        WorldChange::ActorDied { reference } => {
+        WorldChange::ActorDied { reference, player } => {
+            if player.is_some_and(|player| usize::from(player) >= MAX_PLAYERS) {
+                return Err(DecodeError::InvalidPlayerId);
+            }
             out.push(1);
             out.extend_from_slice(&reference.to_be_bytes());
+            out.push(player.map_or(0, |player| player + 1));
         }
         WorldChange::ActorRevived { reference } => {
             out.push(2);
@@ -342,6 +536,7 @@ fn encode_world_event(out: &mut Vec<u8>, event: WorldEvent) {
             out.extend_from_slice(&health_milli.to_be_bytes());
         }
     }
+    Ok(())
 }
 
 fn decode_world_event(bytes: &[u8]) -> Result<(WorldEvent, usize), DecodeError> {
@@ -351,7 +546,17 @@ fn decode_world_event(bytes: &[u8]) -> Result<(WorldEvent, usize), DecodeError> 
     let revision = u32::from_be_bytes(bytes[..4].try_into().unwrap());
     let reference = u32::from_be_bytes(bytes[5..9].try_into().unwrap());
     let change = match bytes[4] {
-        1 => WorldChange::ActorDied { reference },
+        1 => {
+            if bytes.len() < 10 {
+                return Err(DecodeError::TooShort);
+            }
+            let player = match bytes[9] {
+                0 => None,
+                encoded if usize::from(encoded) <= MAX_PLAYERS => Some(encoded - 1),
+                _ => return Err(DecodeError::InvalidPlayerId),
+            };
+            WorldChange::ActorDied { reference, player }
+        }
         2 => WorldChange::ActorRevived { reference },
         3 => WorldChange::ReferenceDestroyed { reference },
         4 => WorldChange::ReferenceRestored { reference },
@@ -370,10 +575,10 @@ fn decode_world_event(bytes: &[u8]) -> Result<(WorldEvent, usize), DecodeError> 
         }
         kind => return Err(DecodeError::UnknownWorldChange(kind)),
     };
-    let length = if matches!(change, WorldChange::ActorHealth { .. }) {
-        13
-    } else {
-        9
+    let length = match change {
+        WorldChange::ActorDied { .. } => 10,
+        WorldChange::ActorHealth { .. } => 13,
+        _ => 9,
     };
     Ok((WorldEvent { revision, change }, length))
 }
@@ -465,68 +670,20 @@ impl Packet {
                 out.extend_from_slice(&world_update_revision.to_be_bytes());
                 out.push(world_events.len() as u8);
                 for event in world_events {
-                    encode_world_event(&mut out, *event);
+                    encode_world_event(&mut out, *event)?;
                 }
             }
             Self::CampaignUpdate { events } => {
-                if events.len() > MAX_CAMPAIGN_EVENTS {
-                    return Err(DecodeError::TooManyCampaignEvents);
-                }
                 out.push(CAMPAIGN_UPDATE);
-                out.push(events.len() as u8);
-                for event in events {
-                    out.extend_from_slice(&event.revision.to_be_bytes());
-                    match event.change {
-                        CampaignChange::QuestStage { quest, stage } => {
-                            out.push(1);
-                            out.extend_from_slice(&quest.to_be_bytes());
-                            out.extend_from_slice(&stage.to_be_bytes());
-                        }
-                        CampaignChange::QuestStageDone { quest, stage, done } => {
-                            out.push(2);
-                            out.extend_from_slice(&quest.to_be_bytes());
-                            out.extend_from_slice(&stage.to_be_bytes());
-                            out.push(u8::from(done));
-                        }
-                        CampaignChange::QuestObjective {
-                            quest,
-                            objective,
-                            completed,
-                        } => {
-                            out.push(5);
-                            out.extend_from_slice(&quest.to_be_bytes());
-                            out.extend_from_slice(&objective.to_be_bytes());
-                            out.push(u8::from(completed));
-                        }
-                        CampaignChange::QuestStatus {
-                            quest,
-                            running,
-                            completed,
-                            failed,
-                        } => {
-                            out.push(3);
-                            out.extend_from_slice(&quest.to_be_bytes());
-                            out.push(
-                                u8::from(running)
-                                    | (u8::from(completed) << 1)
-                                    | (u8::from(failed) << 2),
-                            );
-                        }
-                        CampaignChange::Reputation {
-                            reputation,
-                            fame,
-                            infamy,
-                        } => {
-                            if !fame.is_finite() || !infamy.is_finite() {
-                                return Err(DecodeError::InvalidNumber);
-                            }
-                            out.push(4);
-                            out.extend_from_slice(&reputation.to_be_bytes());
-                            out.extend_from_slice(&fame.to_bits().to_be_bytes());
-                            out.extend_from_slice(&infamy.to_bits().to_be_bytes());
-                        }
-                    }
-                }
+                encode_campaign_events(&mut out, events)?;
+            }
+            Self::CampaignSync { events } => {
+                out.push(CAMPAIGN_SYNC);
+                encode_campaign_events(&mut out, events)?;
+            }
+            Self::CampaignSyncAck { revision } => {
+                out.push(CAMPAIGN_SYNC_ACK);
+                out.extend_from_slice(&revision.to_be_bytes());
             }
             Self::WorldUpdate { events } => {
                 if events.len() > MAX_WORLD_UPDATE_EVENTS {
@@ -535,7 +692,7 @@ impl Packet {
                 out.push(WORLD_UPDATE);
                 out.push(events.len() as u8);
                 for event in events {
-                    encode_world_event(&mut out, *event);
+                    encode_world_event(&mut out, *event)?;
                 }
             }
             Self::WorldKeyframeRequest {
@@ -593,6 +750,43 @@ impl Packet {
                 out.extend_from_slice(&sequence.to_be_bytes());
                 encode_dialogue(&mut out, dialogue.as_ref())?;
             }
+            Self::DialogueChoice {
+                sequence,
+                offer,
+                source,
+                topic,
+                info,
+            } => {
+                if offer.line.is_some()
+                    || offer.topics.is_empty()
+                    || offer.topics.len() > MAX_DIALOGUE_TOPICS
+                    || *topic == 0
+                    || *info == 0
+                    || source == &Some(0)
+                    || !offer
+                        .topics
+                        .iter()
+                        .any(|choice| choice.topic == *topic && choice.info == *info)
+                {
+                    return Err(DecodeError::InvalidDialogue);
+                }
+                out.push(DIALOGUE_CHOICE);
+                out.extend_from_slice(&sequence.to_be_bytes());
+                encode_dialogue(&mut out, Some(offer))?;
+                if let Some(source) = source {
+                    out.push(1);
+                    out.extend_from_slice(&source.to_be_bytes());
+                } else {
+                    out.push(0);
+                }
+                out.extend_from_slice(&topic.to_be_bytes());
+                out.extend_from_slice(&info.to_be_bytes());
+            }
+            Self::DialogueChoiceResult { sequence, accepted } => {
+                out.push(DIALOGUE_CHOICE_RESULT);
+                out.extend_from_slice(&sequence.to_be_bytes());
+                out.push(u8::from(*accepted));
+            }
             Self::DialogueListen {
                 player,
                 sequence,
@@ -633,20 +827,19 @@ impl Packet {
                 shot_index,
                 target,
                 weapon,
+                inventory_revision,
+                profile_revision,
+                ammo,
                 kind,
                 reload,
                 slot,
                 part_av,
                 action_points,
-                hit_chance,
             } => {
                 if *target == 0 {
                     return Err(DecodeError::InvalidTarget);
                 }
                 if !action_points.is_finite() || *action_points <= 0.0 {
-                    return Err(DecodeError::InvalidNumber);
-                }
-                if !hit_chance.is_finite() || !(0.0..=1.0).contains(hit_chance) {
                     return Err(DecodeError::InvalidNumber);
                 }
                 out.push(VATS_ATTACK);
@@ -655,12 +848,14 @@ impl Packet {
                 out.extend_from_slice(&shot_index.to_be_bytes());
                 out.extend_from_slice(&target.to_be_bytes());
                 out.extend_from_slice(&weapon.to_be_bytes());
+                out.extend_from_slice(&inventory_revision.to_be_bytes());
+                out.extend_from_slice(&profile_revision.to_be_bytes());
+                out.extend_from_slice(&ammo.to_be_bytes());
                 out.push(*kind);
                 out.push(u8::from(*reload));
                 out.push(*slot as u8);
                 out.extend_from_slice(&part_av.to_be_bytes());
                 out.extend_from_slice(&action_points.to_bits().to_be_bytes());
-                out.extend_from_slice(&hit_chance.to_bits().to_be_bytes());
             }
             Self::VatsAttackResult {
                 sequence,
@@ -680,6 +875,101 @@ impl Packet {
                 out.push(u8::from(*accepted));
                 out.extend_from_slice(&action_points.to_bits().to_be_bytes());
                 out.push(u8::from(*hit));
+            }
+            Self::PlayerAttack {
+                sequence,
+                inventory_revision,
+                profile_revision,
+                weapon,
+                ammo,
+                attack_group,
+                power,
+            } => {
+                if *attack_group >= 64 {
+                    return Err(DecodeError::InvalidAttack);
+                }
+                out.push(PLAYER_ATTACK);
+                out.extend_from_slice(&sequence.to_be_bytes());
+                out.extend_from_slice(&inventory_revision.to_be_bytes());
+                out.extend_from_slice(&profile_revision.to_be_bytes());
+                out.extend_from_slice(&weapon.to_be_bytes());
+                out.extend_from_slice(&ammo.to_be_bytes());
+                out.push(*attack_group);
+                out.push(u8::from(*power));
+            }
+            Self::PlayerAttackResult { sequence, accepted } => {
+                out.push(PLAYER_ATTACK_RESULT);
+                out.extend_from_slice(&sequence.to_be_bytes());
+                out.push(u8::from(*accepted));
+            }
+            Self::PlayerInventory { revision, entries } => {
+                if entries.len() > MAX_PLAYER_INVENTORY_ENTRIES {
+                    return Err(DecodeError::TooManyInventoryEntries);
+                }
+                let mut forms = HashSet::with_capacity(entries.len());
+                if entries
+                    .iter()
+                    .any(|entry| entry.form == 0 || entry.count == 0 || !forms.insert(entry.form))
+                {
+                    return Err(DecodeError::InvalidInventory);
+                }
+                out.push(PLAYER_INVENTORY);
+                out.extend_from_slice(&revision.to_be_bytes());
+                out.push(entries.len() as u8);
+                for entry in entries {
+                    out.extend_from_slice(&entry.form.to_be_bytes());
+                    out.extend_from_slice(&entry.count.to_be_bytes());
+                }
+            }
+            Self::PlayerInventoryAck { revision } => {
+                out.push(PLAYER_INVENTORY_ACK);
+                out.extend_from_slice(&revision.to_be_bytes());
+            }
+            Self::PlayerProfile {
+                revision,
+                level,
+                actor_values,
+                perks,
+            } => {
+                if actor_values.len() > MAX_PLAYER_PROFILE_ACTOR_VALUES
+                    || perks.len() > MAX_PLAYER_PROFILE_PERKS
+                {
+                    return Err(DecodeError::InvalidProfile);
+                }
+                let mut actor_ids = HashSet::with_capacity(actor_values.len());
+                if actor_values.iter().any(|entry| {
+                    usize::from(entry.actor_value) >= MAX_PLAYER_PROFILE_ACTOR_VALUES
+                        || !entry.current.is_finite()
+                        || !entry.permanent.is_finite()
+                        || !actor_ids.insert(entry.actor_value)
+                }) {
+                    return Err(DecodeError::InvalidProfile);
+                }
+                let mut perk_forms = HashSet::with_capacity(perks.len());
+                if perks
+                    .iter()
+                    .any(|perk| perk.form == 0 || perk.rank == 0 || !perk_forms.insert(perk.form))
+                {
+                    return Err(DecodeError::InvalidProfile);
+                }
+                out.push(PLAYER_PROFILE);
+                out.extend_from_slice(&revision.to_be_bytes());
+                out.extend_from_slice(&level.to_be_bytes());
+                out.push(actor_values.len() as u8);
+                out.push(perks.len() as u8);
+                for entry in actor_values {
+                    out.push(entry.actor_value);
+                    out.extend_from_slice(&entry.current.to_bits().to_be_bytes());
+                    out.extend_from_slice(&entry.permanent.to_bits().to_be_bytes());
+                }
+                for perk in perks {
+                    out.extend_from_slice(&perk.form.to_be_bytes());
+                    out.push(perk.rank);
+                }
+            }
+            Self::PlayerProfileAck { revision } => {
+                out.push(PLAYER_PROFILE_ACK);
+                out.extend_from_slice(&revision.to_be_bytes());
             }
         }
         if out.len() > MAX_PACKET_BYTES {
@@ -820,96 +1110,19 @@ impl Packet {
                     world_events,
                 })
             }
-            CAMPAIGN_UPDATE => {
-                if packet.len() < 7 {
-                    return Err(DecodeError::TooShort);
+            CAMPAIGN_UPDATE | CAMPAIGN_SYNC => {
+                let events = decode_campaign_events(packet)?;
+                if packet[5] == CAMPAIGN_UPDATE {
+                    Ok(Self::CampaignUpdate { events })
+                } else {
+                    Ok(Self::CampaignSync { events })
                 }
-                let count = usize::from(packet[6]);
-                if count > MAX_CAMPAIGN_EVENTS {
-                    return Err(DecodeError::TooManyCampaignEvents);
-                }
-                let mut offset = 7;
-                let mut events = Vec::with_capacity(count);
-                for _ in 0..count {
-                    if packet.len() < offset + 5 {
-                        return Err(DecodeError::TooShort);
-                    }
-                    let revision =
-                        u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
-                    let kind = packet[offset + 4];
-                    offset += 5;
-                    let change = match kind {
-                        1 => {
-                            require_available(packet, offset, 6)?;
-                            let quest =
-                                u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
-                            let stage = u16::from_be_bytes(
-                                packet[offset + 4..offset + 6].try_into().unwrap(),
-                            );
-                            offset += 6;
-                            CampaignChange::QuestStage { quest, stage }
-                        }
-                        2 => {
-                            require_available(packet, offset, 7)?;
-                            let quest =
-                                u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
-                            let stage = u16::from_be_bytes(
-                                packet[offset + 4..offset + 6].try_into().unwrap(),
-                            );
-                            let done = read_bool(packet[offset + 6])?;
-                            offset += 7;
-                            CampaignChange::QuestStageDone { quest, stage, done }
-                        }
-                        3 => {
-                            require_available(packet, offset, 5)?;
-                            let quest =
-                                u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
-                            let flags = packet[offset + 4];
-                            if flags & !0b111 != 0 {
-                                return Err(DecodeError::InvalidFlags);
-                            }
-                            offset += 5;
-                            CampaignChange::QuestStatus {
-                                quest,
-                                running: flags & 1 != 0,
-                                completed: flags & 2 != 0,
-                                failed: flags & 4 != 0,
-                            }
-                        }
-                        4 => {
-                            require_available(packet, offset, 12)?;
-                            let reputation =
-                                u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
-                            let fame = read_f32(packet, offset + 4)?;
-                            let infamy = read_f32(packet, offset + 8)?;
-                            offset += 12;
-                            CampaignChange::Reputation {
-                                reputation,
-                                fame,
-                                infamy,
-                            }
-                        }
-                        5 => {
-                            require_available(packet, offset, 9)?;
-                            let quest =
-                                u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
-                            let objective = i32::from_be_bytes(
-                                packet[offset + 4..offset + 8].try_into().unwrap(),
-                            );
-                            let completed = read_bool(packet[offset + 8])?;
-                            offset += 9;
-                            CampaignChange::QuestObjective {
-                                quest,
-                                objective,
-                                completed,
-                            }
-                        }
-                        other => return Err(DecodeError::UnknownCampaignChange(other)),
-                    };
-                    events.push(CampaignEvent { revision, change });
-                }
-                require_length(packet, offset)?;
-                Ok(Self::CampaignUpdate { events })
+            }
+            CAMPAIGN_SYNC_ACK => {
+                require_length(packet, 10)?;
+                Ok(Self::CampaignSyncAck {
+                    revision: u32::from_be_bytes(packet[6..10].try_into().unwrap()),
+                })
             }
             WORLD_UPDATE => {
                 if packet.len() < 7 {
@@ -937,7 +1150,7 @@ impl Packet {
                 })
             }
             WORLD_KEYFRAME_CHUNK => {
-                if packet.len() < 20 {
+                if packet.len() < 21 {
                     return Err(DecodeError::TooShort);
                 }
                 let transfer_id = u32::from_be_bytes(packet[6..10].try_into().unwrap());
@@ -1010,6 +1223,64 @@ impl Packet {
                 require_length(packet, offset)?;
                 Ok(Self::DialogueUpdate { sequence, dialogue })
             }
+            DIALOGUE_CHOICE => {
+                if packet.len() < 34 {
+                    return Err(DecodeError::TooShort);
+                }
+                let sequence = u32::from_be_bytes(packet[6..10].try_into().unwrap());
+                let mut offset = 10;
+                let offer =
+                    decode_dialogue(packet, &mut offset)?.ok_or(DecodeError::InvalidDialogue)?;
+                require_available(packet, offset, 1)?;
+                let has_source = read_bool(packet[offset])?;
+                offset += 1;
+                let source = if has_source {
+                    require_available(packet, offset, 4)?;
+                    let source = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                    offset += 4;
+                    if source == 0 {
+                        return Err(DecodeError::InvalidDialogue);
+                    }
+                    Some(source)
+                } else {
+                    None
+                };
+                require_available(packet, offset, 8)?;
+                let topic = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let info = u32::from_be_bytes(packet[offset + 4..offset + 8].try_into().unwrap());
+                offset += 8;
+                require_length(packet, offset)?;
+                if offer.line.is_some()
+                    || offer.topics.is_empty()
+                    || topic == 0
+                    || info == 0
+                    || !offer
+                        .topics
+                        .iter()
+                        .any(|choice| choice.topic == topic && choice.info == info)
+                {
+                    return Err(DecodeError::InvalidDialogue);
+                }
+                Ok(Self::DialogueChoice {
+                    sequence,
+                    offer,
+                    source,
+                    topic,
+                    info,
+                })
+            }
+            DIALOGUE_CHOICE_RESULT => {
+                require_length(packet, 11)?;
+                let accepted = match packet[10] {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(DecodeError::InvalidDialogue),
+                };
+                Ok(Self::DialogueChoiceResult {
+                    sequence: u32::from_be_bytes(packet[6..10].try_into().unwrap()),
+                    accepted,
+                })
+            }
             DIALOGUE_LISTEN => {
                 if packet.len() < 12 {
                     return Err(DecodeError::TooShort);
@@ -1052,17 +1323,13 @@ impl Packet {
                 })
             }
             VATS_ATTACK => {
-                require_length(packet, 43)?;
+                require_length(packet, 51)?;
                 let target = u32::from_be_bytes(packet[20..24].try_into().unwrap());
-                let action_points = read_f32(packet, 35)?;
-                let hit_chance = read_f32(packet, 39)?;
+                let action_points = read_f32(packet, 47)?;
                 if target == 0 {
                     return Err(DecodeError::InvalidTarget);
                 }
                 if action_points <= 0.0 {
-                    return Err(DecodeError::InvalidNumber);
-                }
-                if !(0.0..=1.0).contains(&hit_chance) {
                     return Err(DecodeError::InvalidNumber);
                 }
                 Ok(Self::VatsAttack {
@@ -1071,12 +1338,14 @@ impl Packet {
                     shot_index: u16::from_be_bytes(packet[18..20].try_into().unwrap()),
                     target,
                     weapon: u32::from_be_bytes(packet[24..28].try_into().unwrap()),
-                    kind: packet[28],
-                    reload: read_bool(packet[29])?,
-                    slot: packet[30] as i8,
-                    part_av: i32::from_be_bytes(packet[31..35].try_into().unwrap()),
+                    inventory_revision: u32::from_be_bytes(packet[28..32].try_into().unwrap()),
+                    profile_revision: u32::from_be_bytes(packet[32..36].try_into().unwrap()),
+                    ammo: u32::from_be_bytes(packet[36..40].try_into().unwrap()),
+                    kind: packet[40],
+                    reload: read_bool(packet[41])?,
+                    slot: packet[42] as i8,
+                    part_av: i32::from_be_bytes(packet[43..47].try_into().unwrap()),
                     action_points,
-                    hit_chance,
                 })
             }
             VATS_ATTACK_RESULT => {
@@ -1097,6 +1366,113 @@ impl Packet {
                     hit,
                 })
             }
+            PLAYER_ATTACK => {
+                require_length(packet, 28)?;
+                let attack_group = packet[26];
+                if attack_group >= 64 {
+                    return Err(DecodeError::InvalidAttack);
+                }
+                Ok(Self::PlayerAttack {
+                    sequence: u32::from_be_bytes(packet[6..10].try_into().unwrap()),
+                    inventory_revision: u32::from_be_bytes(packet[10..14].try_into().unwrap()),
+                    profile_revision: u32::from_be_bytes(packet[14..18].try_into().unwrap()),
+                    weapon: u32::from_be_bytes(packet[18..22].try_into().unwrap()),
+                    ammo: u32::from_be_bytes(packet[22..26].try_into().unwrap()),
+                    attack_group,
+                    power: read_bool(packet[27])?,
+                })
+            }
+            PLAYER_ATTACK_RESULT => {
+                require_length(packet, 11)?;
+                Ok(Self::PlayerAttackResult {
+                    sequence: u32::from_be_bytes(packet[6..10].try_into().unwrap()),
+                    accepted: read_bool(packet[10])?,
+                })
+            }
+            PLAYER_INVENTORY => {
+                if packet.len() < 11 {
+                    return Err(DecodeError::TooShort);
+                }
+                let count = usize::from(packet[10]);
+                if count > MAX_PLAYER_INVENTORY_ENTRIES {
+                    return Err(DecodeError::TooManyInventoryEntries);
+                }
+                require_length(packet, 11 + count * 8)?;
+                let revision = u32::from_be_bytes(packet[6..10].try_into().unwrap());
+                let mut forms = HashSet::with_capacity(count);
+                let mut entries = Vec::with_capacity(count);
+                for chunk in packet[11..].chunks_exact(8) {
+                    let form = u32::from_be_bytes(chunk[..4].try_into().unwrap());
+                    let count = u32::from_be_bytes(chunk[4..].try_into().unwrap());
+                    if form == 0 || count == 0 || !forms.insert(form) {
+                        return Err(DecodeError::InvalidInventory);
+                    }
+                    entries.push(InventoryEntry { form, count });
+                }
+                Ok(Self::PlayerInventory { revision, entries })
+            }
+            PLAYER_INVENTORY_ACK => {
+                require_length(packet, 10)?;
+                Ok(Self::PlayerInventoryAck {
+                    revision: u32::from_be_bytes(packet[6..10].try_into().unwrap()),
+                })
+            }
+            PLAYER_PROFILE => {
+                if packet.len() < 14 {
+                    return Err(DecodeError::TooShort);
+                }
+                let actor_count = usize::from(packet[12]);
+                let perk_count = usize::from(packet[13]);
+                if actor_count > MAX_PLAYER_PROFILE_ACTOR_VALUES
+                    || perk_count > MAX_PLAYER_PROFILE_PERKS
+                {
+                    return Err(DecodeError::InvalidProfile);
+                }
+                require_length(packet, 14 + actor_count * 9 + perk_count * 5)?;
+                let revision = u32::from_be_bytes(packet[6..10].try_into().unwrap());
+                let level = u16::from_be_bytes(packet[10..12].try_into().unwrap());
+                let mut actor_values = Vec::with_capacity(actor_count);
+                let mut actor_ids = HashSet::with_capacity(actor_count);
+                let mut cursor = 14;
+                for _ in 0..actor_count {
+                    let actor_value = packet[cursor];
+                    let current = read_f32(packet, cursor + 1)?;
+                    let permanent = read_f32(packet, cursor + 5)?;
+                    if usize::from(actor_value) >= MAX_PLAYER_PROFILE_ACTOR_VALUES
+                        || !actor_ids.insert(actor_value)
+                    {
+                        return Err(DecodeError::InvalidProfile);
+                    }
+                    actor_values.push(ActorValueEntry {
+                        actor_value,
+                        current,
+                        permanent,
+                    });
+                    cursor += 9;
+                }
+                let mut perks = Vec::with_capacity(perk_count);
+                let mut perk_forms = HashSet::with_capacity(perk_count);
+                for chunk in packet[cursor..].chunks_exact(5) {
+                    let form = u32::from_be_bytes(chunk[..4].try_into().unwrap());
+                    let rank = chunk[4];
+                    if form == 0 || rank == 0 || !perk_forms.insert(form) {
+                        return Err(DecodeError::InvalidProfile);
+                    }
+                    perks.push(PerkEntry { form, rank });
+                }
+                Ok(Self::PlayerProfile {
+                    revision,
+                    level,
+                    actor_values,
+                    perks,
+                })
+            }
+            PLAYER_PROFILE_ACK => {
+                require_length(packet, 10)?;
+                Ok(Self::PlayerProfileAck {
+                    revision: u32::from_be_bytes(packet[6..10].try_into().unwrap()),
+                })
+            }
             kind => Err(DecodeError::UnknownKind(kind)),
         }
     }
@@ -1104,6 +1480,342 @@ impl Packet {
 
 fn valid_view_aspect(aspect: f32) -> bool {
     aspect.is_finite() && (MIN_VIEW_ASPECT..=MAX_VIEW_ASPECT).contains(&aspect)
+}
+
+fn encode_campaign_events(out: &mut Vec<u8>, events: &[CampaignEvent]) -> Result<(), DecodeError> {
+    if events.len() > MAX_CAMPAIGN_EVENTS {
+        return Err(DecodeError::TooManyCampaignEvents);
+    }
+    out.push(events.len() as u8);
+    for event in events {
+        out.extend_from_slice(&event.revision.to_be_bytes());
+        match event.change {
+            CampaignChange::QuestStage { quest, stage } => {
+                out.push(1);
+                out.extend_from_slice(&quest.to_be_bytes());
+                out.extend_from_slice(&stage.to_be_bytes());
+            }
+            CampaignChange::QuestStageDone { quest, stage, done } => {
+                out.push(2);
+                out.extend_from_slice(&quest.to_be_bytes());
+                out.extend_from_slice(&stage.to_be_bytes());
+                out.push(u8::from(done));
+            }
+            CampaignChange::QuestStatus {
+                quest,
+                running,
+                completed,
+                failed,
+            } => {
+                out.push(3);
+                out.extend_from_slice(&quest.to_be_bytes());
+                out.push(u8::from(running) | (u8::from(completed) << 1) | (u8::from(failed) << 2));
+            }
+            CampaignChange::Reputation {
+                reputation,
+                fame,
+                infamy,
+            } => {
+                if !fame.is_finite() || !infamy.is_finite() {
+                    return Err(DecodeError::InvalidNumber);
+                }
+                out.push(4);
+                out.extend_from_slice(&reputation.to_be_bytes());
+                out.extend_from_slice(&fame.to_bits().to_be_bytes());
+                out.extend_from_slice(&infamy.to_bits().to_be_bytes());
+            }
+            CampaignChange::QuestObjective {
+                quest,
+                objective,
+                completed,
+            } => {
+                out.push(5);
+                out.extend_from_slice(&quest.to_be_bytes());
+                out.extend_from_slice(&objective.to_be_bytes());
+                out.push(u8::from(completed));
+            }
+            CampaignChange::QuestVariable {
+                quest,
+                index,
+                value,
+            } => {
+                if !value.is_finite() {
+                    return Err(DecodeError::InvalidNumber);
+                }
+                out.push(6);
+                out.extend_from_slice(&quest.to_be_bytes());
+                out.extend_from_slice(&index.to_be_bytes());
+                out.extend_from_slice(&value.to_bits().to_be_bytes());
+            }
+            CampaignChange::GlobalValue { global, value } => {
+                if !value.is_finite() {
+                    return Err(DecodeError::InvalidNumber);
+                }
+                out.push(7);
+                out.extend_from_slice(&global.to_be_bytes());
+                out.extend_from_slice(&value.to_bits().to_be_bytes());
+            }
+            CampaignChange::DialogueFact {
+                kind,
+                form,
+                learned,
+            } => {
+                out.push(8);
+                out.push(match kind {
+                    DialogueFactKind::Topic => 1,
+                    DialogueFactKind::Said => 2,
+                    DialogueFactKind::TalkedTo => 3,
+                });
+                out.extend_from_slice(&form.to_be_bytes());
+                out.push(u8::from(learned));
+            }
+            CampaignChange::PlayerSex { female } => {
+                out.push(9);
+                out.push(match female {
+                    None => 0,
+                    Some(false) => 1,
+                    Some(true) => 2,
+                });
+            }
+            CampaignChange::PlayerItemCount { form, count } => {
+                if form == 0 || count > i32::MAX as u32 {
+                    return Err(DecodeError::InvalidInventory);
+                }
+                out.push(10);
+                out.extend_from_slice(&form.to_be_bytes());
+                out.extend_from_slice(&count.to_be_bytes());
+            }
+            CampaignChange::PlayerItemsInitialized => out.push(11),
+            CampaignChange::PlayerActorValue {
+                player,
+                actor_value,
+                current,
+                permanent,
+            } => {
+                if usize::from(player) >= MAX_PLAYERS
+                    || usize::from(actor_value) >= MAX_PLAYER_PROFILE_ACTOR_VALUES
+                    || !current.is_finite()
+                    || !permanent.is_finite()
+                {
+                    return Err(DecodeError::InvalidProfile);
+                }
+                out.push(12);
+                out.push(player);
+                out.push(actor_value);
+                out.extend_from_slice(&current.to_bits().to_be_bytes());
+                out.extend_from_slice(&permanent.to_bits().to_be_bytes());
+            }
+            CampaignChange::PlayerMiscStat {
+                player,
+                stat,
+                value,
+                authoritative,
+            } => {
+                if usize::from(player) >= MAX_PLAYERS {
+                    return Err(DecodeError::InvalidPlayerId);
+                }
+                out.push(13);
+                out.push(player);
+                out.push(stat);
+                out.extend_from_slice(&value.to_be_bytes());
+                out.push(u8::from(authoritative));
+            }
+            CampaignChange::PlayerMiscStatsInitialized { player } => {
+                if usize::from(player) >= MAX_PLAYERS {
+                    return Err(DecodeError::InvalidPlayerId);
+                }
+                out.push(14);
+                out.push(player);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn decode_campaign_events(packet: &[u8]) -> Result<Vec<CampaignEvent>, DecodeError> {
+    if packet.len() < 7 {
+        return Err(DecodeError::TooShort);
+    }
+    let count = usize::from(packet[6]);
+    if count > MAX_CAMPAIGN_EVENTS {
+        return Err(DecodeError::TooManyCampaignEvents);
+    }
+    let mut offset = 7;
+    let mut events = Vec::with_capacity(count);
+    for _ in 0..count {
+        require_available(packet, offset, 5)?;
+        let revision = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+        let kind = packet[offset + 4];
+        offset += 5;
+        let change = match kind {
+            1 => {
+                require_available(packet, offset, 6)?;
+                let quest = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let stage = u16::from_be_bytes(packet[offset + 4..offset + 6].try_into().unwrap());
+                offset += 6;
+                CampaignChange::QuestStage { quest, stage }
+            }
+            2 => {
+                require_available(packet, offset, 7)?;
+                let quest = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let stage = u16::from_be_bytes(packet[offset + 4..offset + 6].try_into().unwrap());
+                let done = read_bool(packet[offset + 6])?;
+                offset += 7;
+                CampaignChange::QuestStageDone { quest, stage, done }
+            }
+            3 => {
+                require_available(packet, offset, 5)?;
+                let quest = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let flags = packet[offset + 4];
+                if flags & !0b111 != 0 {
+                    return Err(DecodeError::InvalidFlags);
+                }
+                offset += 5;
+                CampaignChange::QuestStatus {
+                    quest,
+                    running: flags & 1 != 0,
+                    completed: flags & 2 != 0,
+                    failed: flags & 4 != 0,
+                }
+            }
+            4 => {
+                require_available(packet, offset, 12)?;
+                let reputation = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let fame = read_f32(packet, offset + 4)?;
+                let infamy = read_f32(packet, offset + 8)?;
+                offset += 12;
+                CampaignChange::Reputation {
+                    reputation,
+                    fame,
+                    infamy,
+                }
+            }
+            5 => {
+                require_available(packet, offset, 9)?;
+                let quest = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let objective =
+                    i32::from_be_bytes(packet[offset + 4..offset + 8].try_into().unwrap());
+                let completed = read_bool(packet[offset + 8])?;
+                offset += 9;
+                CampaignChange::QuestObjective {
+                    quest,
+                    objective,
+                    completed,
+                }
+            }
+            6 => {
+                require_available(packet, offset, 10)?;
+                let quest = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let index = u16::from_be_bytes(packet[offset + 4..offset + 6].try_into().unwrap());
+                let value = read_f32(packet, offset + 6)?;
+                offset += 10;
+                CampaignChange::QuestVariable {
+                    quest,
+                    index,
+                    value,
+                }
+            }
+            7 => {
+                require_available(packet, offset, 8)?;
+                let global = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let value = read_f32(packet, offset + 4)?;
+                offset += 8;
+                CampaignChange::GlobalValue { global, value }
+            }
+            8 => {
+                require_available(packet, offset, 6)?;
+                let kind = match packet[offset] {
+                    1 => DialogueFactKind::Topic,
+                    2 => DialogueFactKind::Said,
+                    3 => DialogueFactKind::TalkedTo,
+                    _ => return Err(DecodeError::InvalidFlags),
+                };
+                let form = u32::from_be_bytes(packet[offset + 1..offset + 5].try_into().unwrap());
+                let learned = read_bool(packet[offset + 5])?;
+                offset += 6;
+                CampaignChange::DialogueFact {
+                    kind,
+                    form,
+                    learned,
+                }
+            }
+            9 => {
+                require_available(packet, offset, 1)?;
+                let female = match packet[offset] {
+                    0 => None,
+                    1 => Some(false),
+                    2 => Some(true),
+                    _ => return Err(DecodeError::InvalidFlags),
+                };
+                offset += 1;
+                CampaignChange::PlayerSex { female }
+            }
+            10 => {
+                require_available(packet, offset, 8)?;
+                let form = u32::from_be_bytes(packet[offset..offset + 4].try_into().unwrap());
+                let count = u32::from_be_bytes(packet[offset + 4..offset + 8].try_into().unwrap());
+                offset += 8;
+                if form == 0 || count > i32::MAX as u32 {
+                    return Err(DecodeError::InvalidInventory);
+                }
+                CampaignChange::PlayerItemCount { form, count }
+            }
+            11 => CampaignChange::PlayerItemsInitialized,
+            12 => {
+                require_available(packet, offset, 10)?;
+                let player = packet[offset];
+                let actor_value = packet[offset + 1];
+                let current = read_f32(packet, offset + 2)?;
+                let permanent = read_f32(packet, offset + 6)?;
+                offset += 10;
+                if usize::from(player) >= MAX_PLAYERS
+                    || usize::from(actor_value) >= MAX_PLAYER_PROFILE_ACTOR_VALUES
+                {
+                    return Err(DecodeError::InvalidProfile);
+                }
+                CampaignChange::PlayerActorValue {
+                    player,
+                    actor_value,
+                    current,
+                    permanent,
+                }
+            }
+            13 => {
+                require_available(packet, offset, 7)?;
+                let player = packet[offset];
+                let stat = packet[offset + 1];
+                let value = u32::from_be_bytes(packet[offset + 2..offset + 6].try_into().unwrap());
+                let authoritative = match packet[offset + 6] {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(DecodeError::InvalidFlags),
+                };
+                offset += 7;
+                if usize::from(player) >= MAX_PLAYERS {
+                    return Err(DecodeError::InvalidPlayerId);
+                }
+                CampaignChange::PlayerMiscStat {
+                    player,
+                    stat,
+                    value,
+                    authoritative,
+                }
+            }
+            14 => {
+                require_available(packet, offset, 1)?;
+                let player = packet[offset];
+                offset += 1;
+                if usize::from(player) >= MAX_PLAYERS {
+                    return Err(DecodeError::InvalidPlayerId);
+                }
+                CampaignChange::PlayerMiscStatsInitialized { player }
+            }
+            other => return Err(DecodeError::UnknownCampaignChange(other)),
+        };
+        events.push(CampaignEvent { revision, change });
+    }
+    require_length(packet, offset)?;
+    Ok(events)
 }
 
 fn encode_dialogue(
@@ -1114,35 +1826,35 @@ fn encode_dialogue(
         out.push(0);
         return Ok(());
     };
-    let name = dialogue.speaker_name.as_bytes();
-    let text = dialogue.text.as_bytes();
-    if dialogue.speaker == 0
-        || name.len() > MAX_DIALOGUE_NAME_BYTES
-        || text.len() > MAX_DIALOGUE_TEXT_BYTES
-    {
+    if dialogue.speaker == 0 {
         return Err(DecodeError::InvalidDialogue);
     }
     if dialogue.topics.len() > MAX_DIALOGUE_TOPICS {
         return Err(DecodeError::TooManyDialogueTopics);
     }
-    if dialogue
-        .topics
-        .iter()
-        .any(|topic| topic.len() > MAX_DIALOGUE_TOPIC_BYTES)
-    {
+    if dialogue.line.is_some() && !dialogue.topics.is_empty() {
         return Err(DecodeError::InvalidDialogue);
     }
 
     out.push(1);
     out.extend_from_slice(&dialogue.speaker.to_be_bytes());
-    out.push(name.len() as u8);
-    out.extend_from_slice(name);
-    out.extend_from_slice(&(text.len() as u16).to_be_bytes());
-    out.extend_from_slice(text);
+    if let Some(line) = dialogue.line {
+        if line.info == 0 {
+            return Err(DecodeError::InvalidDialogue);
+        }
+        out.push(1);
+        out.extend_from_slice(&line.info.to_be_bytes());
+        out.extend_from_slice(&line.response.to_be_bytes());
+    } else {
+        out.push(0);
+    }
     out.push(dialogue.topics.len() as u8);
     for topic in &dialogue.topics {
-        out.push(topic.len() as u8);
-        out.extend_from_slice(topic.as_bytes());
+        if topic.topic == 0 || topic.info == 0 {
+            return Err(DecodeError::InvalidDialogue);
+        }
+        out.extend_from_slice(&topic.topic.to_be_bytes());
+        out.extend_from_slice(&topic.info.to_be_bytes());
     }
     Ok(())
 }
@@ -1164,22 +1876,20 @@ fn decode_dialogue(
     if speaker == 0 {
         return Err(DecodeError::InvalidDialogue);
     }
-    let name_len = usize::from(packet[*offset]);
+    let has_line = read_bool(packet[*offset])?;
     *offset += 1;
-    if name_len > MAX_DIALOGUE_NAME_BYTES {
-        return Err(DecodeError::InvalidDialogue);
-    }
-    let name = decode_dialogue_string(packet, offset, name_len)?;
-
-    require_available(packet, *offset, 2)?;
-    let text_len = usize::from(u16::from_be_bytes(
-        packet[*offset..*offset + 2].try_into().unwrap(),
-    ));
-    *offset += 2;
-    if text_len > MAX_DIALOGUE_TEXT_BYTES {
-        return Err(DecodeError::InvalidDialogue);
-    }
-    let text = decode_dialogue_string(packet, offset, text_len)?;
+    let line = if has_line {
+        require_available(packet, *offset, 6)?;
+        let info = u32::from_be_bytes(packet[*offset..*offset + 4].try_into().unwrap());
+        let response = u16::from_be_bytes(packet[*offset + 4..*offset + 6].try_into().unwrap());
+        *offset += 6;
+        if info == 0 {
+            return Err(DecodeError::InvalidDialogue);
+        }
+        Some(DialogueLine { info, response })
+    } else {
+        None
+    };
 
     require_available(packet, *offset, 1)?;
     let topic_count = usize::from(packet[*offset]);
@@ -1187,34 +1897,25 @@ fn decode_dialogue(
     if topic_count > MAX_DIALOGUE_TOPICS {
         return Err(DecodeError::TooManyDialogueTopics);
     }
+    if line.is_some() && topic_count != 0 {
+        return Err(DecodeError::InvalidDialogue);
+    }
+    require_available(packet, *offset, topic_count * 8)?;
     let mut topics = Vec::with_capacity(topic_count);
     for _ in 0..topic_count {
-        require_available(packet, *offset, 1)?;
-        let length = usize::from(packet[*offset]);
-        *offset += 1;
-        if length > MAX_DIALOGUE_TOPIC_BYTES {
+        let topic = u32::from_be_bytes(packet[*offset..*offset + 4].try_into().unwrap());
+        let info = u32::from_be_bytes(packet[*offset + 4..*offset + 8].try_into().unwrap());
+        *offset += 8;
+        if topic == 0 || info == 0 {
             return Err(DecodeError::InvalidDialogue);
         }
-        topics.push(decode_dialogue_string(packet, offset, length)?);
+        topics.push(DialogueChoice { topic, info });
     }
     Ok(Some(DialogueSnapshot {
         speaker,
-        speaker_name: name,
-        text,
+        line,
         topics,
     }))
-}
-
-fn decode_dialogue_string(
-    packet: &[u8],
-    offset: &mut usize,
-    length: usize,
-) -> Result<String, DecodeError> {
-    require_available(packet, *offset, length)?;
-    let value = std::str::from_utf8(&packet[*offset..*offset + length])
-        .map_err(|_| DecodeError::InvalidDialogue)?;
-    *offset += length;
-    Ok(value.to_owned())
 }
 
 fn require_length(packet: &[u8], expected: usize) -> Result<(), DecodeError> {

@@ -450,6 +450,7 @@ pub fn reward_karma(order: &LoadOrder, state: &mut GameState, amount: i32) {
         .actor_values
         .entry((PLAYER_REF, KARMA))
         .or_insert(k as f64) += f64::from(a);
+    crate::scripting::record_coop_player_actor_value(order, state, KARMA);
 }
 
 /// The karma for the player killing someone (`0089e242`): only when they

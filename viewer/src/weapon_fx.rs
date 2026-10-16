@@ -32,8 +32,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use bevy::audio::{AudioSink, AudioSinkPlayback, PlaybackSettings, Volume};
+use bevy::camera::visibility::{NoFrustumCulling, RenderLayers};
 use bevy::prelude::*;
-use bevy::render::view::{NoFrustumCulling, RenderLayers};
 use cellview::space;
 use esm::FormId;
 use world::dialogue::PLAYER_REF;
@@ -174,7 +174,7 @@ impl Plugin for WeaponEffectsPlugin {
             )
             .add_systems(
                 PostUpdate,
-                place_flashes.after(bevy::transform::TransformSystem::TransformPropagate),
+                place_flashes.after(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -216,9 +216,7 @@ fn to_view() -> Mat4 {
 /// Where the weapon's fire node is in the game's space, from its joint's
 /// placement on screen and the node's place in the weapon's model.
 fn fire_node_world(joint: &GlobalTransform, node: &nif::Transform) -> Mat4 {
-    to_view().inverse()
-        * joint.compute_matrix()
-        * crate::actors::bevy_transform(node).compute_matrix()
+    to_view().inverse() * joint.to_matrix() * crate::actors::bevy_transform(node).to_matrix()
 }
 
 /// Whether the player is seen in first person now.

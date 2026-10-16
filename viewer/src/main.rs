@@ -47,6 +47,7 @@ mod look;
 mod map;
 mod menu_background;
 mod menus;
+mod metalfx;
 mod movie;
 mod music;
 mod particles;
@@ -80,12 +81,13 @@ use std::sync::Arc;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::audio::AddAudioSource;
+use bevy::camera::Hdr;
+use bevy::camera::{CameraOutputMode, Exposure};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::ecs::system::SystemParam;
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
-use bevy::render::camera::{CameraOutputMode, Exposure};
 use bevy::render::mesh::PrimitiveTopology;
 use bevy::render::render_resource::{
     Extent3d, Face, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
@@ -93,7 +95,7 @@ use bevy::render::render_resource::{
 };
 use bevy::render::renderer::RenderDevice;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured};
-use bevy::window::{CursorGrabMode, WindowResolution};
+use bevy::window::{CursorGrabMode, CursorOptions, WindowResolution};
 use cellview::{space, Blend, Game, GpuFormat, TextureData, ViewerScene};
 use exterior::{ExteriorStart, PendingExterior};
 use frame_order::{FrameSet, PlayerSet, ViewerSet};
@@ -227,14 +229,19 @@ fn main() {
     // The game's console gives pitch positive looking down; the camera's
     // is positive looking up.
     let pitch = args.at.map_or(0.0, |at| -at.pitch.to_radians());
-    let coop_session =
-        match coop::Session::open(args.coop, coop::scene_key(&args.cell, &game.order)) {
-            Ok(session) => session,
-            Err(error) => {
-                eprintln!("error: co-op session: {error}");
-                std::process::exit(1);
-            }
-        };
+    let coop_session = match coop::Session::open(
+        args.coop,
+        coop::scene_key(&args.cell, &game.order),
+        &game.order,
+        &args.coop_private_quests,
+        &args.coop_private_globals,
+    ) {
+        Ok(session) => session,
+        Err(error) => {
+            eprintln!("error: co-op session: {error}");
+            std::process::exit(1);
+        }
+    };
 
     let grading = Grading {
         grade: ImageSpaceGrade::NEUTRAL,
@@ -244,8 +251,7 @@ fn main() {
     if args.screenshot.is_some() {
         // The game's own resolution here, so pictures line up pixel for pixel.
         let (w, h) = args.screen_size.unwrap_or((1920, 1080));
-        window.resolution =
-            WindowResolution::new(w as f32, h as f32).with_scale_factor_override(1.0);
+        window.resolution = WindowResolution::new(w, h).with_scale_factor_override(1.0);
     }
     // The window in front before this one opens (`--background` gives the
     // focus back to it).
@@ -257,8 +263,7 @@ fn main() {
         window.focused = false;
         window.window_level = bevy::window::WindowLevel::AlwaysOnBottom;
         if let (None, Some((w, h))) = (&args.screenshot, args.screen_size) {
-            window.resolution =
-                WindowResolution::new(w as f32, h as f32).with_scale_factor_override(1.0);
+            window.resolution = WindowResolution::new(w, h).with_scale_factor_override(1.0);
         }
     }
     // Walking, except for screenshots, which keep the exact eye given.
@@ -290,11 +295,12 @@ fn main() {
             }
         }
     }
-    App::new()
-        .insert_resource(ClearColor(Color::BLACK))
+    let mut app = App::new();
+    app.insert_non_send(game_code);
+    app.insert_resource(ClearColor(Color::BLACK))
         // Lit surfaces do their own lighting (see `lighting`); nothing else
         // should add Bevy's ambient light.
-        .insert_resource(AmbientLight::NONE)
+        .insert_resource(GlobalAmbientLight::NONE)
         .insert_resource(Settings {
             brightness: args.brightness,
             cloud_time: args.cloud_time,
@@ -308,8 +314,6 @@ fn main() {
         .insert_resource(coop::CoOpSession(coop_session))
         .insert_resource(dialogue::DialogueState(state))
         .init_resource::<dialogue::ListenerDialogue>()
-        // Main thread only: the engine is not `Send` (`host`).
-        .insert_non_send_resource(game_code)
         .insert_resource(sitting::Seats::new(&game.order))
         .init_resource::<sitting::PlayerSeat>()
         .insert_resource(faces::Faces::new(&game))
@@ -425,6 +429,7 @@ fn main() {
                 plugins
             }
         })
+        .add_plugins(metalfx::ViewerMetalFxPlugin)
         .insert_resource(hud::ShowHud(args.hud))
         .insert_resource(ai::FrozenAi(args.freeze_ai))
         .insert_resource(Background(args.background))
@@ -497,7 +502,7 @@ fn main() {
         // main camera's grade, once everything has set it.
         .add_systems(
             PreUpdate,
-            movie::withhold_input.after(bevy::input::InputSystem),
+            movie::withhold_input.after(bevy::input::InputSystems),
         )
         .add_systems(PostUpdate, viewmodel::copy_grade.after(grade::adapt_eyes))
         // The camera is the eye during the frame; the third-person view
@@ -506,11 +511,11 @@ fn main() {
         .add_systems(PreUpdate, player_camera::restore_eye)
         .add_systems(
             PreUpdate,
-            test_keys::press_test_keys.after(bevy::input::InputSystem),
+            test_keys::press_test_keys.after(bevy::input::InputSystems),
         )
         .add_systems(
             PostUpdate,
-            player_camera::place_view.before(bevy::transform::TransformSystem::TransformPropagate),
+            player_camera::place_view.before(bevy::transform::TransformSystems::Propagate),
         )
         .add_systems(
             Startup,
@@ -1066,7 +1071,7 @@ fn move_pieces(
         if piece.shown == shown {
             continue;
         }
-        let Some(material) = piece.material.as_ref().and_then(|h| materials.get_mut(h)) else {
+        let Some(mut material) = piece.material.as_ref().and_then(|h| materials.get_mut(h)) else {
             continue;
         };
         let opacity = now.opacity.unwrap_or(piece.motion.opacity);
@@ -1628,7 +1633,7 @@ fn take_screenshot(
         .spawn(Screenshot::primary_window())
         .observe(save_to_disk(path))
         .observe(
-            |_: Trigger<ScreenshotCaptured>, mut exit: EventWriter<AppExit>| {
+            |_: On<ScreenshotCaptured>, mut exit: MessageWriter<AppExit>| {
                 exit.write(AppExit::Success);
             },
         );
@@ -1837,7 +1842,7 @@ fn give_lights<M: PlaceLit>(
     for handle in handles {
         let has = |l: &GameLighting| l.lights == lights && l.scale.y == count;
         if materials.get(handle).is_some_and(|m| !has(m.lighting())) {
-            if let Some(m) = materials.get_mut(handle) {
+            if let Some(mut m) = materials.get_mut(handle) {
                 let l = m.lighting_mut();
                 l.lights = lights;
                 l.scale.y = count;
@@ -1916,7 +1921,7 @@ fn game_mesh_around(data: &cellview::MeshData, origin: [f32; 3]) -> Mesh {
 }
 
 /// Bevy's blending for a surface. The alpha test itself is the game's
-/// exact comparison, done in `game_lit.wgsl` (`GameLighting::draw`), so
+/// exact comparison, done in `game_lit.wesl` (`GameLighting::draw`), so
 /// cut-outs are opaque here and surfaces that test and blend just blend.
 fn alpha_mode(blend: Blend) -> AlphaMode {
     match blend {
@@ -1940,17 +1945,16 @@ fn setup(mut commands: Commands) {
         // (see `grade`). The picture is finished and written out by the
         // first-person camera, which draws over it (`viewmodel`).
         Camera {
-            hdr: true,
             output_mode: CameraOutputMode::Skip,
             ..default()
         },
+        Hdr,
         // The game clips what's too bright rather than rolling it off, and
         // the lighting shader already gives the game's brightness.
         Tonemapping::None,
-        // No light clusters: every surface is lit by the game's lights in
-        // its own shader, never Bevy's (there are none), so working out
-        // which of them reach each cluster is wasted.
-        bevy::pbr::ClusterConfig::None,
+        // One cluster avoids Bevy 0.20's zero-sized dummy texture for
+        // `ClusterConfig::None`. Surface lighting still comes from the game.
+        bevy::light::cluster::ClusterConfig::Single,
         Projection::from(PerspectiveProjection {
             // The game's: its 75° setting is the width of a 4:3 picture,
             // and wider windows keep that height.
@@ -1981,7 +1985,7 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         Text::new(String::new()),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         Node {
@@ -2228,7 +2232,7 @@ impl Spawner<'_, '_> {
                     Transform::IDENTITY,
                     actors::skinned(bind.clone(), joints),
                     // The skin moves it away from where its own box is.
-                    bevy::render::view::NoFrustumCulling,
+                    bevy::camera::visibility::NoFrustumCulling,
                     ChildOf(*root),
                 ));
                 // Which part of its look it is, for redrawing (`dress`).
@@ -2394,7 +2398,7 @@ impl LitPieces {
     /// Each piece's material made again with `lighting`.
     fn relight(&self, materials: &mut Assets<GameLitMaterial>, lighting: GameLighting) {
         for (handle, material, tangents) in &self.lit {
-            if let Some(m) = materials.get_mut(handle) {
+            if let Some(mut m) = materials.get_mut(handle) {
                 *m = lit_material_of(material, *tangents, &self.textures, lighting);
             }
         }
@@ -2486,8 +2490,8 @@ impl Spawner<'_, '_> {
                         MeshMaterial3d(material),
                         Transform::IDENTITY,
                         actors::skinned(bind, skin_joints),
-                        bevy::render::view::NoFrustumCulling,
-                        bevy::render::view::RenderLayers::layer(layer),
+                        bevy::camera::visibility::NoFrustumCulling,
+                        bevy::camera::visibility::RenderLayers::layer(layer),
                         ChildOf(root),
                     ))
                     .id(),
@@ -2594,7 +2598,7 @@ impl Spawner<'_, '_> {
                     extension: extension.into(),
                 })),
                 Transform::from_scale(Vec3::splat(scale)),
-                bevy::render::view::NoFrustumCulling,
+                bevy::camera::visibility::NoFrustumCulling,
                 daylight::SkyWeights(dome.weights.clone()),
                 SkyEntity,
                 SceneEntity,
@@ -2709,7 +2713,7 @@ impl Spawner<'_, '_> {
                     extension: extension.into(),
                 })),
                 Transform::from_scale(Vec3::splat(scale * 0.99)),
-                bevy::render::view::NoFrustumCulling,
+                bevy::camera::visibility::NoFrustumCulling,
                 daylight::SunDisk { half_size, glare },
                 SkyEntity,
                 SceneEntity,
@@ -2791,7 +2795,7 @@ impl Spawner<'_, '_> {
                     extension: extension.into(),
                 })),
                 Transform::from_scale(Vec3::splat(scale)),
-                bevy::render::view::NoFrustumCulling,
+                bevy::camera::visibility::NoFrustumCulling,
                 daylight::Stars { fade },
                 SkyEntity,
                 SceneEntity,
@@ -2861,7 +2865,7 @@ impl Spawner<'_, '_> {
                     extension: extension.into(),
                 })),
                 Transform::from_scale(Vec3::splat(scale * 0.98)),
-                bevy::render::view::NoFrustumCulling,
+                bevy::camera::visibility::NoFrustumCulling,
                 CloudScroll {
                     uvs: layer.uvs.clone(),
                     speed: layer.scroll,
@@ -2982,7 +2986,7 @@ fn follow_sky(
             continue;
         }
         let off = (t * scroll.speed).fract();
-        if let Some(m) = meshes.get_mut(&mesh.0) {
+        if let Some(mut m) = meshes.get_mut(&mesh.0) {
             let uvs: Vec<[f32; 2]> = scroll.uvs.iter().map(|&[u, v]| [u, v + off]).collect();
             m.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
         }
@@ -3032,6 +3036,7 @@ fn upload_texture(
     };
     let image = Image {
         data: Some(data),
+        data_order: default(),
         texture_descriptor: TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -3052,6 +3057,7 @@ fn upload_texture(
             ..default()
         }),
         asset_usage: RenderAssetUsages::RENDER_WORLD,
+        copy_on_resize: false,
     };
     Some(images.add(image))
 }
@@ -3387,9 +3393,9 @@ fn grab_cursor(
     menus: Option<Res<menus::Menus>>,
     conversation: Option<Res<dialogue::Conversation>>,
     vats: Option<Res<vats::Vats>>,
-    mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
+    mut windows: Query<(&mut Window, &mut CursorOptions), With<bevy::window::PrimaryWindow>>,
 ) {
-    let Ok(mut window) = windows.single_mut() else {
+    let Ok((mut window, mut cursor)) = windows.single_mut() else {
         return;
     };
     let grab = !background.0
@@ -3405,9 +3411,9 @@ fn grab_cursor(
     } else {
         (CursorGrabMode::Locked, false)
     };
-    if window.cursor_options.grab_mode != mode || window.cursor_options.visible != visible {
-        window.cursor_options.grab_mode = mode;
-        window.cursor_options.visible = visible;
+    if cursor.grab_mode != mode || cursor.visible != visible {
+        cursor.grab_mode = mode;
+        cursor.visible = visible;
     }
     if grab && cfg!(target_os = "windows") {
         let middle = Vec2::new(window.width(), window.height()) / 2.0;
@@ -3514,7 +3520,7 @@ mod tests {
     #[derive(Resource, Default)]
     struct Freed(Vec<AssetId<Image>>);
 
-    fn note_freed(mut events: EventReader<AssetEvent<Image>>, mut freed: ResMut<Freed>) {
+    fn note_freed(mut events: MessageReader<AssetEvent<Image>>, mut freed: ResMut<Freed>) {
         for e in events.read() {
             if let AssetEvent::Unused { id } = e {
                 freed.0.push(*id);
@@ -3914,7 +3920,7 @@ mod tests {
     struct Changed(Vec<AssetId<GameLitMaterial>>);
 
     fn note_changed(
-        mut events: EventReader<AssetEvent<GameLitMaterial>>,
+        mut events: MessageReader<AssetEvent<GameLitMaterial>>,
         mut changed: ResMut<Changed>,
     ) {
         for e in events.read() {

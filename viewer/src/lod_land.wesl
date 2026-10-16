@@ -14,15 +14,15 @@
 //   light = max(AmbientColor + SunColor × saturate(n · L), 0)
 //   color = base × (0.55 + 0.8 × noise at 1.75 × uv) × light, fogged
 //
-// On stored values, as `game_lit.wgsl`. Past the game's far clip plane
+// On stored values, as `game_lit.wesl`. Past the game's far clip plane
 // nothing is drawn (`lod::GAME_FAR_CLIP`).
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     forward_io::FragmentOutput,
     mesh_functions,
     view_transformations::position_world_to_clip,
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
 
 struct LodVertex {
     @builtin(instance_index) instance_index: u32,
@@ -48,7 +48,7 @@ struct LodLand {
     // Fog near and far, the game's near clip plane (meters); w is 1 when
     // there's fog.
     fog_range: vec4<f32>,
-    // x: the luminance shown at full brightness (see `game_lit.wgsl`).
+    // x: the luminance shown at full brightness (see `game_lit.wesl`).
     scale: vec4<f32>,
     // The loaded cells' area: center x and z, half width (meters), and how
     // far the land inside it is lowered (meters).
@@ -65,23 +65,23 @@ struct SharedLight {
     fog_range: vec4<f32>,
 }
 
-@group(2) @binding(100) var<uniform> lod: LodLand;
-@group(2) @binding(101) var base_texture: texture_2d<f32>;
-@group(2) @binding(102) var base_sampler: sampler;
-@group(2) @binding(103) var normal_texture: texture_2d<f32>;
-@group(2) @binding(104) var normal_sampler: sampler;
-@group(2) @binding(105) var noise_texture: texture_2d<f32>;
-@group(2) @binding(106) var noise_sampler: sampler;
+@group(3) @binding(100) var<uniform> lod: LodLand;
+@group(3) @binding(101) var base_texture: texture_2d<f32>;
+@group(3) @binding(102) var base_sampler: sampler;
+@group(3) @binding(103) var normal_texture: texture_2d<f32>;
+@group(3) @binding(104) var normal_sampler: sampler;
+@group(3) @binding(105) var noise_texture: texture_2d<f32>;
+@group(3) @binding(106) var noise_sampler: sampler;
 // x: geomorph factor; y, z: the chunk's corner in its parent's texture; w:
 // how far it has faded from the parent's texture (1: its own only).
-@group(2) @binding(107) var<uniform> chunk: vec4<f32>;
-@group(2) @binding(108) var parent_texture: texture_2d<f32>;
-@group(2) @binding(109) var parent_sampler: sampler;
-@group(2) @binding(110) var parent_normal_texture: texture_2d<f32>;
-@group(2) @binding(111) var parent_normal_sampler: sampler;
+@group(3) @binding(107) var<uniform> chunk: vec4<f32>;
+@group(3) @binding(108) var parent_texture: texture_2d<f32>;
+@group(3) @binding(109) var parent_sampler: sampler;
+@group(3) @binding(110) var parent_normal_texture: texture_2d<f32>;
+@group(3) @binding(111) var parent_normal_sampler: sampler;
 // x: the game's far clip plane (meters).
-@group(2) @binding(112) var<uniform> clip: vec4<f32>;
-@group(2) @binding(113) var<storage, read> shared_light: SharedLight;
+@group(3) @binding(112) var<uniform> clip: vec4<f32>;
+@group(3) @binding(113) var<storage, read> shared_light: SharedLight;
 
 @vertex
 fn vertex(vertex: LodVertex) -> LodVertexOutput {

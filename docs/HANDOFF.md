@@ -1287,3 +1287,67 @@ Everything private lives in `%USERPROFILE%\nv-re\work\phase0` (state notes in
 - Stray scratch files agents left in the Git install folder
   (`C:/Program Files/Git/tmp_dummy`, `tmp_p3.rs`, `tmp_tests.rs`); deleting
   them there needs the user.
+# Codex handoff: macOS MetalFX viewer check (2026-10-15)
+
+Repository: `/Users/abusager/Documents/ChatGPT/fallout new vegas-rs port to macos/nv-rs-coop-experiment`
+Branch: `codex/coop-experiment-local`. The working tree already had many
+uncommitted Bevy 0.20 and co-op changes; preserve them. Nothing was committed
+or pushed, and no PR was opened.
+
+## Work and checks
+
+- `viewer/src/metalfx.rs` extracts the MetalFX setting into the render app;
+  the normal plugin mode and setting default are both Off.
+- `viewer/src/hud.rs` puts UI on a transparent, native-resolution camera after
+  MetalFX and shows the HUD sprite as an overlay while MetalFX is enabled.
+- `viewer/src/grade.rs` skips its HUD sampler when the overlay is active;
+  `viewer/src/viewmodel.rs` no longer marks the first-person camera as the UI
+  camera.
+- `viewer/metalfx/src/node.rs` skips the MetalFX blit if Bevy has no output
+  attachment during resize or teardown.
+- `viewer/metalfx/src/platform.rs` selects MetalFX's Linear color-processing
+  mode because the viewer supplies linear RGBA16Float. Apple documents the
+  default as perceptual sRGB; the explicit setting did not eliminate the
+  darker MetalFX result in the comparison.
+- The enabled render scale is now 75% (rather than the earlier 50%) to retain
+  cloud detail. The matching Goodsprings On capture still looked darker than
+  Off and softened the clouds, so color parity is unresolved and Off remains
+  the default.
+- The clouds are meshes on the sky dome with vertex alpha fading toward the
+  horizon. Looking down can naturally move the sky out of view. A scripted
+  5-degree downward `--at` capture was black with MetalFX Off. At 25 degrees,
+  an earlier On capture showed terrain filling the frame, but the matching Off
+  capture was black. These scripted camera-angle results are inconsistent and
+  do not establish whether MetalFX changes cloud visibility. The Mac was
+  locked during the attempted interactive check, which prevented UI
+  automation; do not infer an On-versus-Off angle result from those captures.
+- Build command, from `viewer/`: `cargo build --release --bin nv-viewer`.
+  The final build passed after restoring Off as the default.
+- Runtime command used the user's Data folder and `GSDocMitchellHouse`, with
+  `NVRS_NO_BINDLESS=1` and `--answer-boxes`. The house and pause menu rendered
+  without a pink frame. For one validation run, the MetalFX mode and game
+  setting were temporarily enabled at startup, then restored; the scene and
+  HUD rendered at normal size. Evidence image: `/tmp/nv-viewer-metalfx-overlay-on.png`.
+- The MetalFX node emitted one initial `blit pipeline not ready yet` warning,
+  then completed the screenshot run without a render validation failure. A
+  separate exterior start loaded as well. A scripted `--use 001062AC` attempt
+  did not leave the house, so it does not validate the reported exit crash.
+- Scripted clicks opened the settings categories but did not verify the Display
+  page or toggle. Keep both the actual setting interaction and door transition
+  listed as unfinished.
+
+## Active process
+
+No viewer is running. Runtime screenshot runs exited after capture, and the
+temporary interactive test was stopped after the computer-vision control
+reported that the Mac was locked.
+
+## Next
+
+Verify the Display toggle and cloud appearance through the actual UI after the
+Mac is unlocked. Reproduce the real door exit from Doc Mitchell's house while
+watching the render log. Continue investigating the darker MetalFX output
+before recommending that the toggle be enabled by default. Do not open a PR
+until the user asks.
+
+# Handoff: engine port push (2026-10-10, evening)

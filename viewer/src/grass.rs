@@ -2,7 +2,7 @@
 //! loaded in the background for the player's square and the eight around
 //! it (the game fills no farther, whatever `uGridsToLoad` is), one mesh per
 //! grass and square (`cellview::grass`), and drawn with the game's grass
-//! shader (`grass.wgsl`). The light follows the clock as the rest of the
+//! shader (`grass.wesl`). The light follows the clock as the rest of the
 //! outdoors does (`daylight`), and the wind sways each grass at its own
 //! pace every frame.
 
@@ -14,7 +14,8 @@ use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
+use bevy::camera::primitives::Aabb;
 use bevy::pbr::{
     ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
 };
@@ -22,11 +23,10 @@ use bevy::prelude::*;
 use bevy::render::mesh::{
     Indices, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology,
 };
-use bevy::render::primitives::Aabb;
 use bevy::render::render_resource::{
-    AsBindGroup, RenderPipelineDescriptor, ShaderRef, ShaderType, SpecializedMeshPipelineError,
-    VertexFormat,
+    AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError, VertexFormat,
 };
+use bevy::shader::ShaderRef;
 use cellview::grass::{grass_mesh, GrassMesh, GrassModel};
 use cellview::space;
 use esm::FormId;
@@ -37,7 +37,7 @@ use crate::exterior::Exterior;
 use crate::walk::game_point;
 use crate::{FlyCamera, GameFiles, SceneEntity, Spawner};
 
-const SHADER: Handle<Shader> = weak_handle!("6a2f8c41-9d3e-4b57-8e12-c4b7a9d05e63");
+const SHADER: Handle<Shader> = uuid_handle!("6a2f8c41-9d3e-4b57-8e12-c4b7a9d05e63");
 
 /// Each vertex's blade (`InstanceData`, see `world::grass::GrassInstance`).
 pub const ATTRIBUTE_INSTANCE: MeshVertexAttribute =
@@ -45,7 +45,7 @@ pub const ATTRIBUTE_INSTANCE: MeshVertexAttribute =
 
 pub type GrassMaterial = ExtendedMaterial<StandardMaterial, GrassShader>;
 
-/// What the grass shader reads (`grass.wgsl`), in the game's units and
+/// What the grass shader reads (`grass.wesl`), in the game's units and
 /// axes.
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Reflect)]
 pub struct GrassParams {
@@ -110,7 +110,7 @@ pub struct GrassPlugin;
 
 impl Plugin for GrassPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, SHADER, "grass.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, SHADER, "grass.wesl", Shader::from_wesl);
         app.add_plugins(MaterialPlugin::<GrassMaterial>::default())
             .init_resource::<GrassField>()
             .add_systems(
@@ -501,7 +501,7 @@ pub fn light_grass(
     }
 
     for kind in field.types.values() {
-        let Some(m) = materials.get_mut(&kind.material) else {
+        let Some(mut m) = materials.get_mut(&kind.material) else {
             continue;
         };
         let p = &mut m.extension.params;

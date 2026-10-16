@@ -14,14 +14,14 @@
 //                     alpha = c.a
 //   NOLIGHTTEXVCPMA:  rgb = c.rgb * (1 - fog) * c.a, alpha 1, added One/One
 //
-// On stored (gamma-encoded) values, as `game_lit.wgsl`: the picture holds
+// On stored (gamma-encoded) values, as `game_lit.wesl`: the picture holds
 // stored values and the image space pass decodes it.
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     forward_io::FragmentOutput,
     view_transformations::position_world_to_clip,
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
 
 struct ParticleVertex {
     // World position, Bevy's meters, relative to the entity's place.
@@ -46,16 +46,16 @@ struct Particles {
     // when there's fog.
     fog_range: vec4<f32>,
     // x: how the colour reaches the picture (0 blended, 1 added × alpha
-    // (PMA), 2 added, 3 opaque); y: the alpha test (as `game_lit.wgsl`), z
+    // (PMA), 2 added, 3 opaque); y: the alpha test (as `game_lit.wesl`), z
     // its reference; w: the luminance shown at full brightness.
     mode: vec4<f32>,
     // The entity's place (meters): vertices are relative to it.
     origin: vec4<f32>,
 }
 
-@group(2) @binding(100) var<uniform> particles: Particles;
-@group(2) @binding(101) var particle_texture: texture_2d<f32>;
-@group(2) @binding(102) var particle_sampler: sampler;
+@group(3) @binding(100) var<uniform> particles: Particles;
+@group(3) @binding(101) var particle_texture: texture_2d<f32>;
+@group(3) @binding(102) var particle_sampler: sampler;
 
 const METERS_PER_UNIT: f32 = 0.0142875;
 

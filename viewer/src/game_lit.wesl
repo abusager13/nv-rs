@@ -45,7 +45,7 @@
 // shader do (both compiled by the game at run time; read from the actors
 // recording): see `preview::cell::Shading` and `actor` below.
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::alpha_discard,
     forward_io::{VertexOutput, FragmentOutput},
@@ -53,39 +53,34 @@
     mesh_functions,
     skinning,
     view_transformations::position_world_to_clip,
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
-#import bevy_pbr::pbr_types
-#import bevy_pbr::mesh_bindings::mesh
-#ifdef BINDLESS
-#import bevy_render::bindless::{bindless_samplers_filtering, bindless_textures_2d, bindless_textures_cube}
-#endif
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
+import bevy_pbr::render::pbr_types;
+import bevy_pbr::render::mesh_bindings::mesh;
+@if(BINDLESS) import bevy_render::bindless::{bindless_samplers_filtering, bindless_textures_2d, bindless_textures_cube};
 
 // Bevy's mesh vertex input, plus the triangle's corners.
 struct GameVertex {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
-#ifdef VERTEX_NORMALS
+@if(VERTEX_NORMALS)
     @location(1) normal: vec3<f32>,
-#endif
-#ifdef VERTEX_UVS_A
+@if(VERTEX_UVS_A)
     @location(2) uv: vec2<f32>,
-#endif
-#ifdef VERTEX_TANGENTS
+@if(VERTEX_TANGENTS)
     @location(4) tangent: vec4<f32>,
-#endif
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS)
     @location(5) color: vec4<f32>,
-#endif
-#ifdef SKINNED
+@if(SKINNED)
     @location(6) joint_indices: vec4<u32>,
+@if(SKINNED)
     @location(7) joint_weights: vec4<f32>,
-#endif
-#ifdef GAME_CORNERS
+@if(GAME_CORNERS)
     @location(8) corner_a: vec3<f32>,
+@if(GAME_CORNERS)
     @location(9) corner_b: vec3<f32>,
+@if(GAME_CORNERS)
     @location(10) corner_c: vec3<f32>,
-#endif
 }
 
 // Bevy's vertex output, plus the triangle's corners in world space (the
@@ -94,29 +89,24 @@ struct GameVertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
-#ifdef VERTEX_UVS_A
+@if(VERTEX_UVS_A)
     @location(2) uv: vec2<f32>,
-#endif
-#ifdef VERTEX_UVS_B
+@if(VERTEX_UVS_B)
     @location(3) uv_b: vec2<f32>,
-#endif
-#ifdef VERTEX_TANGENTS
+@if(VERTEX_TANGENTS)
     @location(4) world_tangent: vec4<f32>,
-#endif
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS)
     @location(5) color: vec4<f32>,
-#endif
-#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+@if(VERTEX_OUTPUT_INSTANCE_INDEX)
     @location(6) @interpolate(flat) instance_index: u32,
-#endif
-#ifdef VISIBILITY_RANGE_DITHER
+@if(VISIBILITY_RANGE_DITHER)
     @location(7) @interpolate(flat) visibility_range_dither: i32,
-#endif
-#ifdef GAME_CORNERS
+@if(GAME_CORNERS)
     @location(8) corner_a: vec3<f32>,
+@if(GAME_CORNERS)
     @location(9) corner_b: vec3<f32>,
+@if(GAME_CORNERS)
     @location(10) corner_c: vec3<f32>,
-#endif
 }
 
 // Bevy's mesh vertex shader (`bevy_pbr::render::mesh`), less morph
@@ -126,44 +116,39 @@ struct GameVertexOutput {
 fn vertex(vertex: GameVertex) -> GameVertexOutput {
     set_game_slot(vertex.instance_index);
     var out: GameVertexOutput;
-#ifdef SKINNED
+@if(SKINNED) {
     let world_from_local = skinning::skin_model(vertex.joint_indices, vertex.joint_weights, vertex.instance_index);
-#else
+} @else {
     let world_from_local = mesh_functions::get_world_from_local(vertex.instance_index);
-#endif
-#ifdef VERTEX_NORMALS
-#ifdef SKINNED
+}
+@if(VERTEX_NORMALS) {
+@if(SKINNED) {
     out.world_normal = skinning::skin_normals(world_from_local, vertex.normal);
-#else
+} @else {
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
-#endif
-#endif
+}
+}
     out.world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
     out.position = position_world_to_clip(out.world_position.xyz);
     // Decals are pulled nearer by a constant in depth (0 for the rest), as
     // the game's depth bias does; depth is z / w, so add w times it.
     out.position.z += out.position.w * game_draw().x;
-#ifdef VERTEX_UVS_A
+@if(VERTEX_UVS_A)
     out.uv = vertex.uv;
-#endif
-#ifdef VERTEX_TANGENTS
+@if(VERTEX_TANGENTS)
     out.world_tangent = mesh_functions::mesh_tangent_local_to_world(world_from_local, vertex.tangent, vertex.instance_index);
-#endif
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS)
     out.color = vertex.color;
-#endif
-#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+@if(VERTEX_OUTPUT_INSTANCE_INDEX)
     out.instance_index = vertex.instance_index;
-#endif
-#ifdef VISIBILITY_RANGE_DITHER
+@if(VISIBILITY_RANGE_DITHER)
     out.visibility_range_dither = mesh_functions::get_visibility_range_dither_level(
         vertex.instance_index, world_from_local[3]);
-#endif
-#ifdef GAME_CORNERS
+@if(GAME_CORNERS) {
     out.corner_a = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.corner_a, 1.0)).xyz;
     out.corner_b = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.corner_b, 1.0)).xyz;
     out.corner_c = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.corner_c, 1.0)).xyz;
-#endif
+}
     return out;
 }
 
@@ -173,24 +158,18 @@ fn bevy_input(g: GameVertexOutput) -> VertexOutput {
     in.position = g.position;
     in.world_position = g.world_position;
     in.world_normal = g.world_normal;
-#ifdef VERTEX_UVS_A
+@if(VERTEX_UVS_A)
     in.uv = g.uv;
-#endif
-#ifdef VERTEX_UVS_B
+@if(VERTEX_UVS_B)
     in.uv_b = g.uv_b;
-#endif
-#ifdef VERTEX_TANGENTS
+@if(VERTEX_TANGENTS)
     in.world_tangent = g.world_tangent;
-#endif
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS)
     in.color = g.color;
-#endif
-#ifdef VERTEX_OUTPUT_INSTANCE_INDEX
+@if(VERTEX_OUTPUT_INSTANCE_INDEX)
     in.instance_index = g.instance_index;
-#endif
-#ifdef VISIBILITY_RANGE_DITHER
+@if(VISIBILITY_RANGE_DITHER)
     in.visibility_range_dither = g.visibility_range_dither;
-#endif
     return in;
 }
 
@@ -210,7 +189,7 @@ fn corners_of(g: GameVertexOutput) -> Corners {
     out.b = p;
     out.c = p;
     out.weights = vec3<f32>(1.0, 0.0, 0.0);
-#ifdef GAME_CORNERS
+@if(GAME_CORNERS) {
     let e0 = g.corner_b - g.corner_a;
     let e1 = g.corner_c - g.corner_a;
     let e2 = p - g.corner_a;
@@ -229,7 +208,7 @@ fn corners_of(g: GameVertexOutput) -> Corners {
         out.c = g.corner_c;
         out.weights = vec3<f32>(1.0 - v - w, v, w);
     }
-#endif
+}
     return out;
 }
 
@@ -335,21 +314,21 @@ struct GameLitIndices {
     shared_light: u32,
 }
 
-#ifdef BINDLESS
-@group(2) @binding(100) var<storage> game_lit_indices: array<GameLitIndices>;
-@group(2) @binding(101) var<storage> game_lit: array<GameLighting>;
-#else
-@group(2) @binding(50) var<uniform> game: GameLighting;
-@group(2) @binding(51) var glow_texture: texture_2d<f32>;
-@group(2) @binding(52) var glow_sampler: sampler;
-@group(2) @binding(53) var normal_texture: texture_2d<f32>;
-@group(2) @binding(54) var normal_sampler: sampler;
-@group(2) @binding(55) var environment_texture: texture_cube<f32>;
-@group(2) @binding(56) var environment_sampler: sampler;
-@group(2) @binding(57) var environment_mask: texture_2d<f32>;
-@group(2) @binding(58) var environment_mask_sampler: sampler;
-@group(2) @binding(59) var shared_light_texture: texture_2d<f32>;
-#endif
+@if(BINDLESS) {
+@group(3) @binding(100) var<storage> game_lit_indices: array<GameLitIndices>;
+@group(3) @binding(101) var<storage> game_lit: array<GameLighting>;
+} @else {
+@group(3) @binding(50) var<uniform> game: GameLighting;
+@group(3) @binding(51) var glow_texture: texture_2d<f32>;
+@group(3) @binding(52) var glow_sampler: sampler;
+@group(3) @binding(53) var normal_texture: texture_2d<f32>;
+@group(3) @binding(54) var normal_sampler: sampler;
+@group(3) @binding(55) var environment_texture: texture_cube<f32>;
+@group(3) @binding(56) var environment_sampler: sampler;
+@group(3) @binding(57) var environment_mask: texture_2d<f32>;
+@group(3) @binding(58) var environment_mask_sampler: sampler;
+@group(3) @binding(59) var shared_light_texture: texture_2d<f32>;
+}
 
 // The material being drawn's slot (set first thing in each entry point).
 var<private> game_slot: u32;
@@ -358,7 +337,7 @@ fn set_game_slot(instance_index: u32) {
     game_slot = mesh[instance_index].material_and_lightmap_bind_group_slot & 0xffffu;
 }
 
-#ifdef BINDLESS
+@if(BINDLESS) {
 fn game_index() -> u32 {
     return game_lit_indices[game_slot].lighting;
 }
@@ -396,7 +375,7 @@ fn sample_environment_mask(uv: vec2<f32>) -> vec4<f32> {
 fn shared_light_vector(i: i32) -> vec4<f32> {
     return textureLoad(bindless_textures_2d[game_lit_indices[game_slot].shared_light], vec2<i32>(i, 0), 0);
 }
-#else
+} @else {
 fn game_ambient() -> vec4<f32> { return game.ambient; }
 fn game_directional_color() -> vec4<f32> { return game.directional_color; }
 fn game_directional_direction() -> vec4<f32> { return game.directional_direction; }
@@ -427,7 +406,7 @@ fn sample_environment_mask(uv: vec2<f32>) -> vec4<f32> {
 fn shared_light_vector(i: i32) -> vec4<f32> {
     return textureLoad(shared_light_texture, vec2<i32>(i, 0), 0);
 }
-#endif
+}
 
 // The ambient, the sun and the fog: the surface's own, or the hour's
 // shared light outdoors.
@@ -499,7 +478,11 @@ fn fragment(
     // The alpha before Bevy's own handling (which makes opaque surfaces'
     // alpha 1): what the game's alpha test compares.
     let raw_alpha = pbr_input.material.base_color.a;
-    pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
+    pbr_input.material.base_color = alpha_discard(
+        pbr_input.material.flags,
+        pbr_input.material.alpha_cutoff,
+        pbr_input.material.base_color,
+    );
 
     var out: FragmentOutput;
     let base = pbr_input.material.base_color;
@@ -551,8 +534,8 @@ fn fragment(
     // The specular mask: the normal map's alpha. Without a normal map it's
     // a guess (full strength).
     var specular_mask = 1.0;
-#ifdef VERTEX_TANGENTS
-#ifdef VERTEX_UVS_A
+@if(VERTEX_TANGENTS) {
+@if(VERTEX_UVS_A) {
     // The normal map (`SLS2001` and the rest): its stored value times 2
     // minus 1, normalized, in the frame of the texture's U (red), V
     // (green) and the vertex normal (blue); U and V come from the mesh
@@ -566,8 +549,8 @@ fn fragment(
         reflect_normal = normalize(0.1 * (m.x * t + m.y * b) + m.z * vertex_normal);
         specular_mask = stored.a;
     }
-#endif
-#endif
+}
+}
     let gets_specular = game_surface().y > 0.5;
     var specular = vec3<f32>(0.0);
     // People (`preview::cell::Shading`): skin's own passes and the hair
@@ -644,11 +627,11 @@ fn fragment(
 
     // EmittanceColor times the glow map's stored color.
     var mask = vec3<f32>(1.0);
-#ifdef VERTEX_UVS_A
+@if(VERTEX_UVS_A) {
     if (game_emissive().w > 0.5) {
         mask = sample_glow(in.uv).rgb;
     }
-#endif
+}
     light += game_emissive().rgb * mask;
     light = max(light, vec3<f32>(0.0));
 
@@ -673,7 +656,7 @@ fn fragment(
 
     // Written as stored (gamma-encoded) values, as the game's frame buffer
     // holds them, so blended surfaces (light beams, glass, decals) blend
-    // the way the game blends them; the image space pass (`grade.wgsl`)
+    // the way the game blends them; the image space pass (`grade.wesl`)
     // turns the finished picture into linear light for the screen.
     out.color = vec4<f32>(shaded * game_scale().x * view_bindings::view.exposure, alpha);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
@@ -686,14 +669,14 @@ fn fragment(
 // from it; a grey tint (no change) counts as a full mask.
 fn hair_mask(in: VertexOutput) -> f32 {
     var mask = 1.0;
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS) {
     let factor = srgb_encode(in.color.rgb) - vec3<f32>(1.0);
     let tint = 2.0 * game_hair_tint().rgb - vec3<f32>(1.0);
     let t2 = dot(tint, tint);
     if (t2 > 1e-4) {
         mask = saturate(dot(factor, tint) / t2);
     }
-#endif
+}
     return mask;
 }
 
@@ -705,17 +688,16 @@ fn hair_mask(in: VertexOutput) -> f32 {
 // (linear) color, encoded.
 fn stored_surface(in: VertexOutput, base: vec3<f32>, textured: bool) -> vec3<f32> {
     var unshaded = base;
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS) {
     let vertex = in.color.rgb;
     unshaded = select(base / max(vertex, vec3<f32>(1e-6)), vec3<f32>(0.0), vertex <= vec3<f32>(0.0));
-#endif
+}
     var surface = unshaded;
     if (!textured) {
         surface = srgb_encode(unshaded);
     }
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS)
     surface *= srgb_encode(vertex);
-#endif
     return surface;
 }
 
@@ -755,15 +737,14 @@ fn reflection(in: VertexOutput, n: vec3<f32>, to_eye: vec3<f32>, normal_alpha: f
     let along = vec3<f32>(r.x, -r.z, r.y);
     var c = sample_environment(along).rgb;
     var mask = normal_alpha;
-#ifdef VERTEX_UVS_A
+@if(VERTEX_UVS_A) {
     if (game_environment().y > 0.5) {
         mask = sample_environment_mask(in.uv).r;
     }
-#endif
+}
     c *= mask * game_environment().x * game_environment().w;
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS)
     c *= srgb_encode(in.color.rgb);
-#endif
     return c * (1.0 - fog);
 }
 

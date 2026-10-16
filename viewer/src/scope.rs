@@ -30,12 +30,13 @@
 //! camera), forcing first person from third (`00950460(1)`), weapon mods'
 //! zoom (mod effect 0xe).
 
+use bevy::asset::RenderAssetUsages;
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Hdr;
+use bevy::camera::{ClearColorConfig, RenderTarget};
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
-use bevy::render::camera::{ClearColorConfig, RenderTarget};
 use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::view::RenderLayers;
 use esm::FormId;
 use world::dialogue::PLAYER_REF;
 
@@ -69,12 +70,12 @@ pub fn spawn_camera(commands: &mut Commands, layer: Handle<Image>) {
         Camera3d::default(),
         Camera {
             is_active: false,
-            target: RenderTarget::from(layer),
             order: -5,
-            hdr: true,
             clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         },
+        RenderTarget::from(layer),
+        Hdr,
         Projection::from(PerspectiveProjection {
             fov: frustum_fov(75.0),
             near: 1.0,
@@ -83,8 +84,7 @@ pub fn spawn_camera(commands: &mut Commands, layer: Handle<Image>) {
         }),
         Tonemapping::None,
         DebandDither::Disabled,
-        // No light clusters: nothing here is lit by Bevy's lights.
-        bevy::pbr::ClusterConfig::None,
+        bevy::light::cluster::ClusterConfig::Single,
         Msaa::Off,
         Transform::IDENTITY,
         RenderLayers::layer(SCOPE_LAYER),

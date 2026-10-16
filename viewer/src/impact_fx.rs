@@ -21,9 +21,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
+use bevy::camera::visibility::NoFrustumCulling;
 use bevy::prelude::*;
 use bevy::render::mesh::VertexAttributeValues;
-use bevy::render::view::NoFrustumCulling;
 use cellview::impacts::{effect_piece_at, effect_placement, EffectModel};
 use cellview::space;
 use esm::FormId;
@@ -141,7 +141,7 @@ impl Plugin for ImpactFxPlugin {
             )
             .add_systems(
                 PostUpdate,
-                place_effects.after(bevy::transform::TransformSystem::TransformPropagate),
+                place_effects.after(bevy::transform::TransformSystems::Propagate),
             );
     }
 }
@@ -464,7 +464,7 @@ fn clip_piece(
     else {
         return None;
     };
-    let m = global.compute_matrix();
+    let m = global.to_matrix();
     let turn = Mat3::from_mat4(m);
     let to_game = |v: Vec3| [v.x, -v.z, v.y];
     let corners: Vec<usize> = match mesh.indices() {
@@ -650,7 +650,7 @@ pub fn age_impacts(
         match decals::fade(d.age, lifetime) {
             Some(strength) => {
                 if strength < 1.0 {
-                    if let Some(m) = materials.get_mut(&material.0) {
+                    if let Some(mut m) = materials.get_mut(&material.0) {
                         m.base.base_color.set_alpha(strength);
                         m.extension.lighting.environment.w = strength;
                     }
@@ -722,7 +722,7 @@ pub fn place_effects(
                 if *v != Visibility::Visible {
                     *v = Visibility::Visible;
                 }
-                if let (Some(a), Some(mat)) = (opacity, materials.get_mut(&material.0)) {
+                if let (Some(a), Some(mut mat)) = (opacity, materials.get_mut(&material.0)) {
                     mat.base.base_color.set_alpha(a);
                     mat.extension.lighting.environment.w = a;
                 }

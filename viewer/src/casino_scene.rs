@@ -20,12 +20,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Hdr;
+use bevy::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::prelude::*;
-use bevy::render::camera::{CameraOutputMode, Exposure, RenderTarget};
 use bevy::render::render_resource::WgpuFeatures;
 use bevy::render::renderer::RenderDevice;
-use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use cellview::caravan::{ModelData, Pose};
 use cellview::lockpick::MenuCamera;
@@ -293,11 +294,9 @@ fn show_casino(
             .spawn((
                 Camera3d::default(),
                 Camera {
-                    target: RenderTarget::from(target),
                     // Before the HUD's camera (−4), which draws the menus'
                     // pictures over it.
                     order: -5,
-                    hdr: true,
                     clear_color: ClearColorConfig::Custom(Color::NONE),
                     output_mode: CameraOutputMode::Write {
                         blend_state: None,
@@ -305,6 +304,8 @@ fn show_casino(
                     },
                     ..default()
                 },
+                RenderTarget::from(target),
+                Hdr,
                 Tonemapping::None,
                 DebandDither::Disabled,
                 projection,
@@ -392,7 +393,7 @@ fn show_casino(
         s.lights = v.lights.clone();
         let lighting = crate::lockpick::menu_lighting(&v.lights, settings.brightness);
         for m in &s.materials {
-            if let Some(mat) = materials.get_mut(m) {
+            if let Some(mut mat) = materials.get_mut(m) {
                 mat.extension.lighting = lighting;
             }
         }
@@ -429,7 +430,7 @@ fn show_casino(
                 .clone(),
             None => None,
         };
-        if let (Some(h), Some(mat)) = (image, materials.get_mut(&piece.material)) {
+        if let (Some(h), Some(mut mat)) = (image, materials.get_mut(&piece.material)) {
             if mat.base.base_color_texture.as_ref() != Some(&h) {
                 mat.base.base_color_texture = Some(h);
             }

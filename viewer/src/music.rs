@@ -13,6 +13,7 @@
 //! viewer's real time), and a held deck (one frame after a battle intro)
 //! playing on rather than pausing.
 
+use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -208,14 +209,14 @@ impl Iterator for TrackDecoder {
 }
 
 impl Source for TrackDecoder {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         None
     }
-    fn channels(&self) -> u16 {
-        self.channels
+    fn channels(&self) -> NonZeroU16 {
+        NonZeroU16::new(self.channels).unwrap_or(NonZeroU16::MIN)
     }
-    fn sample_rate(&self) -> u32 {
-        self.rate
+    fn sample_rate(&self) -> NonZeroU32 {
+        NonZeroU32::new(self.rate).unwrap_or(NonZeroU32::MIN)
     }
     fn total_duration(&self) -> Option<Duration> {
         None
@@ -223,7 +224,6 @@ impl Source for TrackDecoder {
 }
 
 impl Decodable for MusicTrack {
-    type DecoderItem = f32;
     type Decoder = TrackDecoder;
     fn decoder(&self) -> TrackDecoder {
         let feed = self.feed.lock().ok().and_then(|mut f| f.take());

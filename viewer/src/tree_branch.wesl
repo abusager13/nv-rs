@@ -17,12 +17,12 @@
 // the game draws (point lights, highlights) isn't confirmed: only this one
 // is drawn.
 
-#import bevy_pbr::{
+import bevy_pbr::render::{
     forward_io::FragmentOutput,
     mesh_functions,
     view_transformations::position_world_to_clip,
-}
-#import bevy_pbr::mesh_view_bindings as view_bindings
+};
+import bevy_pbr::render::mesh_view_bindings as view_bindings;
 
 struct BranchVertex {
     @builtin(instance_index) instance_index: u32,
@@ -56,11 +56,11 @@ struct Branches {
     wind: array<vec4<f32>, 16>,
 }
 
-@group(2) @binding(100) var<uniform> branches: Branches;
-@group(2) @binding(101) var base_map: texture_2d<f32>;
-@group(2) @binding(102) var base_sampler: sampler;
-@group(2) @binding(103) var normal_map: texture_2d<f32>;
-@group(2) @binding(104) var normal_sampler: sampler;
+@group(3) @binding(100) var<uniform> branches: Branches;
+@group(3) @binding(101) var base_map: texture_2d<f32>;
+@group(3) @binding(102) var base_sampler: sampler;
+@group(3) @binding(103) var normal_map: texture_2d<f32>;
+@group(3) @binding(104) var normal_sampler: sampler;
 
 fn projected_length(world: vec3<f32>) -> f32 {
     let v = view_bindings::view.view_from_world * vec4<f32>(world, 1.0);

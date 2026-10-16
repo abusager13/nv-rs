@@ -36,12 +36,12 @@ use std::time::Instant;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::audio::{AudioPlayer, AudioSink, AudioSinkPlayback, PlaybackSettings};
+use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::image::ImageSampler;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::render::view::RenderLayers;
 use bevy::sprite::Anchor;
 use bevy::window::PrimaryWindow;
 use world::scripting::Video;
@@ -343,7 +343,6 @@ pub fn start_movies(
             Camera {
                 // Over everything else, as the game's own loop draws.
                 order: 100,
-                hdr: false,
                 clear_color: ClearColorConfig::Custom(Color::BLACK),
                 ..default()
             },
@@ -375,9 +374,9 @@ pub fn start_movies(
                 Sprite {
                     image: image.clone(),
                     custom_size: Some(Vec2::new(w as f32 * scale, h as f32 * scale) / sf),
-                    anchor: Anchor::TopLeft,
                     ..default()
                 },
+                Anchor::TOP_LEFT,
                 Transform::from_xyz((px - sw / 2.0) / sf, (sh / 2.0 - py) / sf, 0.0),
                 RenderLayers::layer(MOVIE_LAYER),
             ))
@@ -481,8 +480,8 @@ pub fn play_movies(
             playing.decoder.to_bgrx(&mut playing.frame);
             let (fw, fh) = (playing.decoder.width(), playing.decoder.height());
             for t in &playing.tiles {
-                if let Some(image) = images.get_mut(&t.image) {
-                    fill_tile(image, &playing.frame, fw, fh, t);
+                if let Some(mut image) = images.get_mut(&t.image) {
+                    fill_tile(&mut *image, &playing.frame, fw, fh, t);
                 }
             }
         }

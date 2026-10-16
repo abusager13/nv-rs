@@ -5,7 +5,7 @@
 //! for its distance from the camera (`speedtree::lod`), swayed by the
 //! weather's wind as the game moves it (`speedtree::wind`), and lit like
 //! the rest of the outdoors (the leaves with the image space's tree
-//! dimmer). Shaders: `tree_leaf.wgsl`, `tree_branch.wgsl`.
+//! dimmer). Shaders: `tree_leaf.wesl`, `tree_branch.wesl`.
 
 // The shader-layout derive generates checking functions the compiler
 // reports as unused.
@@ -15,7 +15,8 @@ use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use bevy::asset::{load_internal_asset, weak_handle, RenderAssetUsages};
+use bevy::asset::{load_internal_asset, uuid_handle, RenderAssetUsages};
+use bevy::camera::primitives::Aabb;
 use bevy::pbr::{
     ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
 };
@@ -23,11 +24,11 @@ use bevy::prelude::*;
 use bevy::render::mesh::{
     Indices, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology,
 };
-use bevy::render::primitives::Aabb;
 use bevy::render::render_resource::{
-    AsBindGroup, Face, RenderPipelineDescriptor, ShaderRef, ShaderType,
-    SpecializedMeshPipelineError, VertexFormat,
+    AsBindGroup, Face, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
+    VertexFormat,
 };
+use bevy::shader::ShaderRef;
 use cellview::space;
 use cellview::tree::{PlacedTree, TreeModel};
 use esm::FormId;
@@ -41,8 +42,8 @@ use crate::exterior::Exterior;
 use crate::walk::game_point;
 use crate::{FlyCamera, GameFiles, SceneEntity, Spawner};
 
-const LEAF_SHADER: Handle<Shader> = weak_handle!("3c1f6a52-8b2e-4d71-9e4a-5f0d2b7c8e19");
-const BRANCH_SHADER: Handle<Shader> = weak_handle!("8e4d2a17-6c3b-4f95-a1d8-2b7e9c0f4a63");
+const LEAF_SHADER: Handle<Shader> = uuid_handle!("3c1f6a52-8b2e-4d71-9e4a-5f0d2b7c8e19");
+const BRANCH_SHADER: Handle<Shader> = uuid_handle!("8e4d2a17-6c3b-4f95-a1d8-2b7e9c0f4a63");
 
 /// `BLENDINDICES`: wind weight, wind matrix × 4, and the leaf's corner and
 /// brightness (or the branch's brightness), card scale.
@@ -57,7 +58,7 @@ pub const ATTRIBUTE_BINORMAL: MeshVertexAttribute =
 pub type LeafMaterial = ExtendedMaterial<StandardMaterial, LeafShader>;
 pub type BranchMaterial = ExtendedMaterial<StandardMaterial, BranchShader>;
 
-/// What the leaf shader reads (`tree_leaf.wgsl`), in the game's units and
+/// What the leaf shader reads (`tree_leaf.wesl`), in the game's units and
 /// axes.
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Reflect)]
 pub struct LeafParams {
@@ -85,7 +86,7 @@ pub struct LeafShader {
     pub texture: Option<Handle<Image>>,
 }
 
-/// What the branch shader reads (`tree_branch.wgsl`).
+/// What the branch shader reads (`tree_branch.wesl`).
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Reflect)]
 pub struct BranchParams {
     pub ambient: Vec4,
@@ -171,8 +172,8 @@ pub struct TreePlugin;
 
 impl Plugin for TreePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, LEAF_SHADER, "tree_leaf.wgsl", Shader::from_wgsl);
-        load_internal_asset!(app, BRANCH_SHADER, "tree_branch.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, LEAF_SHADER, "tree_leaf.wesl", Shader::from_wesl);
+        load_internal_asset!(app, BRANCH_SHADER, "tree_branch.wesl", Shader::from_wesl);
         app.add_plugins((
             MaterialPlugin::<LeafMaterial>::default(),
             MaterialPlugin::<BranchMaterial>::default(),
@@ -774,7 +775,7 @@ pub fn sway_trees(
 
     let light = field.light;
     for gpu in field.gpu.values() {
-        if let Some(m) = leaf_materials.get_mut(&gpu.leaf_material) {
+        if let Some(mut m) = leaf_materials.get_mut(&gpu.leaf_material) {
             leaf_params(
                 &mut m.extension.params,
                 gpu,
@@ -784,7 +785,7 @@ pub fn sway_trees(
                 up,
             );
         }
-        if let Some(m) = branch_materials.get_mut(&gpu.branch_material) {
+        if let Some(mut m) = branch_materials.get_mut(&gpu.branch_material) {
             let p = &mut m.extension.params;
             if let Some(frame) = &frame {
                 p.wind = wind_rows(frame);
