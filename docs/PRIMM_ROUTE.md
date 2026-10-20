@@ -29,11 +29,15 @@ These records were read from `FalloutNV.esm` with `nvinspect`:
 
 The cross-place path used by Beagle is the game's navmesh-info search. Its
 edge expansion (`FalloutNV.exe 006b8490`) includes the `NVCI` third-list door
-edges and adds 409600 to a locked-door edge; the surrounding search is
-`006b8c50` and `006b9180`. The implementation now resolves those door edges
-from paired `XTEL` records in `crates/world/src/ai/navinfo.rs`, and
-`door_toward` takes the first door on the resulting route. Generated test data
-covers a multi-door chain and a locked door changing the chosen route.
+edges. Each door edge uses distance between the two info positions × the
+current info's `k` × 1, then adds the path cost so far `g`, then adds 409600
+for a locked door. The surrounding search is `006b8c50` and `006b9180`. The
+implementation resolves door edges from paired `XTEL` records in
+`crates/world/src/ai/navinfo.rs`, and `door_toward` takes the first door on the
+resulting route. Generated test data covers a multi-door chain and a locked
+door changing the chosen route. When a paired door points back to the current
+node's parent, the search skips that reverse edge and continues expanding the
+other doors; it does not abort the whole search.
 
 ## Acceptance route
 
@@ -52,14 +56,14 @@ quest variable is forced. The route's expected results are the Slim sheriff
 message and `XP +300` / `XP +30`.
 
 The route is opt-in because it takes several minutes; the default acceptance
-set remains `doc,vcg02,vms16`. The latest acceptance run passed end to end.
+set remains `doc,vcg02,vms16`. A current-main acceptance rerun is in progress.
 Beagle's sheriff conversation selected INFO `000DA106`, which set
 `BeagleCaptured` to 3. Nash then offered “What about Primm Slim? Could he be
 sheriff?”, and selecting it ran INFO `00162C19` and displayed the optional
 objective. The route selected Slim's Science 30 response; INFO `000EC078`
 succeeded, the sheriff message appeared, and the viewer reported `XP +300`
 and `XP +30`. Selecting the direct Nash topic avoids opening the unrelated
-general-topic list.
+general-topic list. The game `Data` folder is available on this machine.
 
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
 marker, Beagle's relocation to the player, and starting each conversation are

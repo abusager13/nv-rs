@@ -1410,6 +1410,13 @@ pub mod quest_ids {
     pub const LINK_DOOR2: u32 = 0xA57;
     pub const FAR_MARKER: u32 = 0xA58;
     pub const FAR_TRAVEL: u32 = 0xA59;
+    /// A pair of interiors connected through an intermediate place.
+    pub const CELL3: u32 = 0xB23;
+    pub const CELL4: u32 = 0xB24;
+    pub const LINK_DOOR3: u32 = 0xB25;
+    pub const LINK_DOOR4: u32 = 0xB26;
+    pub const LINK_DOOR5: u32 = 0xB27;
+    pub const LINK_DOOR6: u32 = 0xB28;
     /// A follow package: the player, within 200.
     pub const FOLLOW_PLAYER: u32 = 0xA5A;
     /// A strongbox (`StrongboxRef`, the chest's base) locked at level 50
@@ -2646,6 +2653,12 @@ End
         [150.0, 150.0, 0.0],
         LINK_DOOR2,
         [400.0, 0.0, 0.0],
+    ));
+    refs.extend(link_door(
+        LINK_DOOR3,
+        [20.0, 150.0, 0.0],
+        LINK_DOOR4,
+        [10.0, 0.0, 0.0],
     ));
     let mut xloc = vec![50u8, 0, 0, 0];
     xloc.extend(KEY.to_le_bytes());
