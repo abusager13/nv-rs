@@ -75,6 +75,7 @@ on this machine.
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
 marker, Beagle's relocation to the player, and starting each conversation are
 still forced by console commands. It was exercised in the Linux viewer but has
-not been compared side by side with the original game. NPC obstacle replanning
-remains unfinished shared AI behavior; this run does not establish a Linux-only
-navigation defect.
+also passed on macOS with PR #108's Metal renderer overlay, as recorded in
+`docs/PLAYTESTING.md`. Neither run has been compared side by side with the
+original game. NPC obstacle replanning remains unfinished shared AI behavior;
+this run does not establish a Linux-only navigation defect.
