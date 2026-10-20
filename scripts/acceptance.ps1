@@ -170,13 +170,14 @@ $routeArgs = @{
             @('--say', 'sheriff now',
               '--say', 'law and order back') +
             (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
-            (Run-At 340 'PrimmJohnsonNashRef.StartConversation player') +
+            # Give the Primm exterior references time to load after the move.
+            (Run-At 345 'PrimmJohnsonNashRef.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
               # Nash's post-INFO exit topic varies between "Goodbye" and
               # "I need to get going"; both contain this distinctive text.
               '--say', 'go') +
             (Run-At 430 'player.MoveTo PrimmSlimREF') +
-            (Run-At 430 'PrimmSlimREF.StartConversation player') +
+            (Run-At 435 'PrimmSlimREF.StartConversation player') +
             @('--say', 'Reprogram Primm Slim',
               '--say', 'go', '--wait', '600')
         Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
