@@ -998,6 +998,7 @@ pub fn run_scripts(
     time: Res<Time>,
     game: Res<GameFiles>,
     scripts: Res<Scripts>,
+    pipboy: Option<Res<crate::pipboy::Pipboy>>,
     mut state: ResMut<DialogueState>,
     here: Res<Here>,
     exterior: Option<Res<crate::exterior::Exterior>>,
@@ -1889,6 +1890,10 @@ pub fn run_scripts(
             );
         }
     }
+    include_pipboy_menu(
+        &mut menus,
+        pipboy.as_deref().and_then(crate::pipboy::Pipboy::top_class),
+    );
     for n in &quest_texts {
         println!("{}: {}", n.title, n.subtitle);
     }
@@ -1944,9 +1949,39 @@ pub fn run_scripts(
     }
 }
 
+/// Add the open Pip-Boy's top menu to the same per-frame dispatch as other
+/// menu classes. A Pip-Boy class may already have been queued by a script in
+/// this frame, and must only dispatch once.
+fn include_pipboy_menu(menus: &mut Vec<u16>, pipboy_class: Option<i32>) {
+    let Some(class) = pipboy_class.and_then(|class| u16::try_from(class).ok()) else {
+        return;
+    };
+    if !menus.contains(&class) {
+        menus.push(class);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pipboy_menu_joins_the_shared_dispatch_once() {
+        let mut menus = vec![1, 1002];
+        include_pipboy_menu(&mut menus, Some(1003));
+        include_pipboy_menu(&mut menus, Some(1003));
+        include_pipboy_menu(&mut menus, Some(1002));
+        assert_eq!(menus, [1, 1002, 1003]);
+    }
+
+    #[test]
+    fn pipboy_menu_ignores_absent_or_unrepresentable_classes() {
+        let mut menus = vec![1];
+        include_pipboy_menu(&mut menus, None);
+        include_pipboy_menu(&mut menus, Some(-1));
+        include_pipboy_menu(&mut menus, Some(i32::from(u16::MAX) + 1));
+        assert_eq!(menus, [1]);
+    }
 
     #[derive(Resource)]
     struct TestLoadResult(Result<bool, String>);

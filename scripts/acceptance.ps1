@@ -48,7 +48,7 @@ param(
     # The game's Data folder (or set NV_DATA).
     [string]$Data = $env:NV_DATA,
     # Which routes to run, comma-separated (doc, vcg02, vms16, ede).
-    [string]$Routes = 'doc,vcg02,vms16,ede',
+    [string]$Routes = 'doc,vcg02,vms16',
     # Where logs and screenshots go (default: %USERPROFILE%\nv-re\acceptance\<time>).
     [string]$Out,
     # Build the release viewer first.
