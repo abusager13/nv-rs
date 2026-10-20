@@ -78,6 +78,7 @@ function Run-Line([string[]]$lines) {
     $a
 }
 function Run-At([int]$at, [string]$line) { @('--run-at', "$at", $line) }
+function Key-At([int]$at, [string]$key) { @('--key-at', "$at", $key) }
 
 $routeArgs = @{
     doc   = @{
@@ -113,7 +114,7 @@ $routeArgs = @{
         Success = @('XP +50')
     }
     primm = @{
-        Args    = @('VikkiAndVance', '--talk') +
+        Args    = @('VikkiAndVance', '--talk') + (Key-At 0 'space') +
             (Run-Line @('player.ModAV Health 5000', 'player.SetAV Science 30')) +
             @('--say', 'I have some questions about Primm.',
               '--say', 'What happened to Primm?',
