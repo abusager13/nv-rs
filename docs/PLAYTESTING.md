@@ -28,6 +28,9 @@ dialogue-marker result has not been checked on Windows. This does not
 establish gameplay-route parity or support for running `FalloutNV.exe` on
 macOS.
 
+The macOS distant-land material has no prepass or shadow pass, so it may
+look different from other platforms.
+
 ## Current live route
 
 The verified route is a copied stage-55 opening save moved to the vigor tester in Doc Mitchell's house. Triggering the tester advances to stage 60, Doc gives the instruction, the objective appears, and pressing E opens the original SPECIAL scene. Same-cell F9 reload at the tester also works after script occupancy is reset. This verifies that segment of the route only; it does not demonstrate completion of the opening or campaign.
