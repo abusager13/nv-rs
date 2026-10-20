@@ -1,6 +1,6 @@
 # nv-rs milestones
 
-Updated 2026-10-15. The active plan and how each step is judged done. Keep
+Updated 2026-10-20. The active plan and how each step is judged done. Keep
 this file short: per-session detail goes in docs/HANDOFF.md, per-function
 status in [LEDGER.md](LEDGER.md), and the full list of systems in
 [SYSTEMS.md](SYSTEMS.md). The log up to 2026-10-14 is in
@@ -56,9 +56,11 @@ These were the original milestones. The engine port now delivers them.
 
 The release viewer built and launched on Fedora in a native Wayland session
 with Vulkan, with `DISPLAY` unset, and loaded `GSDocMitchellHouse` from the
-user's local game data (2026-10-15). Gameplay has not been compared against
-the original on Linux, and no packaged Linux build is provided. **Next
-action:** run and compare a gameplay acceptance route on Linux.
+user's local game data (2026-10-15). The GPU was an NVIDIA GTX 1650; the
+driver version was not recorded. Gameplay has not been compared against the
+original on Linux, and no packaged Linux build is provided. **Next action:**
+record the driver version, then run and compare a gameplay acceptance route
+on Linux.
 
 ## Rules that hold throughout
 
