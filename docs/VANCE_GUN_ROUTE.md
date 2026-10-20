@@ -44,30 +44,12 @@ it. No quest stage or quest variable is forced. The setup sets Science
 to 50 and Speech to 55, and uses console `MoveTo` and `StartConversation`
 lines to move the player and start each conversation.
 
-**Status:** the complete acceptance route passed on the Linux viewer built
-from current `main` (`56a3d102c79cd6a5bc34160febfeb8af87bd763b`). The
-cross-cell move into Wins Residence needs five game seconds before
-`PaulineWinsREF.StartConversation`; without that gap the new scene has not yet
-spawned its talkers. The final INFO unlocked Sammy's safe, set `VanceGunCase`
-to 3 and `SammyPauline` to 2, and awarded the expected 50 and 55 XP. The
-successful Speech check was explicitly set to 55; Pauline's exit choice was
-selected by its visible `go` text. It has not been compared side by side with
-the original game. Logs and screenshots remain private under
-`target/task13-validation/vance/`.
-
-## Current handoff (2026-10-08)
-
-- Branch: `codex/issue-13-vances-gun`, based on current `main`
-  `56a3d102c79cd6a5bc34160febfeb8af87bd763b` (after PR #26).
-- Changed files: `scripts/acceptance.ps1`, `docs/MILESTONES.md`, and this
-  route/handoff. No process remains active.
-- Verified on the current-main Linux viewer: the run exited 0, reached all
-  eight acceptance markers, unlocked the safe, and had no panic. Pauline was
-  loaded before her conversation started. One unrelated background warning
-  remains for persistent Freeside actor HadrianREF (`0011F9C1`). The
-  PowerShell wrapper could not be run here because `pwsh` is not installed;
-  the exact viewer arguments in its route were run directly.
-  `git diff --check` passes.
-- Still open: compare the route with the original game; PR #29 remains open
-  with changes requested, and this route is in draft PR #50. Next: human and
-  maintainer review on #50, then keep issue #13 open until both routes merge.
+**Status:** the complete acceptance route previously passed on the Linux
+viewer built from `main` at `56a3d102c79cd6a5bc34160febfeb8af87bd763b`.
+That run exited 0, reached all eight acceptance markers, unlocked Sammy's
+safe, set `VanceGunCase` to 3 and `SammyPauline` to 2, and awarded 50 and 55
+XP. The cross-cell move into Wins Residence needs five game seconds before
+`PaulineWinsREF.StartConversation` so the scene can spawn its talkers. This
+route has not been compared side by side with the original game. It has not
+been rerun after rebasing on current `main`; the local game `Data` folder is
+unavailable, so current-main acceptance remains pending.

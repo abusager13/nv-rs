@@ -143,9 +143,7 @@ $routeArgs = @{
             (Run-At 260 'SammyWinsREF.StartConversation player') +
             @('--say', 'Pauline says you should give me the gun.',
               '--say', 'go', '--wait', '320')
-        Success = @('player.SetAV Science 50: Done', 'player.SetAV Speech 55: Done',
-            'player.AddTopic 000E32E7: Done', 'player.AddTopic 000E32E5: Done',
-            'XP +50', 'XP +55',
+        Success = @('XP +50', 'XP +55',
             "The gun's in the safe. The combination's 05-23-34.",
             'result script: SammySafeREF.setownership / SammySafeREF.unlock / set nVPrimmVanceGun.VanceGunCase to 3 / set nVPrimmVanceGun.SammyPauline to 2')
     }
