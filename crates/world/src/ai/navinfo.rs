@@ -284,9 +284,11 @@ impl NavInfoMap {
         (found, route)
     }
 
-    /// Search including `NVCI`'s third-list load-door edges. A locked door
-    /// adds 409600 to the crossing cost (`006b8490`). The returned edge
-    /// list is aligned with the route; the first entry is `None` at start.
+    /// Search including `NVCI`'s third-list load-door edges (`006b8490`):
+    /// distance between the two info positions × the current info's `k` ×
+    /// 1, then + the path cost so far `g`, then +409600 for a locked door.
+    /// The returned edge list is aligned with the route; the first entry is
+    /// `None` at start.
     // Translated from 006b8490 (decompiled, FalloutNV.exe 1.4.0.525).
     pub fn search_with_doors(
         &self,
@@ -434,7 +436,7 @@ impl NavInfoMap {
                     let locked_cost = via_door
                         .filter(|door| locked(*door))
                         .map_or(0.0, |_| 409_600.0);
-                    let cost = distance(a, b) * k * mult + locked_cost + g;
+                    let cost = distance(a, b) * k * mult + g + locked_cost;
                     match node_of.get(&m) {
                         None => {
                             let n = nodes.len();
@@ -442,30 +444,36 @@ impl NavInfoMap {
                                 info: m,
                                 g: cost,
                                 h: estimate(m),
-                                parent: Some(current),
-                                parent_door: via_door,
+                                parent: None,
+                                parent_door: None,
                                 version: 0,
                                 open: false,
                             });
                             node_of.insert(m, n);
-                            improved.push(n);
+                            improved.push((n, via_door));
                         }
                         Some(&n) if cost < nodes[n].g => {
                             nodes[n].g = cost;
-                            nodes[n].parent = Some(current);
-                            nodes[n].parent_door = via_door;
-                            improved.push(n);
+                            improved.push((n, via_door));
                         }
                         Some(_) => {}
                     }
                 }
                 let mut failed = false;
-                for n in improved {
+                for (n, via_door) in improved {
                     nodes[n].open = false;
                     if nodes[current].parent == Some(n) {
+                        if via_door.is_some() {
+                            // Paired XTEL doors are listed from both ends.
+                            // Skip a reverse door edge but keep expanding the
+                            // other doors on this navinfo.
+                            continue;
+                        }
                         failed = true;
                         break;
                     }
+                    nodes[n].parent = Some(current);
+                    nodes[n].parent_door = via_door;
                     push(&mut open, &mut nodes, n, &mut seq);
                     if nodes[n].h < nodes[best].h {
                         best = n;
@@ -608,11 +616,10 @@ impl NavInfos {
     ) -> Option<FormId> {
         let start = self.info_at(order, from_space, from)?;
         let goal = self.info_at(order, to_space, to)?;
-        let (found, route, doors) =
-            self.map(order)
-                .search_with_doors(start, from, goal, to, |door| {
-                    crate::locks::lock_now(order, state, door).is_some()
-                });
+        let map = self.map(order);
+        let (found, route, doors) = map.search_with_doors(start, from, goal, to, |door| {
+            crate::locks::lock_now(order, state, door).is_some()
+        });
         if !found || route.len() < 2 {
             return None;
         }
