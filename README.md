@@ -123,9 +123,10 @@ cargo run --release -- "<path to Fallout New Vegas\Data>" GSDocMitchellHouse
 #### Linux (Vulkan and Wayland)
 
 The viewer builds from source on Linux and supports native Wayland and X11
-windows. On Fedora, install `alsa-lib-devel` and `libudev-devel`; Debian and
-Ubuntu need `libasound2-dev` and `libudev-dev`. Install a Vulkan loader and a
-working GPU driver for your system.
+windows. On Fedora, install `alsa-lib-devel`, `libudev-devel`,
+`wayland-devel` and `libxkbcommon-devel`; Debian and Ubuntu need
+`libasound2-dev`, `libudev-dev`, `libwayland-dev` and `libxkbcommon-dev`.
+Install a Vulkan loader and a working GPU driver for your system.
 
 From a Wayland session, pass your own game data folder. Unsetting `DISPLAY`
 selects the native Wayland window path, and `WGPU_BACKEND=vulkan` selects
