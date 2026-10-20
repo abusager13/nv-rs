@@ -48,7 +48,9 @@ powershell -File scripts\acceptance.ps1 -Routes primm -Data "<Fallout New Vegas\
 ```
 
 It uses `player.ModAV Health 5000` and `player.SetAV Science 30` as test
-setup; moves the player to Beagle, Nash (`PrimmJohnsonNashRef`, `000E2882`),
+setup; advances Nash's opening greeting once with a timed Space input so the
+dialogue menu does not pause the route; moves the player to Beagle, Nash
+(`PrimmJohnsonNashRef`, `000E2882`),
 Slim (`PrimmSlimREF`, `000E288C`) and the exit marker; moves Beagle to the
 player before the sheriff conversation; starts conversations with
 `StartConversation`; and picks offered topics with `--say`. No quest stage or
@@ -56,14 +58,19 @@ quest variable is forced. The route's expected results are the Slim sheriff
 message and `XP +300` / `XP +30`.
 
 The route is opt-in because it takes several minutes; the default acceptance
-set remains `doc,vcg02,vms16`. A current-main acceptance rerun is in progress.
-Beagle's sheriff conversation selected INFO `000DA106`, which set
-`BeagleCaptured` to 3. Nash then offered “What about Primm Slim? Could he be
-sheriff?”, and selecting it ran INFO `00162C19` and displayed the optional
-objective. The route selected Slim's Science 30 response; INFO `000EC078`
-succeeded, the sheriff message appeared, and the viewer reported `XP +300`
-and `XP +30`. Selecting the direct Nash topic avoids opening the unrelated
-general-topic list. The game `Data` folder is available on this machine.
+set remains `doc,vcg02,vms16`. On 2026-10-20 the route passed on macOS against
+the installed game data: it exited 0 and logged the sheriff result, `XP +300`
+and `XP +30`, with no panic. The test used the current PR #29 code and a
+temporary overlay of PR #108's Metal renderer changes. A PR #29-only Metal
+run had hit the device's resource limit before the sheriff result, so this
+pass verifies the quest route with the Mac renderer fix present; it is not a
+PR #29-only renderer run. Beagle's sheriff conversation selected INFO
+`000DA106`, which set `BeagleCaptured` to 3. Nash then offered “What about
+Primm Slim? Could he be sheriff?”, and selecting it ran INFO `00162C19` and
+displayed the optional objective. Slim's Science 30 response ran INFO
+`000EC078` and completed the quest. Selecting the direct Nash topic avoids
+opening the unrelated general-topic list. The game `Data` folder is available
+on this machine.
 
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
 marker, Beagle's relocation to the player, and starting each conversation are
