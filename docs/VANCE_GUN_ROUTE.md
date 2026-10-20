@@ -48,8 +48,11 @@ lines to move the player and start each conversation.
 viewer built from `main` at `56a3d102c79cd6a5bc34160febfeb8af87bd763b`.
 That run exited 0, reached all eight acceptance markers, unlocked Sammy's
 safe, set `VanceGunCase` to 3 and `SammyPauline` to 2, and awarded 50 and 55
-XP. The cross-cell move into Wins Residence needs five game seconds before
-`PaulineWinsREF.StartConversation` so the scene can spawn its talkers. This
-route has not been compared side by side with the original game. It has not
-been rerun after rebasing on current `main`; the local game `Data` folder is
-unavailable, so current-main acceptance remains pending.
+XP. On 2026-10-20, the current PR #50 branch also passed the complete route on
+macOS in 328 seconds, reaching all eight acceptance markers, unlocking Sammy's
+safe, setting `VanceGunCase` to 3 and `SammyPauline` to 2, and awarding 50 and
+55 XP. That run used a temporary overlay of PR #108's macOS renderer changes;
+it validates this route with the Mac renderer support present, not a PR #50-only
+renderer build. The cross-cell move into Wins Residence needs five game
+seconds before `PaulineWinsREF.StartConversation` so the scene can spawn its
+talkers. This route has not been compared side by side with the original game.
