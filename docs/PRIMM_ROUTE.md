@@ -69,8 +69,10 @@ PR #29-only renderer run. Beagle's sheriff conversation selected INFO
 Primm Slim? Could he be sheriff?”, and selecting it ran INFO `00162C19` and
 displayed the optional objective. Slim's Science 30 response ran INFO
 `000EC078` and completed the quest. Selecting the direct Nash topic avoids
-opening the unrelated general-topic list. The game `Data` folder is available
-on this machine.
+opening the unrelated general-topic list. The current-main post-INFO menu
+offers “See you later.”; the route selects it to close the conversation
+before starting Slim's dialogue. The game `Data` folder is available on this
+machine.
 
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
 marker, Beagle's relocation to the player, and starting each conversation are
