@@ -53,9 +53,11 @@ dialogue menu does not pause the route; moves the player to Beagle, Nash
 (`PrimmJohnsonNashRef`, `000E2882`),
 Slim (`PrimmSlimREF`, `000E288C`) and the exit marker; moves Beagle to the
 player before the sheriff conversation; starts conversations with
-`StartConversation`; and picks offered topics with `--say`. No quest stage or
-quest variable is forced. The route's expected results are the Slim sheriff
-message and `XP +300` / `XP +30`.
+`StartConversation`; and picks offered topics with `--say`. It moves to Nash
+at game time 370 seconds, waits one second for the destination cell to load,
+then starts the conversation at 371 seconds before Nash leaves for his idle
+marker. No quest stage or quest variable is forced. The route's expected
+results are the Slim sheriff message and `XP +300` / `XP +30`.
 
 The route is opt-in because it takes several minutes; the default acceptance
 set remains `doc,vcg02,vms16`. On 2026-10-20 the route passed on macOS against
@@ -69,9 +71,12 @@ PR #29-only renderer run. Beagle's sheriff conversation selected INFO
 Primm Slim? Could he be sheriff?”, and selecting it ran INFO `00162C19` and
 displayed the optional objective. Slim's Science 30 response ran INFO
 `000EC078` and completed the quest. Selecting the direct Nash topic avoids
-opening the unrelated general-topic list. The current-main post-INFO menu
-offers “See you later.”; the route selects it to close the conversation
-before starting Slim's dialogue. The game `Data` folder is available on this
+opening the unrelated general-topic list. Nash's exit wording varies by
+greeting (observed as “See you later,” “Goodbye,” “Time for me to go,” and
+“I need to get going”); the acceptance selector supports these alternatives
+and closes the conversation before starting Slim's dialogue. It then selects
+Slim's Science 30 response, closes with “Goodbye,” and checks the sheriff
+result plus both XP awards. The game `Data` folder is available on this
 machine.
 
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit

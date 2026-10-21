@@ -143,16 +143,18 @@ $routeArgs = @{
             # differences in the installed dialogue text.
             @('--say', 'sheriff now',
               '--say', 'law and order back') +
-            # Give Nash time to load after moving into his area.
-            (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
-            (Run-At 345 'PrimmJohnsonNashRef.StartConversation player') +
+            # Let the destination cell load for one second before starting
+            # Nash's conversation, before he leaves for his idle marker.
+            (Run-At 370 'player.MoveTo PrimmJohnsonNashRef') +
+            (Run-At 371 'PrimmJohnsonNashRef.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
-              # Current main offers "See you later." after this INFO.
-              '--say', 'see you later') +
+              # Exit wording varies with Nash's greeting; select whichever
+              # equivalent exit topic the current dialogue offers.
+              '--say', 'See you later|Goodbye|Time for me to go|I need to get going') +
             (Run-At 430 'player.MoveTo PrimmSlimREF') +
             (Run-At 435 'PrimmSlimREF.StartConversation player') +
             @('--say', 'Reprogram Primm Slim',
-              '--say', 'go', '--wait', '500')
+              '--say', 'Goodbye', '--wait', '500')
         Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
             'XP +300', 'XP +30')
     }
