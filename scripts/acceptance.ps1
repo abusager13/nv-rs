@@ -31,6 +31,9 @@ open, a prompt holds the AI and the input and the route never finishes.
 Each answer is logged as "--answer-boxes: ..."; a box with several
 buttons and no choice left is left open and logged as waiting. Outputs (logs, screenshots) go to
 -Out; they are private, never commit them.
+Acceptance runs pass --no-audio so the viewer stays silent without muting the
+computer's output device, and voiced dialogue advances on the game's normal
+delay for a response without a voice file.
 
 .EXAMPLE
 powershell -File scripts\acceptance.ps1 -Data "D:\Steam\steamapps\common\Fallout New Vegas\Data"
@@ -69,7 +72,12 @@ if ($Build) {
         if ($LASTEXITCODE -ne 0) { throw 'viewer release build failed' }
     } finally { Pop-Location }
 }
-$viewer = Join-Path $root 'viewer\target\release\nv-viewer.exe'
+$viewerFile = if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+    'nv-viewer.exe'
+} else {
+    'nv-viewer'
+}
+$viewer = Join-Path $root (Join-Path 'viewer/target/release' $viewerFile)
 if (-not (Test-Path $viewer)) { throw "No release viewer at $viewer (run with -Build)." }
 
 function Run-Line([string[]]$lines) {
@@ -134,10 +142,15 @@ $routeArgs = @{
             # Keep the match independent of punctuation/curly apostrophe
             # differences in the installed dialogue text.
             @('--say', 'sheriff now',
-              '--say', 'law and order back') +
+              '--say', 'law and order back',
+              # Close Beagle's conversation before starting Nash's. Leaving
+              # it open consumes the following Nash topic at Primm Slim.
+              '--say', 'going now') +
+            # Move into Nash's area first so its actor loads, then bring him
+            # into conversation range if his sandbox seats him farther away.
             (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
-            # Give the Primm exterior references time to load after the move.
-            (Run-At 345 'PrimmJohnsonNashRef.StartConversation player') +
+            (Run-At 350 'PrimmJohnsonNashRef.MoveTo player') +
+            (Run-At 355 'PrimmJohnsonNashRef.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
               # Nash's post-INFO exit topic varies between "Goodbye" and
               # "I need to get going"; both contain this distinctive text.
@@ -145,7 +158,7 @@ $routeArgs = @{
             (Run-At 430 'player.MoveTo PrimmSlimREF') +
             (Run-At 435 'PrimmSlimREF.StartConversation player') +
             @('--say', 'Reprogram Primm Slim',
-              '--say', 'go', '--wait', '600')
+              '--say', 'go', '--wait', '500')
         Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
             'XP +300', 'XP +30')
     }
@@ -164,7 +177,7 @@ foreach ($r in $chosen) {
     # --answer-boxes: prompts answered as they appear, as a player would
     # (see the header); --box-answers 2: VCG01's "revise your character"
     # box answered "Finished - Travel Onward" (its third button).
-    $a = @($Data) + $spec.Args + @('--answer-boxes', '--box-answers', '2', '--screenshot', $shot)
+    $a = @($Data) + $spec.Args + @('--no-audio', '--answer-boxes', '--box-answers', '2', '--screenshot', $shot)
     if ($Background) { $a += '--background' }
     # Each route is its own viewer run: a new game, so the DLC start
     # messages show again in every route that starts outside Doc's house.
