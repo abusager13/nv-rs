@@ -10,7 +10,8 @@ It has not been compared side by side with Fallout: New Vegas.
 On 2026-10-21, the release viewer completed the route on macOS arm64 in 257
 seconds (`ede` acceptance route). The route code was from this rebased PR; the
 macOS rendering changes from PR #108 were applied temporarily to run it on this
-host. Viewer output was muted. The route's required INFOs, handover and return
+host. The Mac output device was muted during this run, so audio behavior was
+not verified. The route's required INFOs, handover and return
 notice matched; the log records `Quest completed: ED-E My Love` and `XP +100`.
 The screenshot is `ede.png` in the acceptance output directory.
 
