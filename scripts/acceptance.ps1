@@ -147,9 +147,8 @@ $routeArgs = @{
             (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
             (Run-At 345 'PrimmJohnsonNashRef.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
-              # Nash's post-INFO exit topic varies between "Goodbye" and
-              # "I need to get going"; both contain this distinctive text.
-              '--say', 'go') +
+              # Current main offers "See you later." after this INFO.
+              '--say', 'see you later') +
             (Run-At 430 'player.MoveTo PrimmSlimREF') +
             (Run-At 435 'PrimmSlimREF.StartConversation player') +
             @('--say', 'Reprogram Primm Slim',
