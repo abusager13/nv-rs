@@ -7,10 +7,12 @@ It has not been compared side by side with Fallout: New Vegas.
 
 ## Final route evidence
 
-A previous Linux/Vulkan run of the release viewer completed the route. It has
-not been rerun after rebasing on current `main`: this checkout has no game
-`Data` folder. The earlier run is evidence for that branch only, not a current-
-`main` acceptance result.
+On 2026-10-21, the release viewer completed the route on macOS arm64 in 257
+seconds (`ede` acceptance route). The route code was from this rebased PR; the
+macOS rendering changes from PR #108 were applied temporarily to run it on this
+host. Viewer output was muted. The route's required INFOs, handover and return
+notice matched; the log records `Quest completed: ED-E My Love` and `XP +100`.
+The screenshot is `ede.png` in the acceptance output directory.
 
 | Checkpoint | Viewer log evidence |
 | --- | --- |
@@ -18,8 +20,8 @@ not been rerun after rebasing on current `main`: this checkout has no game
 | ED-E greeting and both radio messages ran | INFO `001579D7`, `001579CE`, `0015FF67`, `0015FF65` |
 | Holotape OnAdd branch and Hidden Valley discovery ran | adding `HVMissionDisc01`; proximity discovery at `HiddenValleyMarkerREF` |
 | April's Followers handover ran | INFO `00160411`; quest script performed the upgrade swap |
-| ED-E returned through the Pip-Boy Menumode step | return notice and objective 60 completion |
-| Completion package and reward ran | `EDEQuestCompleteDialogue` End action, `Quest completed: ED-E My Love`, `XP +100` |
+| ED-E returned through the Pip-Boy Menumode step | `ED-E has returned to Primm.` and objective 60 completion |
+| Completion package and reward ran | `EDEQuestCompleteDialogue End action`, `Quest completed: ED-E My Love`, `XP +100` |
 
 The route does not set `iPlayRadio` or `iEDEOut` directly. It does force
 prerequisites and inputs: ED-E's hire/day state, two stage-10 dispatches, the
@@ -54,9 +56,8 @@ the proximity path instead of setting either flag directly.
 
 ## Remaining gaps
 
-- The current-main acceptance run is outstanding. The earlier successful run
-  used forced hire/day prerequisites and stage dispatches; natural log triggers
-  and waiting five in-game days were not verified.
+- The passing route uses forced hire/day prerequisites and stage dispatches;
+  natural log triggers and waiting five in-game days were not verified.
 - Package cleanup after log two is forced. The original game's live cleanup
   behavior and radio package selection have not been compared.
 - Adding the holotape and teleporting to Hidden Valley do not test looting the
