@@ -177,15 +177,10 @@ $routeArgs = @{
             # Keep the match independent of punctuation/curly apostrophe
             # differences in the installed dialogue text.
             @('--say', 'sheriff now',
-              '--say', 'law and order back',
-              # Close Beagle's conversation before starting Nash's. Leaving
-              # it open consumes the following Nash topic at Primm Slim.
-              '--say', 'going now') +
-            # Move into Nash's area first so its actor loads, then bring him
-            # into conversation range if his sandbox seats him farther away.
+              '--say', 'law and order back') +
+            # Give Nash time to load after moving into his area.
             (Run-At 340 'player.MoveTo PrimmJohnsonNashRef') +
-            (Run-At 350 'PrimmJohnsonNashRef.MoveTo player') +
-            (Run-At 355 'PrimmJohnsonNashRef.StartConversation player') +
+            (Run-At 345 'PrimmJohnsonNashRef.StartConversation player') +
             @('--say', 'What about Primm Slim? Could he be sheriff?',
               # Nash's post-INFO exit topic varies between "Goodbye" and
               # "I need to get going"; both contain this distinctive text.
