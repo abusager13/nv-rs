@@ -1950,9 +1950,13 @@ pub fn run_scripts(
     }
 }
 
-/// Add the open Pip-Boy's top menu to the same per-frame dispatch as other
-/// menu classes. A Pip-Boy class may already have been queued by a script in
-/// this frame, and must only dispatch once.
+/// `MenuModeFunction` (`005c4240`, FalloutNV.exe 1.4.0.525) evaluates the
+/// `MenuMode` condition by calling `GetMenuModeConditionFunction` (`0059c380`);
+/// the latter checks whether any menu (class 0) or the requested class is
+/// open. This is a condition check, not an open/close event, so the viewer
+/// supplies the Pip-Boy's top class on every per-frame script tick while it is
+/// open. A class may already have been queued by a menu event this tick;
+/// dispatch it only once.
 fn include_pipboy_menu(menus: &mut Vec<u16>, pipboy_class: Option<i32>) {
     let Some(class) = pipboy_class.and_then(|class| u16::try_from(class).ok()) else {
         return;

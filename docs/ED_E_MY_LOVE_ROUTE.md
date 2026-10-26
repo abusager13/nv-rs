@@ -1,67 +1,82 @@
-# ED-E My Love: Primm route
+# ED-E My Love: Primm start
 
 Quest `vDialogueEDE` (`001572E8`), quest script `vDialogueEDESCRIPT`
-(`00157F1F`), ED-E script `EDEScript` (`00151D03`). This route is **PARTIAL**
-and stays opt-in (`pwsh -File scripts/acceptance.ps1 -Routes ede -Data <Data>`).
-It has not been compared side by side with Fallout: New Vegas.
+(`00157F1F`), disabled-robot script `EDEScriptDisabled` (`001572E0`). This
+route is **PARTIAL** and stays opt-in (`pwsh -File scripts/acceptance.ps1
+-Routes ede -Data <Data>`). It covers the quest's Primm start through stage
+10 and the first audio log. It has not been compared side by side with Fallout:
+New Vegas, and the revised acceptance route has not yet been rerun.
 
-## Final route evidence
+## Acceptance route
 
-On 2026-10-21, the release viewer completed the route on macOS arm64 in 257
-seconds (`ede` acceptance route). The route code was from this rebased PR; the
-macOS rendering changes from PR #108 were applied temporarily to run it on this
-host. The Mac output device was muted during this run, so audio behavior was
-not verified. The route's required INFOs, handover and return
-notice matched; the log records `Quest completed: ED-E My Love` and `XP +100`.
-The screenshot is `ede.png` in the acceptance output directory.
+The route starts in `PrimmNashResidence` beside `NVCompanionEDEDisabledREF`
+(`001572E6`). It adds 100 Repair to the test player, activates the disabled
+robot with `--use`, and answers the repair message buttons. The record's own
+`EDEScriptDisabled` handles repair: its `OnActivate` presents `EDERepair00`,
+then the repair path presents `EDERepair01`; the GameMode script starts
+`vDialogueEDE` when the player chooses “Run the repair.” It moves/enables
+`EDE1Ref` and runs its greeting. The route selects the offered recruitment
+INFO `001579C3` (“I think we should travel together.”), whose result script
+sets `VNPCFollowers.bEDEHired`.
 
-| Checkpoint | Viewer log evidence |
-| --- | --- |
-| Both log packages played; their result scripts advanced `iLogsPlayed` from 0 to 2 | INFO `00157F17`, `00158829` |
-| ED-E greeting and both radio messages ran | INFO `001579D7`, `001579CE`, `0015FF67`, `0015FF65` |
-| Holotape OnAdd branch and Hidden Valley discovery ran | adding `HVMissionDisc01`; proximity discovery at `HiddenValleyMarkerREF` |
-| April's Followers handover ran | INFO `00160411`; quest script performed the upgrade swap |
-| ED-E returned through the Pip-Boy Menumode step | `ED-E has returned to Primm.` and objective 60 completion |
-| Completion package and reward ran | `EDEQuestCompleteDialogue End action`, `Quest completed: ED-E My Love`, `XP +100` |
+The harness moves the player to `OldLadyGibsonRef` and starts her conversation.
+Her greeting INFO `000841E7` has the `bEDEHired` condition and its result script
+sets `vDialogueEDE` stage 10. The stage script sees `iLogsPlayed == 0`, starts
+`EDEDialoguePackage02`, and displays objective 5. That package plays the first
+log, INFO `00157F17`; its result script advances `iLogsPlayed` to 1. The route
+stops after that log. It does not directly start the quest, set quest/follower
+variables, set a stage or objective, or advance `GameDaysPassed`.
 
-The route does not set `iPlayRadio` or `iEDEOut` directly. It does force
-prerequisites and inputs: ED-E's hire/day state, two stage-10 dispatches, the
-calendar advances, cleanup of the finished log package, holotape addition,
-teleports and conversation starts. The holotape OnAdd, marker proximity,
-handover, upgrade, Pip-Boy return, completion and reward scripts execute.
-The XP log is present, but the STATS meter was not visually checked.
+The explicit test inputs are the Repair skill boost, the simulated E press,
+the dialogue topic selection and `Log Off`, the move to Gibson, and starting
+Gibson's conversation. The repair choices use buttons `1,1,1`: the ESM's two
+activation blocks show the initial repair message twice, followed by the “Run
+the repair” choice. The route waits 80 seconds to let the first log package
+finish, then stops before a second-log trigger.
 
-## Translation evidence
+## Validation status
 
-**Type-1 package location.** A `PLD2` kind-1 location names a cell. The game
-gets that cell through `PackageLocation::GetLocCell` (`0067f3e0`) and checks
-the actor against the package location in `00676390`. The viewer now matches
-the actor's current cell in `crates/world/src/ai.rs`; a generated type-15
-package fixture tests matching and non-matching cells.
+FalloutNV.esm data confirms the repair and dialogue result scripts described
+above. A private viewer probe on 2026-10-08 recorded the repair, recruitment
+INFO `001579C3`, Gibson INFO `000841E7`, the stage-10 result script, and the
+first log INFO `00157F17`. That probe then explicitly dispatched stage 10
+again later to trigger the second log, so it is not evidence for natural
+second-log progression, the old end-to-end route, or this revised acceptance
+script. The current acceptance change has not yet been rerun.
 
-**Pip-Boy Menumode.** The game's Pip-Boy menu classes are listed at `00702680`;
-`MenuMode`'s class predicate is at `0059c380`, and quest block dispatch is at
-`005c4240` (FalloutNV.exe 1.4.0.525). `Pipboy::top_class` now contributes the
-open menu class to `run_scripts`' existing menu list, which dispatches it once
-with the other menu classes. Tests cover inclusion, duplicate suppression,
-and invalid/absent classes.
+The revised route's acceptance checks require the repair activation, quest
+start notice, hire INFO, Gibson INFO, stage-10 result script, and first log
+INFO to appear in the viewer log. Passing those checks will show the
+implemented route ran; it will not establish that later stages are complete
+or match the original.
+
+## Remaining quest coverage
+
+- The natural trigger and in-game waiting needed for ED-E's second audio log
+  are not covered by the revised route.
+- The radio message branch, package cleanup after a finished log, holotape
+  pickup, Hidden Valley discovery, Followers handover, return-to-Primm
+  `MenuMode` step, completion package, and 100 XP are not covered here.
+- The previous 257-second route recorded `XP +100`, but it forced quest state,
+  stages, calendar advances, package cleanup, item delivery, and travel. That
+  run is historical evidence only and does not prove natural quest completion.
+- The XP meter was not visually verified, audio was not checked, and no
+  side-by-side original-game comparison was made.
+
+## Implementation provenance retained for later route work
+
+**Pip-Boy `MenuMode`.** In FalloutNV.exe 1.4.0.525, `MenuModeFunction`
+(`005c4240`) calls `GetMenuModeConditionFunction` (`0059c380`) to evaluate
+whether any menu or the requested class is open. The check is a condition,
+not an open/close event. `Pipboy::top_class` contributes the open menu class
+to `run_scripts` on each viewer script tick; duplicate classes are dispatched
+once. The current partial route does not reach the Pip-Boy return step.
 
 **Map discovery.** The game's proximity loop at `00779070` checks the player's
-3D distance against the marker radius, then sets visible and travel bits via
-`0044de40` and `0044de80`. `ShowMap` at `005c8620` can set visibility alone
-or both bits; `GetMapMarkerVisible` at `005daac0` reads the 0/1/2 state through
+3D distance against a marker radius, then sets visible and travel bits through
+`0044de40` and `0044de80`. `ShowMap` at `005c8620` can set visibility alone or
+both bits; `GetMapMarkerVisible` at `005daac0` reads the 0/1/2 state through
 `005a51e0`. The Hidden Valley marker (`000CDA74`) has `XRDS = 10,000`. In the
 viewer, `world::map::discover` records a discovered marker, which the map
-state exposes as both visible and travelable; the acceptance teleport enters
-the proximity path instead of setting either flag directly.
-
-## Remaining gaps
-
-- The passing route uses forced hire/day prerequisites and stage dispatches;
-  natural log triggers and waiting five in-game days were not verified.
-- Package cleanup after log two is forced. The original game's live cleanup
-  behavior and radio package selection have not been compared.
-- Adding the holotape and teleporting to Hidden Valley do not test looting the
-  body or walking the route.
-- No side-by-side original-game comparison was made, and the XP meter was not
-  visually checked.
+state exposes as visible and travelable. The partial ED-E route does not
+exercise this path.
