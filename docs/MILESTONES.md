@@ -56,11 +56,11 @@ These were the original milestones. The engine port now delivers them.
 
 The release viewer built and launched on Fedora in a native Wayland session
 with Vulkan, with `DISPLAY` unset, and loaded `GSDocMitchellHouse` from the
-user's local game data (2026-10-15). The GPU was an NVIDIA GTX 1650; the
-driver version was not recorded. Gameplay has not been compared against the
-original on Linux, and no packaged Linux build is provided. **Next action:**
-run and compare a gameplay acceptance route on Linux; the driver version
-remains unrecorded.
+user's local game data (2026-10-15). The GPU is an NVIDIA GTX 1650. On
+2026-10-26, `nvidia-smi` reported driver version 615.78.08 on the Fedora
+machine. Gameplay has not been compared against the original on Linux, and no
+packaged Linux build is provided. **Next action:** run and compare a gameplay
+acceptance route on Linux.
 
 ## Rules that hold throughout
 
