@@ -4,12 +4,12 @@ Quest `vDialogueEDE` (`001572E8`), quest script `vDialogueEDESCRIPT`
 (`00157F1F`), disabled-robot script `EDEScriptDisabled` (`001572E0`). This
 route is **PARTIAL** and stays opt-in (`pwsh -File scripts/acceptance.ps1
 -Routes ede -Data <Data>`). It covers the quest's Primm start through the first
-audio log. A separate probe naturally reached the second-log trigger in
-Ignacio's dialogue, but the viewer did not start log two or reach stage 20 in
-the 220 seconds after that trigger. It has not been compared side by side with
-Fallout: New Vegas. The revised PowerShell acceptance wrapper was not run on
-Fedora because `pwsh` is unavailable; its first-log viewer command was run
-directly.
+audio log. A separate probe also reached Ignacio's ARCHIMEDES INFO and the
+quest's “Two EDE logs heard” message after six in-game waits (132 hours). The
+probe did not capture the second log's dialogue or voice, so its playback is
+still unverified. It has not been compared side by side with Fallout: New
+Vegas. The revised PowerShell acceptance wrapper was not run on Fedora because
+`pwsh` is unavailable; the equivalent viewer route was run directly.
 
 ## Acceptance route
 
@@ -38,26 +38,33 @@ activation blocks show the initial repair message twice, followed by the “Run
 the repair” choice. The route waits 80 seconds to let the first log package
 finish, then stops before a second-log trigger.
 
-A separate probe moved to HELIOS One and followed Ignacio's dialogue tree:
-choose the scientific response, state that you keep the peace, ask what more
-there is to the plant, then choose “You think ARCHIMEDES is a weapon they built
-here.” INFO `000E35FF` was naturally offered; its result sets
-`VMS03.bDiscussedWeaponWithIgnacio` and calls `SetStage vDialogueEDE 10`. The
-probe closed the conversation and ran to 220 seconds total (about 56 seconds
-after closing it), but recorded no second-log INFO, `EDEDialoguePackage03`, or
-stage 20. This is a viewer result, not evidence that the original game fails
-to play the log.
+A separate probe waited six times through the in-game wait menu (132 hours),
+moved to HELIOS One, and followed Ignacio's dialogue tree: choose the
+scientific response, state that you keep the peace, ask what more there is to
+the plant, then choose “You think ARCHIMEDES is a weapon they built here.” INFO
+`000E35FF` was naturally offered. Its result set
+`VMS03.bDiscussedWeaponWithIgnacio` and called `SetStage vDialogueEDE 10`; the
+viewer then emitted the quest message “Two EDE logs heard.” This confirms the
+natural trigger reached the quest's second-log branch. The probe ended with
+Ignacio's dialogue still open and did not capture the second log's INFO,
+`iLogsPlayed == 2`, or voice. The playback remains unverified; this viewer
+result does not show that the original game fails to play it. Earlier
+56-second probes were too short to satisfy the five-in-game-day condition on
+the quest data's second-log path.
 
 ## Validation status
 
 FalloutNV.esm data confirms the repair and dialogue result scripts described
-above. A private Wayland viewer run on 2026-10-26 recorded the repair,
+above. A private Linux viewer run on 2026-10-26 recorded the repair,
 recruitment, Gibson INFO `000841E7`, the stage-10 result script, and first-log
 INFO `00157F17`; the first-log route succeeded without a quest-stage or quest-
 variable console command. The separate Ignacio probe recorded the naturally
-offered INFO `000E35FF` and its stage-10 result script, but no second log or
-stage 20. The probe also saw log one replay after moving cells. The revised
-PowerShell wrapper itself has not been run on Fedora (`pwsh` is unavailable).
+offered INFO `000E35FF`, its result script, and the “Two EDE logs heard” quest
+message after 132 in-game hours. It did not record log two playback or
+`iLogsPlayed == 2`. Log one replayed after moving cells. Both runs used
+XWayland inside KDE Wayland: this branch's Winit build enables X11 but not
+Wayland. The revised PowerShell wrapper itself has not been run on Fedora
+(`pwsh` is unavailable).
 
 The revised route's acceptance checks require the repair activation, quest
 start notice, hire INFO, Gibson INFO, stage-10 result script, and first log
@@ -66,16 +73,22 @@ implemented route ran; it will not establish that later stages are complete
 or match the original.
 
 On 2026-10-26, the current PR #87 release build passed the equivalent Linux
-viewer run: all six acceptance markers appeared, no panic occurred, and the
-private screenshot was written. This run used XWayland (`DISPLAY=:0`) in a
-KDE Wayland session because this branch's Winit build has no Wayland backend;
-the PowerShell wrapper itself remains untested because `pwsh` is unavailable.
+viewer route through the first log: all acceptance markers appeared and no
+panic occurred. The separate 132-hour probe reached Ignacio INFO `000E35FF`
+and the quest's “Two EDE logs heard” message, but left the conversation open
+before log-two playback could be verified. The private screenshot was written.
+These runs used XWayland (`DISPLAY=:0`) in a KDE Wayland session because this
+branch's Winit build has no Wayland backend; the PowerShell wrapper itself
+remains untested because `pwsh` is unavailable.
 
 ## Remaining quest coverage
 
-- The natural Ignacio trigger is now identified as INFO `000E35FF`, but the
-  viewer did not start the second log after its stage-10 result. Trace whether
-  this is repeated-stage handling or package evaluation before changing code.
+- The natural Ignacio trigger is verified: after the five-day gate, INFO
+  `000E35FF` called `SetStage vDialogueEDE 10` and the viewer emitted “Two EDE
+  logs heard.” The second log's INFO, voice and `iLogsPlayed == 2` were not
+  observed, so playback is still unverified. The probe left Ignacio's
+  conversation open; close it in a later probe before attributing the missing
+  playback to package evaluation.
 - The first log replayed after the cell transition. The temporary dialogue-
   package lifecycle still needs comparison with the original executable.
 - The radio message branch, package cleanup after a finished log, holotape
