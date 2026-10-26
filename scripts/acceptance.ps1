@@ -19,8 +19,9 @@ docs/PATHING.md and docs/VANCE_GUN_ROUTE.md):
   ede    ED-E My Love's Primm start: repair the disabled ED-E in Nash's
          residence, recruit it through its dialogue, then hear Old Lady
          Gibson's greeting reach stage 10 and start the first audio log through
-         quest scripts. The route stops after that log; later progression is
-         not yet covered
+         quest scripts. Wait through the natural five-day gate, follow Ignacio's
+         ARCHIMEDES dialogue, and hear the second log. Later progression is not
+         yet covered
          (docs/ED_E_MY_LOVE_ROUTE.md).
 A route passes when every one of its success lines appears in the
 viewer's output and no panic does.
@@ -87,6 +88,27 @@ function Run-Line([string[]]$lines) {
     $a
 }
 function Run-At([int]$at, [string]$line) { @('--run-at', "$at", $line) }
+function Wait-GameDays([int[]]$at) {
+    # Open the wait menu at each time and advance six 22-hour periods. These
+    # are player wait-menu inputs, not changes to GameDaysPassed or quest state.
+    $a = @()
+    $menuKeys = @()
+    foreach ($start in $at) {
+        $a += @('--key-at', "$start", 't')
+        for ($i = 0; $i -lt 23; $i++) {
+            $seconds = $start + 0.8 + ($i * 0.3)
+            $menuKeys += [string]::Format(
+                [Globalization.CultureInfo]::InvariantCulture,
+                '{0:F2}:right', $seconds)
+        }
+        $seconds = $start + 7.9
+        $menuKeys += [string]::Format(
+            [Globalization.CultureInfo]::InvariantCulture,
+            '{0:F2}:w', $seconds)
+    }
+    $a += @('--menu-keys', ($menuKeys -join ','))
+    $a
+}
 
 $routeArgs = @{
     doc   = @{
@@ -159,24 +181,37 @@ $routeArgs = @{
         # Repair 35 path, and select the real follower-hire topic from ED-E's
         # own greeting. Log Off closes the normal follower dialogue. The repair
         # script starts the quest; Gibson's greeting result script sets stage
-        # 10 and the quest script starts log one. Goodbye closes Gibson's menu;
-        # Log Playback::End closes the first log. MoveTo and starting Gibson's
-        # conversation are test inputs to reach and speak to her; no quest
-        # state is forced.
+        # 10 and the quest script starts log one. After six natural 22-hour
+        # wait-menu advances, the route follows Ignacio's dialogue through the
+        # ARCHIMEDES INFO; the quest script then starts log two. The three Log
+        # Playback::End choices close the first-log replay and both log sessions.
+        # MoveTo and StartConversation are test inputs to reach and speak to
+        # Gibson and Ignacio; no quest state is forced.
         Args    = @('PrimmNashResidence', '--run', 'player.ModAV Repair 100',
             '--use', 'NVCompanionEDEDisabledREF',
             '--say', 'Companion Protocol::Begin', '--say', 'Log Off',
-            '--say', 'Goodbye.', '--say', 'Log Playback::End') +
+            '--say', 'Goodbye.', '--say', 'Log Playback::End',
+            '--say', 'Log Playback::End', '--say', 'scientific',
+            '--say', 'keep the peace', '--say', 'what more is there',
+            '--say', 'Log Playback::End',
+            '--say-id', '000E35FF', '--say-id', '000E4B49') +
             (Run-At 20 'player.MoveTo OldLadyGibsonRef') +
             (Run-At 24 'OldLadyGibsonRef.StartConversation player') +
-            @('--wait', '80')
+            (Wait-GameDays @(90, 125, 160, 195, 230, 300)) +
+            (Run-At 340 'player.MoveTo IgnacioRivasREF') +
+            (Run-At 360 'IgnacioRivasREF.StartConversation player') +
+            @('--wait', '500')
         BoxAnswers = '1,1,1'
         Success = @('--use: using NVCompanionEDEDisabledREF.',
             'Quest added: ED-E My Love',
             'Hi there. I''m Old Lady Gibson, or so they tell me.',
             'result script: setStage vDialogueEDE 10',
             'Subject E: Diagnosis complete. Begin Recording.',
-            'result script: set vDialogueEDE.iLogsPlayed to 1')
+            'result script: set vDialogueEDE.iLogsPlayed to 1',
+            'result script: set VMS03.bDiscussedWeaponWithIgnacio to 1 / setStage vDialogueEDE 10',
+            'ED-E My Love: Two EDE logs heard',
+            'Download Complete. Begin Recording.',
+            'result script: set vDialogueEDE.iLogsPlayed to 2 / addtopic EDELog2')
     }
 }
 

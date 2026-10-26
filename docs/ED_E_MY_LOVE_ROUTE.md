@@ -3,15 +3,12 @@
 Quest `vDialogueEDE` (`001572E8`), quest script `vDialogueEDESCRIPT`
 (`00157F1F`), disabled-robot script `EDEScriptDisabled` (`001572E0`). This
 route is **PARTIAL** and stays opt-in (`pwsh -File scripts/acceptance.ps1
--Routes ede -Data <Data>`). It covers the quest's Primm start through the first
-audio log. A separate probe also reached Ignacio's ARCHIMEDES INFO and the
-quest's “Two EDE logs heard” message after six in-game waits (132 hours). The
-probe did not capture the second log's dialogue or voice, so its playback is
-still unverified. A follow-up scheduled Escape after Ignacio's result, but the
-dialogue remained open at 500 seconds. This has not been compared side by side
-with Fallout: New Vegas. The revised PowerShell acceptance wrapper was not run
-on Fedora because `pwsh` is unavailable; the equivalent viewer route was run
-directly.
+-Routes ede -Data <Data>`). It covers ED-E's Primm start, first log, and the
+natural Ignacio trigger and second-log playback. The route stops after log two;
+later quest progression and completion are not verified. It has not been
+compared side by side with Fallout: New Vegas. The PowerShell wrapper has not
+been run on Fedora because `pwsh` is unavailable; the equivalent release-viewer
+route was run directly.
 
 ## Acceptance route
 
@@ -28,87 +25,52 @@ sets `VNPCFollowers.bEDEHired`.
 The harness moves the player to `OldLadyGibsonRef` and starts her conversation.
 Her greeting INFO `000841E7` has the `bEDEHired` condition and its result script
 sets `vDialogueEDE` stage 10. The stage script sees `iLogsPlayed == 0`, starts
-`EDEDialoguePackage02`, and displays objective 5. That package plays the first
-log, INFO `00157F17`; its result script advances `iLogsPlayed` to 1. The route
-stops after that log. It does not directly start the quest, set quest/follower
-variables, set a stage or objective, or advance `GameDaysPassed`.
+`EDEDialoguePackage02`, and displays objective 5. That package plays log one,
+INFO `00157F17`; its result sets `iLogsPlayed` to 1.
 
-The explicit test inputs are the Repair skill boost, the simulated E press,
-the dialogue topic selection and `Log Off`, the move to Gibson, and starting
-Gibson's conversation. The repair choices use buttons `1,1,1`: the ESM's two
-activation blocks show the initial repair message twice, followed by the “Run
-the repair” choice. The route waits 80 seconds to let the first log package
-finish, then stops before a second-log trigger.
+The route then advances six 22–23-hour periods through the in-game wait menu
+(about 138 hours), moves the player to Ignacio at HELIOS One, and starts his
+conversation. It selects the scientific, keep-the-peace, and “what more is
+there” responses before choosing ARCHIMEDES INFO `000E35FF`. That INFO's result
+sets `VMS03.bDiscussedWeaponWithIgnacio` and calls `SetStage vDialogueEDE 10`.
+The quest emits “Two EDE logs heard,” then ED-E naturally starts log two,
+INFO `00158829`; its result sets `iLogsPlayed` to 2. The route selects the
+offered `Log Playback::End` option after playback. No quest/follower variable,
+quest stage, objective, or `GameDaysPassed` value is set directly.
 
-A separate probe waited six times through the in-game wait menu (132 hours),
-moved to HELIOS One, and followed Ignacio's dialogue tree: choose the
-scientific response, state that you keep the peace, ask what more there is to
-the plant, then choose “You think ARCHIMEDES is a weapon they built here.” INFO
-`000E35FF` was naturally offered. Its result set
-`VMS03.bDiscussedWeaponWithIgnacio` and called `SetStage vDialogueEDE 10`; the
-viewer then emitted the quest message “Two EDE logs heard.” This confirms the
-natural trigger reached the quest's second-log branch. The probe ended with
-Ignacio's dialogue still open and did not capture the second log's INFO,
-`iLogsPlayed == 2`, or voice. The playback remains unverified; this viewer
-result does not show that the original game fails to play it. In a follow-up,
-Escape was scheduled after the result and the run continued to 500 seconds, but
-the screenshot still showed Ignacio's dialogue choices. No second-log INFO,
-`iLogsPlayed == 2`, or voice appeared. Because the dialogue did not close, this
-does not isolate whether the package would play after a successful close.
-Earlier 56-second probes were too short to satisfy the five-in-game-day
-condition on the quest data's second-log path.
+Explicit test inputs are the Repair skill boost, simulated E presses, dialogue
+choices, the six in-game wait-menu advances, `MoveTo` for Gibson and Ignacio,
+and `StartConversation` for both. These inputs arrange the test and select
+real dialogue; none forces quest state. Repair uses button answers `1,1,1`:
+the ESM's activation blocks show the initial repair message twice, followed by
+the “Run the repair” choice. Both log sessions are closed through their offered
+`Log Playback::End` option.
 
 ## Validation status
 
-FalloutNV.esm data confirms the repair and dialogue result scripts described
-above. A private Linux viewer run on 2026-10-26 recorded the repair,
-recruitment, Gibson INFO `000841E7`, the stage-10 result script, and first-log
-INFO `00157F17`; the first-log route succeeded without a quest-stage or quest-
-variable console command. The separate Ignacio probe recorded the naturally
-offered INFO `000E35FF`, its result script, and the “Two EDE logs heard” quest
-message after 132 in-game hours. It did not record log two playback or
-`iLogsPlayed == 2`. Log one replayed after moving cells. Both runs used
-XWayland inside KDE Wayland: this branch's Winit build enables X11 but not
-Wayland. The revised PowerShell wrapper itself has not been run on Fedora
-(`pwsh` is unavailable).
-
-The revised route's acceptance checks require the repair activation, quest
-start notice, hire INFO, Gibson INFO, stage-10 result script, and first log
-INFO to appear in the viewer log. Passing those checks will show the
-implemented route ran; it will not establish that later stages are complete
-or match the original.
-
-On 2026-10-26, the current PR #87 release build passed the equivalent Linux
-viewer route through the first log: all acceptance markers appeared and no
-panic occurred. The separate 132-hour probe reached Ignacio INFO `000E35FF`
-and the quest's “Two EDE logs heard” message, but left the conversation open
-before log-two playback could be verified. The private screenshot was written.
-These runs used XWayland (`DISPLAY=:0`) in a KDE Wayland session because this
-branch's Winit build has no Wayland backend; the PowerShell wrapper itself
-remains untested because `pwsh` is unavailable.
+On 2026-10-26, the current PR #87 release viewer ran this route from a new game
+in Primm. The log recorded the repair/recruitment, Gibson INFO `000841E7`,
+the stage-10 result, and log one. After six in-game waits, Ignacio INFO
+`000E35FF` set the VMS03 flag and returned to the ED-E quest script. The viewer
+emitted “Two EDE logs heard,” played log two INFO `00158829`, and recorded
+`iLogsPlayed` as 2. The route selected the offered `Log Playback::End`, exited
+with code 0, and produced no panic. The final screenshot showed the player back
+in the world with ED-E. The run used XWayland (`DISPLAY=:0`) in KDE Wayland
+because this branch's Winit build enables X11 but not Wayland. It was not
+compared side by side with Fallout: New Vegas. The PowerShell wrapper itself
+remains untested on Fedora because `pwsh` is unavailable; the equivalent
+viewer argument route was run directly.
 
 ## Remaining quest coverage
 
-- The natural Ignacio trigger is verified: after the five-day gate, INFO
-  `000E35FF` called `SetStage vDialogueEDE 10` and the viewer emitted “Two EDE
-  logs heard.” The second log's INFO, voice and `iLogsPlayed == 2` were not
-  observed, so playback is still unverified. The probe left Ignacio's
-  conversation open even after a timed Escape. Stop route coverage here until
-  dialogue closure and the second package can be observed without forcing
-  quest state.
-- The first log replayed after the cell transition. The temporary dialogue-
-  package lifecycle still needs comparison with the original executable.
-- The radio message branch, package cleanup after a finished log, holotape
+- Later natural progression is not covered: radio/message branch, holotape
   pickup, Hidden Valley discovery, Followers handover, return-to-Primm
-  `MenuMode` step, completion package, and 100 XP are not covered here.
-- The quest script (`00157F1F`) awards 100 XP after the quest is completed and
-  before stage 100, guarded by `bCompleteOnce`; this route has not reached that
-  script condition or verified the reward meter in the viewer.
-- The previous 257-second route recorded `XP +100`, but it forced quest state,
-  stages, calendar advances, package cleanup, item delivery, and travel. That
-  run is historical evidence only and does not prove natural quest completion.
-- The XP meter was not visually verified, audio was not checked, and no
-  side-by-side original-game comparison was made.
+  `MenuMode`, completion package, and quest completion.
+- The quest script (`00157F1F`) awards 100 XP after completion and before
+  stage 100, guarded by `bCompleteOnce`; this route has not reached that
+  condition, verified the award, or visually checked the XP meter. A previous
+  forced-state run logged `XP +100`, but it does not prove natural completion.
+- No side-by-side comparison with the original game has been made.
 
 ## Implementation provenance retained for later route work
 
