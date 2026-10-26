@@ -159,19 +159,24 @@ $routeArgs = @{
         # Repair 35 path, and select the real follower-hire topic from ED-E's
         # own greeting. Log Off closes the normal follower dialogue. The repair
         # script starts the quest; Gibson's greeting result script sets stage
-        # 10 and the quest script starts log one. MoveTo and starting Gibson's
+        # 10 and the quest script starts log one. Goodbye closes Gibson's menu;
+        # Log Playback::End closes the first log. MoveTo and starting Gibson's
         # conversation are test inputs to reach and speak to her; no quest
         # state is forced.
         Args    = @('PrimmNashResidence', '--run', 'player.ModAV Repair 100',
-            '--use', 'NVCompanionEDEDisabledREF', '--say-id', '001579C3',
-            '--say', 'Log Off', '--say', 'Log Off') +
+            '--use', 'NVCompanionEDEDisabledREF',
+            '--say', 'Companion Protocol::Begin', '--say', 'Log Off',
+            '--say', 'Goodbye.', '--say', 'Log Playback::End') +
             (Run-At 20 'player.MoveTo OldLadyGibsonRef') +
             (Run-At 24 'OldLadyGibsonRef.StartConversation player') +
             @('--wait', '80')
         BoxAnswers = '1,1,1'
         Success = @('--use: using NVCompanionEDEDisabledREF.',
-            'ED-E My Love: Fire EDE Chatter - EDE In party', '001579C3',
-            '000841E7', 'result script: setStage vDialogueEDE 10', '00157F17')
+            'Quest added: ED-E My Love',
+            'Hi there. I''m Old Lady Gibson, or so they tell me.',
+            'result script: setStage vDialogueEDE 10',
+            'Subject E: Diagnosis complete. Begin Recording.',
+            'result script: set vDialogueEDE.iLogsPlayed to 1')
     }
 }
 

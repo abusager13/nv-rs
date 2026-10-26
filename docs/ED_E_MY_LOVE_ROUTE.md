@@ -3,9 +3,13 @@
 Quest `vDialogueEDE` (`001572E8`), quest script `vDialogueEDESCRIPT`
 (`00157F1F`), disabled-robot script `EDEScriptDisabled` (`001572E0`). This
 route is **PARTIAL** and stays opt-in (`pwsh -File scripts/acceptance.ps1
--Routes ede -Data <Data>`). It covers the quest's Primm start through stage
-10 and the first audio log. It has not been compared side by side with Fallout:
-New Vegas, and the revised acceptance route has not yet been rerun.
+-Routes ede -Data <Data>`). It covers the quest's Primm start through the first
+audio log. A separate probe naturally reached the second-log trigger in
+Ignacio's dialogue, but the viewer did not start log two or reach stage 20 in
+the 220 seconds after that trigger. It has not been compared side by side with
+Fallout: New Vegas. The revised PowerShell acceptance wrapper was not run on
+Fedora because `pwsh` is unavailable; its first-log viewer command was run
+directly.
 
 ## Acceptance route
 
@@ -34,15 +38,26 @@ activation blocks show the initial repair message twice, followed by the “Run
 the repair” choice. The route waits 80 seconds to let the first log package
 finish, then stops before a second-log trigger.
 
+A separate probe moved to HELIOS One and followed Ignacio's dialogue tree:
+choose the scientific response, state that you keep the peace, ask what more
+there is to the plant, then choose “You think ARCHIMEDES is a weapon they built
+here.” INFO `000E35FF` was naturally offered; its result sets
+`VMS03.bDiscussedWeaponWithIgnacio` and calls `SetStage vDialogueEDE 10`. The
+probe closed the conversation and ran to 220 seconds total (about 56 seconds
+after closing it), but recorded no second-log INFO, `EDEDialoguePackage03`, or
+stage 20. This is a viewer result, not evidence that the original game fails
+to play the log.
+
 ## Validation status
 
 FalloutNV.esm data confirms the repair and dialogue result scripts described
-above. A private viewer probe on 2026-10-08 recorded the repair, recruitment
-INFO `001579C3`, Gibson INFO `000841E7`, the stage-10 result script, and the
-first log INFO `00157F17`. That probe then explicitly dispatched stage 10
-again later to trigger the second log, so it is not evidence for natural
-second-log progression, the old end-to-end route, or this revised acceptance
-script. The current acceptance change has not yet been rerun.
+above. A private Wayland viewer run on 2026-10-26 recorded the repair,
+recruitment, Gibson INFO `000841E7`, the stage-10 result script, and first-log
+INFO `00157F17`; the first-log route succeeded without a quest-stage or quest-
+variable console command. The separate Ignacio probe recorded the naturally
+offered INFO `000E35FF` and its stage-10 result script, but no second log or
+stage 20. The probe also saw log one replay after moving cells. The revised
+PowerShell wrapper itself has not been run on Fedora (`pwsh` is unavailable).
 
 The revised route's acceptance checks require the repair activation, quest
 start notice, hire INFO, Gibson INFO, stage-10 result script, and first log
@@ -52,11 +67,17 @@ or match the original.
 
 ## Remaining quest coverage
 
-- The natural trigger and in-game waiting needed for ED-E's second audio log
-  are not covered by the revised route.
+- The natural Ignacio trigger is now identified as INFO `000E35FF`, but the
+  viewer did not start the second log after its stage-10 result. Trace whether
+  this is repeated-stage handling or package evaluation before changing code.
+- The first log replayed after the cell transition. The temporary dialogue-
+  package lifecycle still needs comparison with the original executable.
 - The radio message branch, package cleanup after a finished log, holotape
   pickup, Hidden Valley discovery, Followers handover, return-to-Primm
   `MenuMode` step, completion package, and 100 XP are not covered here.
+- The quest script (`00157F1F`) awards 100 XP after the quest is completed and
+  before stage 100, guarded by `bCompleteOnce`; this route has not reached that
+  script condition or verified the reward meter in the viewer.
 - The previous 257-second route recorded `XP +100`, but it forced quest state,
   stages, calendar advances, package cleanup, item delivery, and travel. That
   run is historical evidence only and does not prove natural quest completion.
