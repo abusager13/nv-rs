@@ -7,9 +7,11 @@ route is **PARTIAL** and stays opt-in (`pwsh -File scripts/acceptance.ps1
 audio log. A separate probe also reached Ignacio's ARCHIMEDES INFO and the
 quest's “Two EDE logs heard” message after six in-game waits (132 hours). The
 probe did not capture the second log's dialogue or voice, so its playback is
-still unverified. It has not been compared side by side with Fallout: New
-Vegas. The revised PowerShell acceptance wrapper was not run on Fedora because
-`pwsh` is unavailable; the equivalent viewer route was run directly.
+still unverified. A follow-up scheduled Escape after Ignacio's result, but the
+dialogue remained open at 500 seconds. This has not been compared side by side
+with Fallout: New Vegas. The revised PowerShell acceptance wrapper was not run
+on Fedora because `pwsh` is unavailable; the equivalent viewer route was run
+directly.
 
 ## Acceptance route
 
@@ -48,9 +50,13 @@ viewer then emitted the quest message “Two EDE logs heard.” This confirms th
 natural trigger reached the quest's second-log branch. The probe ended with
 Ignacio's dialogue still open and did not capture the second log's INFO,
 `iLogsPlayed == 2`, or voice. The playback remains unverified; this viewer
-result does not show that the original game fails to play it. Earlier
-56-second probes were too short to satisfy the five-in-game-day condition on
-the quest data's second-log path.
+result does not show that the original game fails to play it. In a follow-up,
+Escape was scheduled after the result and the run continued to 500 seconds, but
+the screenshot still showed Ignacio's dialogue choices. No second-log INFO,
+`iLogsPlayed == 2`, or voice appeared. Because the dialogue did not close, this
+does not isolate whether the package would play after a successful close.
+Earlier 56-second probes were too short to satisfy the five-in-game-day
+condition on the quest data's second-log path.
 
 ## Validation status
 
@@ -87,8 +93,9 @@ remains untested because `pwsh` is unavailable.
   `000E35FF` called `SetStage vDialogueEDE 10` and the viewer emitted “Two EDE
   logs heard.” The second log's INFO, voice and `iLogsPlayed == 2` were not
   observed, so playback is still unverified. The probe left Ignacio's
-  conversation open; close it in a later probe before attributing the missing
-  playback to package evaluation.
+  conversation open even after a timed Escape. Stop route coverage here until
+  dialogue closure and the second package can be observed without forcing
+  quest state.
 - The first log replayed after the cell transition. The temporary dialogue-
   package lifecycle still needs comparison with the original executable.
 - The radio message branch, package cleanup after a finished log, holotape
