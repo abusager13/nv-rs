@@ -1,6 +1,6 @@
 # nv-rs milestones
 
-Updated 2026-10-20. The active plan and how each step is judged done. Keep
+Updated 2026-10-14. The active plan and how each step is judged done. Keep
 this file short: per-session detail goes in docs/HANDOFF.md, per-function
 status in [LEDGER.md](LEDGER.md), and the full list of systems in
 [SYSTEMS.md](SYSTEMS.md). The log up to 2026-10-14 is in
