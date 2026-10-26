@@ -65,6 +65,12 @@ INFO to appear in the viewer log. Passing those checks will show the
 implemented route ran; it will not establish that later stages are complete
 or match the original.
 
+On 2026-10-26, the current PR #87 release build passed the equivalent Linux
+viewer run: all six acceptance markers appeared, no panic occurred, and the
+private screenshot was written. This run used XWayland (`DISPLAY=:0`) in a
+KDE Wayland session because this branch's Winit build has no Wayland backend;
+the PowerShell wrapper itself remains untested because `pwsh` is unavailable.
+
 ## Remaining quest coverage
 
 - The natural Ignacio trigger is now identified as INFO `000E35FF`, but the
