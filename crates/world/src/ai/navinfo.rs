@@ -463,12 +463,6 @@ impl NavInfoMap {
                 for (n, via_door) in improved {
                     nodes[n].open = false;
                     if nodes[current].parent == Some(n) {
-                        if via_door.is_some() {
-                            // Paired XTEL doors are listed from both ends.
-                            // Skip a reverse door edge but keep expanding the
-                            // other doors on this navinfo.
-                            continue;
-                        }
                         failed = true;
                         break;
                     }

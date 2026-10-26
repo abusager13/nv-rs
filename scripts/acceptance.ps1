@@ -33,10 +33,6 @@ open, a prompt holds the AI and the input and the route never finishes.
 Each answer is logged as "--answer-boxes: ..."; a box with several
 buttons and no choice left is left open and logged as waiting. Outputs (logs, screenshots) go to
 -Out; they are private, never commit them.
-Acceptance runs pass --no-audio so the viewer stays silent without muting the
-computer's output device, and voiced dialogue advances on the game's normal
-delay for a response without a voice file.
-
 .EXAMPLE
 powershell -File scripts\acceptance.ps1 -Data "D:\Steam\steamapps\common\Fallout New Vegas\Data"
 powershell -File scripts\acceptance.ps1 -Routes vms16 -Build
@@ -208,7 +204,7 @@ foreach ($r in $chosen) {
     # --answer-boxes: prompts answered as they appear, as a player would
     # (see the header); --box-answers 2: VCG01's "revise your character"
     # box answered "Finished - Travel Onward" (its third button).
-    $a = @($Data) + $spec.Args + @('--no-audio', '--answer-boxes', '--box-answers', '2', '--screenshot', $shot)
+    $a = @($Data) + $spec.Args + @('--answer-boxes', '--box-answers', '2', '--screenshot', $shot)
     if ($Background) { $a += '--background' }
     # Each route is its own viewer run: a new game, so the DLC start
     # messages show again in every route that starts outside Doc's house.

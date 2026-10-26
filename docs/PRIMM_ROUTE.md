@@ -35,9 +35,9 @@ for a locked door. The surrounding search is `006b8c50` and `006b9180`. The
 implementation resolves door edges from paired `XTEL` records in
 `crates/world/src/ai/navinfo.rs`, and `door_toward` takes the first door on the
 resulting route. Generated test data covers a multi-door chain and a locked
-door changing the chosen route. When a paired door points back to the current
-node's parent, the search skips that reverse edge and continues expanding the
-other doors; it does not abort the whole search.
+door changing the chosen route. The implementation retains the original
+parent-edge failure condition; with nonnegative edge costs, a reverse edge
+cannot improve the already reached parent.
 
 ## Acceptance route
 
@@ -76,8 +76,7 @@ greeting (observed as “See you later,” “Goodbye,” “Time for me to go,�
 “I need to get going”); the acceptance selector supports these alternatives
 and closes the conversation before starting Slim's dialogue. It then selects
 Slim's Science 30 response, closes with “Goodbye,” and checks the sheriff
-result plus both XP awards. The game `Data` folder is available on this
-machine.
+result plus both XP awards.
 
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
 marker, Beagle's relocation to the player, and starting each conversation are
