@@ -159,9 +159,6 @@ fn main() {
             std::process::exit(2);
         }
     };
-    if args.no_audio {
-        println!("Viewer audio is off (--no-audio); system output is unchanged.");
-    }
     // `NV_GUESSES=1`: untraced behaviour marked [G] runs too
     // (`world::guesses`; the Dead Money contributor's follower rules).
     if std::env::var("NV_GUESSES").is_ok_and(|v| v == "1") {
@@ -447,9 +444,6 @@ fn main() {
             args.talk,
             args.choose.iter().copied().collect(),
         ))
-        .insert_resource(dialogue::SilentAudio {
-            enabled: args.no_audio,
-        })
         .insert_resource(player)
         .insert_resource(walk::CellCollision(physics::Collider::new()))
         .insert_resource(walk::Doors(Vec::new()))
@@ -472,16 +466,12 @@ fn main() {
             });
             // Drawing on its own thread (Bevy's default) or in step with
             // the game's frame (`NV_SYNC_RENDER`, a debugging aid).
-            let plugins = if std::env::var_os("NV_SYNC_RENDER").is_some() {
+            if std::env::var_os("NV_SYNC_RENDER").is_some() {
                 plugins.disable::<bevy::render::pipelined_rendering::PipelinedRenderingPlugin>()
             } else {
                 plugins
-            };
-            plugins
+            }
         })
-        .insert_resource(bevy::audio::GlobalVolume::new(bevy::audio::Volume::Linear(
-            if args.no_audio { 0.0 } else { 1.0 },
-        )))
         .insert_resource(hud::ShowHud(args.hud))
         .insert_resource(ai::FrozenAi(args.freeze_ai))
         .insert_resource(movement)

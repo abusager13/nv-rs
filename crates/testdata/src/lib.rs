@@ -538,10 +538,8 @@ impl TempData {
     }
 
     pub fn write(&self, relative: &str, bytes: &[u8]) {
-        // Fixtures use game paths, which are commonly written with Windows
-        // separators even when the test runs on Linux.
-        let relative = relative.replace('\\', "/");
-        let path = self.0.join(relative);
+        // Game records use Windows separators; make fixture paths portable.
+        let path = self.0.join(relative.replace('\\', "/"));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, bytes).unwrap();
     }

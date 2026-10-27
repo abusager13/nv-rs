@@ -60,13 +60,10 @@ marker. No quest stage or quest variable is forced. The route's expected
 results are the Slim sheriff message and `XP +300` / `XP +30`.
 
 The route is opt-in because it takes several minutes; the default acceptance
-set remains `doc,vcg02,vms16`. On 2026-10-20 the route passed on macOS against
-the installed game data: it exited 0 and logged the sheriff result, `XP +300`
-and `XP +30`, with no panic. The test used the current PR #29 code and a
-temporary overlay of PR #108's Metal renderer changes. A PR #29-only Metal
-run had hit the device's resource limit before the sheriff result, so this
-pass verifies the quest route with the Mac renderer fix present; it is not a
-PR #29-only renderer run. Beagle's sheriff conversation selected INFO
+set remains `doc,vcg02,vms16`. A Linux viewer run on 2026-10-08 completed the
+route with exit code 0 and logged the sheriff result, `XP +300` and `XP +30`,
+with no panic. The route also passed on macOS on 2026-10-20. Beagle's sheriff
+conversation selected INFO
 `000DA106`, which set `BeagleCaptured` to 3. Nash then offered “What about
 Primm Slim? Could he be sheriff?”, and selecting it ran INFO `00162C19` and
 displayed the optional objective. Slim's Science 30 response ran INFO
@@ -80,8 +77,6 @@ result plus both XP awards.
 
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
 marker, Beagle's relocation to the player, and starting each conversation are
-still forced by console commands. It was exercised in the Linux viewer but has
-also passed on macOS with PR #108's Metal renderer overlay, as recorded in
-`docs/PLAYTESTING.md`. Neither run has been compared side by side with the
-original game. NPC obstacle replanning remains unfinished shared AI behavior;
-this run does not establish a Linux-only navigation defect.
+still forced by console commands. Neither run has been compared side by side
+with the original game. NPC obstacle replanning remains unfinished shared AI
+behavior; these runs do not establish a Linux-only navigation defect.

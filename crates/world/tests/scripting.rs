@@ -992,9 +992,9 @@ fn people_go_through_load_doors_toward_their_package() {
     );
 
     // A different interior reached through a shared intermediate place:
-    // Bison-like `TestCell` → `TestCell3` → `TestCell4`. The first lookup
-    // should choose the exit to the shared exterior, and the next lookup
-    // after that transition should choose the target interior's entrance.
+    // Two interiors joined through an intermediate place: `TestCell` →
+    // `TestCell3` → `TestCell4`. The first lookup should choose the exit to
+    // the shared exterior, and the next should choose the target entrance.
     state.spaces.insert(doc, (FormId(CELL), FormId(CELL)));
     state.positions.insert(doc, ([0.0, 0.0, 0.0], 0.0));
     let first = ai::door_toward(

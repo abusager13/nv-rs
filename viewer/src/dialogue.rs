@@ -60,17 +60,8 @@ pub struct DialogueState(pub GameState);
 #[derive(Resource, Default)]
 pub struct AutoTalk(pub bool, pub std::collections::VecDeque<usize>);
 
-/// Audio is suppressed in automated acceptance runs while dialogue keeps
-/// moving on the game's normal delay for a response without a voice file.
-#[derive(Resource, Default)]
-pub struct SilentAudio {
-    /// Whether to suppress audio playback.
-    pub enabled: bool,
-}
-
 /// `--say`: for testing, topics to choose when the menu offers some, in
-/// order: each the first offered whose text contains one of its `|`-separated
-/// alternatives (ignoring case).
+/// order: each the first offered whose text contains it (ignoring case).
 #[derive(Resource, Default)]
 pub struct AutoSay(pub std::collections::VecDeque<String>);
 
@@ -79,17 +70,9 @@ impl AutoSay {
     /// then used up; none if it names none of them.
     pub fn pick(&mut self, offered: &[&str]) -> Option<usize> {
         let wanted = self.0.front()?.to_lowercase();
-        let alternatives: Vec<_> = wanted
-            .split('|')
-            .map(str::trim)
-            .filter(|alternative| !alternative.is_empty())
-            .collect();
-        let i = offered.iter().position(|t| {
-            let text = t.to_lowercase();
-            alternatives
-                .iter()
-                .any(|alternative| text.contains(*alternative))
-        })?;
+        let i = offered
+            .iter()
+            .position(|t| t.to_lowercase().contains(&wanted))?;
         self.0.pop_front();
         Some(i)
     }
@@ -255,11 +238,7 @@ fn play_voice(
     audio: &mut Assets<crate::sounds::PcmSound>,
     game: &cellview::Game,
     talk: &Talk,
-    silent_audio: bool,
 ) -> Option<Entity> {
-    if silent_audio {
-        return None;
-    }
     let response = talk.info.responses.get(talk.response)?;
     let voice = talk.speaker.voice?;
     let path = dialogue::voice_path(&game.order, &talk.info, response, voice)?;
@@ -378,7 +357,6 @@ pub fn talk(
     time: Res<Time>,
     game: Res<GameFiles>,
     mut state: ResMut<DialogueState>,
-    silent_audio: Res<SilentAudio>,
     talkers: Res<Talkers>,
     crosshair: Res<crate::crosshair::Crosshair>,
     mut target: ResMut<TalkTarget>,
@@ -509,13 +487,7 @@ pub fn talk(
                 talk.response += 1;
                 talk.since = now;
                 if talk.response < talk.info.responses.len() {
-                    talk.voice = play_voice(
-                        &mut commands,
-                        &mut audio,
-                        &game.0,
-                        talk,
-                        silent_audio.enabled,
-                    );
+                    talk.voice = play_voice(&mut commands, &mut audio, &game.0, talk);
                 } else {
                     // The line is said: its second result script (the menu
                     // skips it for "run immediately" lines, `00762ff0`).
@@ -551,13 +523,7 @@ pub fn talk(
                             talk.info = *info;
                             talk.response = 0;
                             talk.since = now;
-                            talk.voice = play_voice(
-                                &mut commands,
-                                &mut audio,
-                                &game.0,
-                                talk,
-                                silent_audio.enabled,
-                            );
+                            talk.voice = play_voice(&mut commands, &mut audio, &game.0, talk);
                         }
                         dialogue::AfterLine::Topics(list) => {
                             if !auto_say.0.is_empty() {
@@ -632,13 +598,7 @@ pub fn talk(
                     talk.response = 0;
                     talk.since = now;
                     talk.choices = None;
-                    talk.voice = play_voice(
-                        &mut commands,
-                        &mut audio,
-                        &game.0,
-                        talk,
-                        silent_audio.enabled,
-                    );
+                    talk.voice = play_voice(&mut commands, &mut audio, &game.0, talk);
                 }
                 Some(i) if i == list.len() && screen.is_none() && needs_leave(list) => {
                     end(&mut commands, &mut conversation.0, &mut player, &mut panel);
@@ -762,13 +722,7 @@ pub fn talk(
                 ) {
                     let mut talk = talk;
                     talk.say_to = say_to.then_some(topic);
-                    talk.voice = play_voice(
-                        &mut commands,
-                        &mut audio,
-                        &game.0,
-                        &talk,
-                        silent_audio.enabled,
-                    );
+                    talk.voice = play_voice(&mut commands, &mut audio, &game.0, &talk);
                     if menu {
                         player.ready = false;
                         for mut text in &mut prompt {
@@ -905,13 +859,7 @@ pub fn talk(
     ) else {
         return;
     };
-    talk.voice = play_voice(
-        &mut commands,
-        &mut audio,
-        &game.0,
-        &talk,
-        silent_audio.enabled,
-    );
+    talk.voice = play_voice(&mut commands, &mut audio, &game.0, &talk);
     if menu {
         player.ready = false;
         for mut text in &mut prompt {
@@ -1239,15 +1187,6 @@ mod tests {
         assert_eq!(say.pick(&offered), None);
         assert_eq!(say.pick(&["No.", "Sure, I'll come with you."]), Some(1));
         assert!(say.0.is_empty());
-    }
-
-    #[test]
-    fn say_picks_a_topic_matching_any_alternative() {
-        for offered in [["Goodbye."], ["See you later."]] {
-            let mut say = AutoSay(["see you later | goodbye".to_string()].into());
-            assert_eq!(say.pick(&offered), Some(0));
-            assert!(say.0.is_empty());
-        }
     }
 
     /// `00762950`: a clicked-away voice plays on for 500 ms; `008a20d0`: a
