@@ -28,9 +28,9 @@ sets `vDialogueEDE` stage 10. The stage script sees `iLogsPlayed == 0`, starts
 `EDEDialoguePackage02`, and displays objective 5. That package plays log one,
 INFO `00157F17`; its result sets `iLogsPlayed` to 1.
 
-The route then advances six 22–23-hour periods through the in-game wait menu
-(about 138 hours), moves the player to Ignacio at HELIOS One, and starts his
-conversation. It selects the scientific, keep-the-peace, and “what more is
+The route then advances six 23-hour periods through the in-game wait menu
+(138 hours total; 23 Right inputs per wait), moves the player to Ignacio at
+HELIOS One, then starts his conversation. It selects the scientific, keep-the-peace, and “what more is
 there” responses before choosing ARCHIMEDES INFO `000E35FF`. That INFO's result
 sets `VMS03.bDiscussedWeaponWithIgnacio` and calls `SetStage vDialogueEDE 10`.
 The quest emits “Two EDE logs heard,” then ED-E naturally starts log two,
@@ -74,12 +74,17 @@ viewer argument route was run directly.
 
 ## Implementation provenance retained for later route work
 
-**Pip-Boy `MenuMode`.** In FalloutNV.exe 1.4.0.525, `MenuModeFunction`
-(`005c4240`) calls `GetMenuModeConditionFunction` (`0059c380`) to evaluate
-whether any menu or the requested class is open. The check is a condition,
-not an open/close event. `Pipboy::top_class` contributes the open menu class
-to `run_scripts` on each viewer script tick; duplicate classes are dispatched
-once. The current partial route does not reach the Pip-Boy return step.
+**Later Pip-Boy `MenuMode` step (not implemented in this route).** In
+FalloutNV.exe 1.4.0.525, `MenuModeFunction` (`005c4240`) evaluates the
+condition through `GetMenuModeConditionFunction` (`0059c380`). The quest
+script is considered each `TES::RunScripts` pass (`00455490`), but
+`TESQuest::Run` (`0060d4d0`) calls `Script::Run` (`005ac1e0`), which reduces
+the quest script's delay and returns before running it while that delay stays
+positive. After a run, it sets the next delay from the owning quest
+(`00792760`) or the `fQuestScriptDelayTime` setting. Therefore a quest's
+`MenuMode` block is checked when its script delay expires, not every frame.
+This route stops after log two and does not exercise the later Pip-Boy return
+step.
 
 **Map discovery.** The game's proximity loop at `00779070` checks the player's
 3D distance against a marker radius, then sets visible and travel bits through

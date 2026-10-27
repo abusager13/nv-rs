@@ -89,7 +89,7 @@ function Run-Line([string[]]$lines) {
 }
 function Run-At([int]$at, [string]$line) { @('--run-at', "$at", $line) }
 function Wait-GameDays([int[]]$at) {
-    # Open the wait menu at each time and advance six 22-hour periods. These
+    # Open the wait menu and advance six 23-hour periods: 23 Right inputs each.
     # are player wait-menu inputs, not changes to GameDaysPassed or quest state.
     $a = @()
     $menuKeys = @()
@@ -181,7 +181,7 @@ $routeArgs = @{
         # Repair 35 path, and select the real follower-hire topic from ED-E's
         # own greeting. Log Off closes the normal follower dialogue. The repair
         # script starts the quest; Gibson's greeting result script sets stage
-        # 10 and the quest script starts log one. After six natural 22-hour
+        # 10 and the quest script starts log one. After six natural 23-hour
         # wait-menu advances, the route follows Ignacio's dialogue through the
         # ARCHIMEDES INFO; the quest script then starts log two. The three Log
         # Playback::End choices close the first-log replay and both log sessions.
@@ -226,7 +226,7 @@ foreach ($r in $chosen) {
     $log = Join-Path $Out "$r.log"
     $shot = Join-Path $Out "$r.png"
     # Most routes use --box-answers 2 for VCG01's "Finished - Travel
-    # Onward" choice; ED-E supplies 1,1 for the two Repair menu choices.
+    # Onward" choice; ED-E supplies 1,1,1 for the three repair message choices.
     $boxAnswers = if ($spec.ContainsKey('BoxAnswers')) { $spec.BoxAnswers } else { '2' }
     $a = @($Data) + $spec.Args + @('--answer-boxes', '--box-answers', $boxAnswers, '--screenshot', $shot)
     if ($Background) { $a += '--background' }
