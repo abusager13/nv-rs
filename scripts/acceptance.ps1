@@ -185,8 +185,10 @@ $routeArgs = @{
               '--say', 'See you later|Goodbye|Time for me to go|I need to get going') +
             (Run-At 430 'player.MoveTo PrimmSlimREF') +
             (Run-At 435 'PrimmSlimREF.StartConversation player') +
+            # Allow Slim's spoken reprogramming response to finish before
+            # ending the route; the result script runs after the response.
             @('--say', 'Reprogram Primm Slim',
-              '--say', 'Goodbye', '--wait', '500')
+              '--say', 'Goodbye', '--wait', '650')
         Success = @('My Kind of Town: You reprogrammed Primm Slim to act as Sheriff of Primm.',
             'XP +300', 'XP +30')
     }

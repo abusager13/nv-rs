@@ -63,6 +63,15 @@ then starts the conversation at 371 seconds before Nash leaves for his idle
 marker. No quest stage or quest variable is forced. The route's expected
 results are the Slim sheriff message and `XP +300` / `XP +30`.
 
+On 2026-10-31 the rebased viewer at `22e8d69b` ran this route on Fedora in a
+native Wayland session using installed game data. The first run ended at 500
+seconds while Slim's voiced response was still playing and missed all three
+expected results. With the route limit extended to 650 seconds, a fresh run
+recorded the sheriff result and both XP awards, exited 0 without a panic, and
+passed the PowerShell acceptance check in 656 seconds. This used a development
+build with reduced optimization for `engine-fallout` and `engine-havok` to
+fit the machine's memory, not a release build.
+
 The route is opt-in because it takes several minutes; the default acceptance
 set remains `doc,vcg02,vms16`. A Linux viewer run on 2026-10-08 completed the
 route with exit code 0 and logged the sheriff result, `XP +300` and `XP +30`,
@@ -81,6 +90,6 @@ result plus both XP awards.
 
 The route remains PARTIAL: player movement to Beagle, Nash, Slim, and the exit
 marker, Beagle's relocation to the player, and starting each conversation are
-still forced by console commands. Neither run has been compared side by side
+still forced by console commands. No run has been compared side by side
 with the original game. NPC obstacle replanning remains unfinished shared AI
 behavior; these runs do not establish a Linux-only navigation defect.
