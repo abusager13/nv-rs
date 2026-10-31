@@ -50,6 +50,14 @@ the “Run the repair” choice. Both log sessions are closed through their offe
 
 ## Validation status
 
+On 2026-10-31, commit `9d60396b` passed the `ede` PowerShell acceptance
+route on Fedora in a native Wayland session using the installed game data.
+All expected lines were present, including both log results; the log recorded
+six 23-hour waits. The viewer exited 0 with no panic after 507 seconds. This
+was a development-profile build with reduced optimization for the
+`engine-fallout` and `engine-havok` crates to fit the machine's memory, not a
+release build. No side-by-side comparison with the original was made.
+
 On 2026-10-26, the current PR #87 release viewer ran this route from a new game
 in Primm. The log recorded the repair/recruitment, Gibson INFO `000841E7`,
 the stage-10 result, and log one. After six in-game waits, Ignacio INFO
