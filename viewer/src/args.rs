@@ -154,6 +154,9 @@ OPTIONS:
                             left, right, up, down, enter) into the top menu at
                             S seconds after starting; tab leaves the
                             hacking and terminal menus, as Tab does
+    --menu-keys-player-clock
+                            time --menu-keys from player readiness, like
+                            --key-at, rather than application startup
     --answer-boxes          for testing (the acceptance routes): answer the
                             prompts on top by rule as soon as they're shown,
                             as a player would: a message box with one button
@@ -318,6 +321,8 @@ pub struct Args {
     /// `--menu-keys`: keys typed into the menus (seconds after starting,
     /// the key).
     pub menu_keys: Vec<(f64, String)>,
+    /// Use the player-ready `--key-at` clock for `--menu-keys`.
+    pub menu_keys_player_clock: bool,
     /// `--answer-boxes`: message boxes answered with their first button,
     /// tutorial boxes closed, once shown (a test aid).
     pub answer_boxes: bool,
@@ -440,6 +445,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
     let mut movies = None;
     let mut menu_clicks = Vec::new();
     let mut menu_keys = Vec::new();
+    let mut menu_keys_player_clock = false;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         let mut value = |flag: &str| {
@@ -624,6 +630,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
                     menu_keys.push((at, key));
                 }
             }
+            "--menu-keys-player-clock" => menu_keys_player_clock = true,
             "--menu-click" => {
                 let v = value("--menu-click")?;
                 for n in v.split(',') {
@@ -719,6 +726,7 @@ pub fn parse(args: &[String]) -> Result<Option<Args>, String> {
             movies,
             menu_clicks,
             menu_keys,
+            menu_keys_player_clock,
             answer_boxes,
             box_answers,
         })),
@@ -779,6 +787,17 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(choosing.box_answers, vec![1, 0]);
+        let menu_clock = parse(&strings(&[
+            "Data",
+            "Cell",
+            "--menu-keys-player-clock",
+            "--menu-keys",
+            "2:right",
+        ]))
+        .unwrap()
+        .unwrap();
+        assert!(menu_clock.menu_keys_player_clock);
+        assert_eq!(menu_clock.menu_keys, [(2.0, "right".to_string())]);
         assert!(parse(&strings(&["Data", "Cell", "--box-answers", "no"])).is_err());
         let character = parse(&strings(&["Data", "Cell", "--character", "c.txt"]))
             .unwrap()

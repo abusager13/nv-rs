@@ -29,7 +29,7 @@ sets `vDialogueEDE` stage 10. The stage script sees `iLogsPlayed == 0`, starts
 INFO `00157F17`; its result sets `iLogsPlayed` to 1.
 
 The route then advances six 23-hour periods through the in-game wait menu
-(138 hours total; 23 Right inputs per wait), moves the player to Ignacio at
+(138 hours intended; 23 Right inputs per wait), moves the player to Ignacio at
 HELIOS One, then starts his conversation. It selects the scientific, keep-the-peace, and “what more is
 there” responses before choosing ARCHIMEDES INFO `000E35FF`. That INFO's result
 sets `VMS03.bDiscussedWeaponWithIgnacio` and calls `SetStage vDialogueEDE 10`.
@@ -38,6 +38,8 @@ INFO `00158829`; its result sets `iLogsPlayed` to 2. The route selects the
 offered `Log Playback::End` option after playback. No quest/follower variable,
 quest stage, objective, or `GameDaysPassed` value is set directly.
 
+The wait-menu keys use the same player-ready clock as the timed T presses,
+so the time spent loading does not shift them relative to the menu opening.
 Explicit test inputs are the Repair skill boost, simulated E presses, dialogue
 choices, the six in-game wait-menu advances, `MoveTo` for Gibson and Ignacio,
 and `StartConversation` for both. These inputs arrange the test and select
@@ -55,11 +57,10 @@ the stage-10 result, and log one. After six in-game waits, Ignacio INFO
 emitted “Two EDE logs heard,” played log two INFO `00158829`, and recorded
 `iLogsPlayed` as 2. The route selected the offered `Log Playback::End`, exited
 with code 0, and produced no panic. The final screenshot showed the player back
-in the world with ED-E. The run used XWayland (`DISPLAY=:0`) in KDE Wayland
-because this branch's Winit build enables X11 but not Wayland. It was not
-compared side by side with Fallout: New Vegas. The PowerShell wrapper itself
-remains untested on Fedora because `pwsh` is unavailable; the equivalent
-viewer argument route was run directly.
+in the world with ED-E. This run predates the rebase and the shared-clock
+change, and was not compared side by side with Fallout: New Vegas. The
+PowerShell wrapper was not run on Fedora for that run; the equivalent viewer
+argument route was run directly.
 
 ## Remaining quest coverage
 
@@ -71,6 +72,8 @@ viewer argument route was run directly.
   condition, verified the award, or visually checked the XP meter. A previous
   forced-state run logged `XP +100`, but it does not prove natural completion.
 - No side-by-side comparison with the original game has been made.
+- A type-1 exterior second location still needs the game's worldspace and
+  radius test; only the interior-cell shortcut is implemented (`00676390`).
 
 ## Implementation provenance retained for later route work
 

@@ -431,10 +431,21 @@ pub fn at_second_location(
     };
     let reference = match location.kind {
         0 => location.form,
-        // `PLD2` kind 1 is a cell, not a placed reference. The package is
-        // satisfied when the actor's current cell is the specified cell
-        // (`0067f3e0`, `00676390`, FalloutNV.exe 1.4.0.525).
-        1 => return here_cell == location.form,
+        // `00676390` returns immediately for a type-1 location only when
+        // both cells are the same interior (`00425fd0`). Exterior cells
+        // need the worldspace and radius test; that case is not modelled
+        // here yet and must not be treated as an automatic match.
+        1 => {
+            let interior = order.get(location.form).is_some_and(|rr| {
+                rr.entry.header.kind == esm::sig::CELL
+                    && rr.record().ok().is_some_and(|record| {
+                        record.get(esm::sig::DATA).is_some_and(|data| {
+                            data.data.first().is_some_and(|flags| flags & 1 != 0)
+                        })
+                    })
+            });
+            return interior && here_cell == location.form;
+        }
         _ => return false,
     };
     let Some((there, _, spot_at, _)) = state.place(order, reference) else {

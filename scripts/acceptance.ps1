@@ -6,7 +6,7 @@ them (CONTRIBUTING.md).
 
 .DESCRIPTION
 Routes (commands and success lines documented in docs/GOODSPRINGS_ROUTE.md,
-docs/PATHING.md and docs/VANCE_GUN_ROUTE.md):
+docs/PATHING.md, docs/VANCE_GUN_ROUTE.md and docs/ED_E_MY_LOVE_ROUTE.md):
   doc    Doc Mitchell walks the west rooms to his chair spot and talks
          (GSDocMitchellHouse, VCG01 stage 110).
   vcg02  Back in the Saddle: Sunny's walks, wells, reward (the quest's own
@@ -90,7 +90,7 @@ function Run-Line([string[]]$lines) {
 function Run-At([int]$at, [string]$line) { @('--run-at', "$at", $line) }
 function Wait-GameDays([int[]]$at) {
     # Open the wait menu and advance six 23-hour periods: 23 Right inputs each.
-    # are player wait-menu inputs, not changes to GameDaysPassed or quest state.
+    # These are menu inputs, not changes to GameDaysPassed or quest state.
     $a = @()
     $menuKeys = @()
     foreach ($start in $at) {
@@ -106,7 +106,7 @@ function Wait-GameDays([int[]]$at) {
             [Globalization.CultureInfo]::InvariantCulture,
             '{0:F2}:w', $seconds)
     }
-    $a += @('--menu-keys', ($menuKeys -join ','))
+    $a += @('--menu-keys-player-clock', '--menu-keys', ($menuKeys -join ','))
     $a
 }
 

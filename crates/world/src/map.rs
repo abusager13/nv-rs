@@ -114,7 +114,10 @@ pub fn discover(
     let reveal =
         crate::scripting::game_setting(order, "iMapMarkerRevealDistance").unwrap_or(1000.0);
     for m in markers {
-        if state.discovered.contains(&m.reference) || m.flags & 0x03 == 0x03 {
+        // `00779070` awards discovery only when visibility or fast travel
+        // changes. A marker already revealed and travelable by ShowMap has
+        // neither change and gives no second message or reward.
+        if shown(state, m) && can_travel(state, m) {
             continue;
         }
         let radius = if m.radius > 0.0 { m.radius } else { reveal };
