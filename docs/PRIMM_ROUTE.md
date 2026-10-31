@@ -29,15 +29,19 @@ These records were read from `FalloutNV.esm` with `nvinspect`:
 
 The cross-place path used by Beagle is the game's navmesh-info search. Its
 edge expansion (`FalloutNV.exe 006b8490`) includes the `NVCI` third-list door
-edges. Each door edge uses distance between the two info positions × the
-current info's `k` × 1, then adds the path cost so far `g`, then adds 409600
-for a locked door. The surrounding search is `006b8c50` and `006b9180`. The
-implementation resolves door edges from paired `XTEL` records in
-`crates/world/src/ai/navinfo.rs`, and `door_toward` takes the first door on the
-resulting route. Generated test data covers a multi-door chain and a locked
-door changing the chosen route. The implementation retains the original
-parent-edge failure condition; with nonnegative edge costs, a reverse edge
-cannot improve the already reached parent.
+edges. It measures the walk to the near teleport point and the walk from the
+far teleport point, adds them, multiplies by the current info's `k` and 3,
+then adds the path cost and any door penalty. The linked door's navmesh portal
+identifies the destination info. Disabled doors and destination infos marked
+0x10 are skipped; the request's lock disposition determines whether an
+unopenable door is skipped, ignored, or penalized. Minimal-use doors carry the
+penalty. The surrounding search is `006b8c50` and `006b9180`.
+`door_toward` takes the first door on the route. Generated data covers a
+multi-door chain and door selection, including keys and ownership. The
+alarmed-guard check uses the world's current-package model; it has not been
+compared with the original process state. The cross-place caller uses the
+default lock disposition, and same-space `virtual_path` searches still omit
+door edges. The parent-edge failure condition is retained.
 
 ## Acceptance route
 

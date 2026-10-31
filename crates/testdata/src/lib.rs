@@ -1415,6 +1415,9 @@ pub mod quest_ids {
     pub const LINK_DOOR4: u32 = 0xB26;
     pub const LINK_DOOR5: u32 = 0xB27;
     pub const LINK_DOOR6: u32 = 0xB28;
+    pub const PATH_FACTION: u32 = 0xB2C;
+    pub const PATH_GUARD_CLASS: u32 = 0xB2D;
+    pub const PATH_ALARM_PACKAGE: u32 = 0xB2E;
     /// A follow package: the player, within 200.
     pub const FOLLOW_PLAYER: u32 = 0xA5A;
     /// A strongbox (`StrongboxRef`, the chest's base) locked at level 50
@@ -1795,6 +1798,7 @@ End
     let mut doc = edid("TestDoc");
     doc.extend(sub(b"FULL", &zstr("Doc")));
     doc.extend(sub(b"ACBS", &[0; 24]));
+    doc.extend(sub(b"CNAM", &PATH_GUARD_CLASS.to_le_bytes()));
     doc.extend(sub(b"VTCK", &VOICE.to_le_bytes()));
     doc.extend(sub(b"SCRI", &DOC_SCRIPT.to_le_bytes()));
     doc.extend(sub(b"PKID", &TRAVEL.to_le_bytes()));
@@ -2621,11 +2625,23 @@ End
         |id: u32, base: u32, pos: [f32; 3], name: &str| named_with(id, base, pos, name, &[]);
     // A load door (the test door's base) to `to`, arriving at `arrive`
     // facing east.
-    let link_door = |id: u32, pos: [f32; 3], to: u32, arrive: [f32; 3]| {
+    let link_door = |id: u32, pos: [f32; 3], to: u32, arrive: [f32; 3], mesh: u32| {
         let mut xtel = to.to_le_bytes().to_vec();
         xtel.extend(f32s(&[arrive[0], arrive[1], arrive[2], 0.0, 0.0, 1.5]));
         xtel.extend(0u32.to_le_bytes());
-        placed(id, DOOR, pos, [0.0; 3], &sub(b"XTEL", &xtel))
+        let mut extra = sub(b"XTEL", &xtel);
+        let mut portal = mesh.to_le_bytes().to_vec();
+        portal.extend([0u8; 4]);
+        extra.extend(sub(b"XNDP", &portal));
+        if id == LINK_DOOR {
+            let mut lock = vec![50u8, 0, 0, 0];
+            lock.extend(KEY.to_le_bytes());
+            lock.extend([0u8; 12]);
+            extra.extend(sub(b"XLOC", &lock));
+            extra.extend(sub(b"XRNK", &2i32.to_le_bytes()));
+            extra.extend(sub(b"XGLB", &GLOBAL.to_le_bytes()));
+        }
+        placed(id, DOOR, pos, [0.0; 3], &extra)
     };
     // The doctor sells what's in the chest (his merchant container).
     let mut refs = named_with(
@@ -2651,12 +2667,14 @@ End
         [150.0, 150.0, 0.0],
         LINK_DOOR2,
         [400.0, 0.0, 0.0],
+        NAVMESH,
     ));
     refs.extend(link_door(
         LINK_DOOR3,
         [20.0, 150.0, 0.0],
         LINK_DOOR4,
         [10.0, 0.0, 0.0],
+        NAVMESH,
     ));
     let mut xloc = vec![50u8, 0, 0, 0];
     xloc.extend(KEY.to_le_bytes());
@@ -2773,6 +2791,7 @@ End
         [450.0, 0.0, 0.0],
         LINK_DOOR,
         [150.0, 120.0, 0.0],
+        NAVMESH2,
     ));
     refs2.extend(named(
         FAR_MARKER,
@@ -2794,12 +2813,14 @@ End
         [10.0, 0.0, 0.0],
         LINK_DOOR3,
         [20.0, 150.0, 0.0],
+        NAVMESH3,
     ));
     refs3.extend(link_door(
         LINK_DOOR6,
         [100.0, 0.0, 0.0],
         LINK_DOOR5,
         [200.0, 0.0, 0.0],
+        NAVMESH3,
     ));
     contents.extend(cell3);
     contents.extend(group(
@@ -2813,6 +2834,7 @@ End
         [200.0, 0.0, 0.0],
         LINK_DOOR6,
         [100.0, 0.0, 0.0],
+        NAVMESH4,
     ));
     let mut cell4_data = edid("TestCell4");
     cell4_data.extend(sub(b"DATA", &[1]));
@@ -2855,7 +2877,9 @@ End
             NAVMESH3,
             CELL3,
             [50.0, 0.0, 0.0],
-            vec![LINK_DOOR4, LINK_DOOR6],
+            // A misleading duplicate owner: the linked reference's portal,
+            // not membership in this list, identifies the destination mesh.
+            vec![LINK_DOOR4, LINK_DOOR6, LINK_DOOR2],
         ),
         (NAVMESH4, CELL4, [200.0, 0.0, 0.0], vec![LINK_DOOR5]),
     ] {
@@ -2863,6 +2887,20 @@ End
         navinfo.extend(nvci(mesh, &doors));
     }
     plugin.extend(group(*b"NAVI", 0, &record(b"NAVI", 0xB2B, &navinfo)));
+    plugin.extend(group(
+        *b"FACT",
+        0,
+        &record(b"FACT", PATH_FACTION, &edid("TestPathFaction")),
+    ));
+    let mut guard_class = edid("TestPathGuardClass");
+    let mut class_data = [0u8; 28];
+    class_data[16] = 2;
+    guard_class.extend(sub(b"DATA", &class_data));
+    plugin.extend(group(
+        *b"CLAS",
+        0,
+        &record(b"CLAS", PATH_GUARD_CLASS, &guard_class),
+    ));
     plugin.extend(group(*b"GMST", 0, &settings));
     // The game's clock: 10:00, at 30 game seconds a second.
     let mut globals = record(b"GLOB", GLOBAL, &glob);
@@ -3133,6 +3171,9 @@ End
     plugin.extend(group(*b"MISC", 0, &misc));
     plugin.extend(group(*b"LVLI", 0, &record(b"LVLI", LEVELED, &leveled)));
     let mut packages = record(b"PACK", TRAVEL, &travel);
+    let mut alarm = edid("TestPathAlarmPackage");
+    alarm.extend(sub(b"PKDT", &[0, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 0]));
+    packages.extend(record(b"PACK", PATH_ALARM_PACKAGE, &alarm));
     packages.extend(record(b"PACK", FAR_TRAVEL, &far_travel));
     packages.extend(record(b"PACK", FOLLOW_PLAYER, &follow));
     plugin.extend(group(*b"PACK", 0, &packages));

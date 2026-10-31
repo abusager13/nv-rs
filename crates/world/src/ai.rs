@@ -897,8 +897,7 @@ pub fn door_toward(
     target: [f32; 3],
     infos: &mut navinfo::NavInfos,
 ) -> Option<DoorWay> {
-    let (here_space, _, here, _) = state.place(order, actor)?;
-    let door = infos.first_door_toward(order, state, here_space, here, space, target)?;
+    let door = infos.first_door_toward(order, state, actor, space, target)?;
     let space_of = |r: FormId| {
         let w = crate::scripting::whereabouts(order, r)?;
         Some((w.world.unwrap_or(w.cell), w.cell))

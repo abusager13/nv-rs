@@ -6,7 +6,7 @@ them (CONTRIBUTING.md).
 
 .DESCRIPTION
 Routes (commands and success lines documented in docs/GOODSPRINGS_ROUTE.md,
-docs/PATHING.md and docs/VANCE_GUN_ROUTE.md):
+docs/PATHING.md, docs/VANCE_GUN_ROUTE.md and docs/PRIMM_ROUTE.md):
   doc    Doc Mitchell walks the west rooms to his chair spot and talks
          (GSDocMitchellHouse, VCG01 stage 110).
   vcg02  Back in the Saddle: Sunny's walks, wells, reward (the quest's own
@@ -16,6 +16,7 @@ docs/PATHING.md and docs/VANCE_GUN_ROUTE.md):
          die, stage 100.
   vance  Vance's Gun: investigate the missing museum gun and get the Wins'
          safe unlocked through the quest's own activation/dialogue scripts.
+  primm  My Kind of Town: rescue Beagle and make Primm Slim sheriff.
 A route passes when every one of its success lines appears in the
 viewer's output and no panic does.
 Every route runs with the viewer's --answer-boxes test aid, which answers
@@ -41,7 +42,7 @@ powershell -File scripts\acceptance.ps1 -Background
 param(
     # The game's Data folder (or set NV_DATA).
     [string]$Data = $env:NV_DATA,
-    # Which routes to run, comma-separated (doc, vcg02, vms16, vance).
+    # Which routes to run, comma-separated (doc, vcg02, vms16, vance, primm).
     [string]$Routes = 'doc,vcg02,vms16',
     # Where logs and screenshots go (default: %USERPROFILE%\nv-re\acceptance\<time>).
     [string]$Out,
@@ -105,7 +106,7 @@ $routeArgs = @{
             (Run-At 320 '0010A210.Kill') + (Run-At 321 '0010ABB0.Kill') + (Run-At 322 '0010A20F.Kill') +
             (Run-At 323 '0010A211.Kill') + (Run-At 324 '0010A212.Kill') + (Run-At 325 '0010A213.Kill') +
             (Run-At 340 'SunnyREF.StartConversation player') +
-            @('--say', "Okay, I'm in.", '--say', "Sure, I'll come with you.", '--say', "Couldn't hurt.", '--wait', '410')
+            @('--say', "Okay, I'm in.", '--say', "Sure, I'll come with you.", '--say', "Couldn't hurt.", '--wait', '370')
         Success = @('Completed: Talk to Sunny about your reward', 'XP +50')
     }
     vms16 = @{
